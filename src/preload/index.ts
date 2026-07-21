@@ -4,6 +4,9 @@ import {
   DRAWINGS_PICK,
   FILES_LIST,
   FILES_READ,
+  FILES_RENAME,
+  FILES_DELETE,
+  CONTEXT_MENU_SHOW,
 } from "@shared/channels";
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -18,6 +21,11 @@ const api: NativeApi = {
   files: {
     list: () => ipcRenderer.invoke(FILES_LIST),
     read: (id) => ipcRenderer.invoke(FILES_READ, id),
+    rename: (id, newName) => ipcRenderer.invoke(FILES_RENAME, id, newName),
+    delete: (id) => ipcRenderer.invoke(FILES_DELETE, id),
+  },
+  contextMenu: {
+    show: (items, x, y) => ipcRenderer.invoke(CONTEXT_MENU_SHOW, { items, x, y }),
   },
 };
 
@@ -28,6 +36,6 @@ if (process.contextIsolated) {
     console.error(error);
   }
 } else {
-  // @ts-ignore (define in dts)
+  // @ts-expect-error fallback when contextIsolation is disabled
   window.api = api;
 }

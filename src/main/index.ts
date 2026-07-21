@@ -5,7 +5,7 @@ import { app, shell, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
 import { getDrawings, pickDrawings } from "./drawings";
-import { listEntries, readSceneFile } from "./files";
+import { listEntries, readSceneFile, renameEntry, deleteEntry } from "./files";
 import { registerIpcHandlers } from "./ipc";
 import { getPrefs } from "./store";
 
@@ -125,6 +125,8 @@ app.whenReady().then(async () => {
     },
     listEntries,
     readSceneFile,
+    renameEntry,
+    deleteEntry,
     pickDrawings: async (parentWindow) => {
       const info = await pickDrawings(parentWindow);
       if (info) {

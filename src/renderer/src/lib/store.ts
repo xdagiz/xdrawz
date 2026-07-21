@@ -1,4 +1,4 @@
-import { DrawingInfo, DrawingsSnapshot, FileEntry } from "@shared/ipc";
+import type { DrawingInfo, DrawingsSnapshot, FileEntry } from "@shared/ipc";
 import { create } from "zustand";
 
 const isOpenableFile = (
@@ -15,12 +15,15 @@ type State = {
   openFileId: string | null;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   setOpenFileId: (fileId: string | null) => void;
+  renameFile: (id: string, newName: string) => Promise<void>;
+  deleteFile: (id: string) => Promise<void>;
 };
 
-export const useStore = create<State>((set) => ({
+export const useStore = create<State>((set, get) => ({
   drawings: null,
   entries: [],
   openFileId: null,
+
   loadSnapshot: (snapshot) =>
     set({
       drawings: snapshot.info,
@@ -29,6 +32,7 @@ export const useStore = create<State>((set) => ({
         ? snapshot.prefs.lastOpenedFileId
         : null,
     }),
+
   setOpenFileId: (fileId) =>
     set((state) => {
       if (fileId === null) {
@@ -39,4 +43,24 @@ export const useStore = create<State>((set) => ({
         openFileId: isOpenableFile(state.entries, fileId) ? fileId : state.openFileId,
       };
     }),
+
+  renameFile: async (id, newName) => {
+    const entry = await window.api.files.rename(id, newName);
+    const { openFileId } = get();
+    const entries = await window.api.files.list();
+    set({
+      entries,
+      openFileId: openFileId === id ? entry.id : openFileId,
+    });
+  },
+
+  deleteFile: async (id) => {
+    await window.api.files.delete(id);
+    const { openFileId } = get();
+    const entries = await window.api.files.list();
+    set({
+      entries,
+      openFileId: openFileId === id ? null : openFileId,
+    });
+  },
 }));

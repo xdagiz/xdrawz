@@ -1,5 +1,5 @@
 import { Dirent, Stats } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { FileEntry } from "@shared/ipc";
@@ -13,8 +13,32 @@ const parentIdOf = (id: string): string | null => {
   return idx === -1 ? null : id.slice(0, idx);
 };
 
-const toRelativeId = (root: string, absPath: string): string =>
+const toRelativeId = (root: string, absPath: string) =>
   path.relative(root, absPath).split(path.sep).filter(Boolean).join("/");
+
+const entryFromAbs = async (
+  root: string,
+  absPath: string,
+  kind: "file" | "directory",
+): Promise<FileEntry> => {
+  const id = toRelativeId(root, absPath);
+  const stats = await stat(absPath);
+  return {
+    id,
+    name: path.basename(absPath),
+    kind,
+    parentId: parentIdOf(id),
+    modifiedAt: stats.mtimeMs,
+    size: kind === "file" ? stats.size : 0,
+  };
+};
+
+const resolveInsideRoot = async (id: string) => {
+  const root = await requireDrawingsRoot();
+  const absPath = path.resolve(root, ...id.split("/"));
+  assertInsideRoot(root, absPath);
+  return { root, absPath };
+};
 
 const walkEntries = async (root: string): Promise<FileEntry[]> => {
   const out: FileEntry[] = [];
@@ -73,22 +97,28 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
   return out.sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }));
 };
 
-export const readSceneFile = async (id: string): Promise<string> => {
+const assertInsideRoot = (root: string, candidate: string) => {
+  const normalizedRoot = path.resolve(root);
+  const normalizedCandidate = path.resolve(candidate);
+  const rootWithSep = normalizedRoot.endsWith(path.sep)
+    ? normalizedRoot
+    : normalizedRoot + path.sep;
+
+  if (normalizedCandidate !== normalizedRoot && !normalizedCandidate.startsWith(rootWithSep)) {
+    throw new Error("Path escapes drawings root");
+  }
+};
+
+const requireDrawingsRoot = async (): Promise<string> => {
   const info = await getDrawings();
-  if (!info.configured || !info.path) {
-    throw new Error("Drawings folder not configured");
-  }
+  if (!info.configured || !info.path) throw new Error("Drawings folder not configured");
+  return path.resolve(info.path);
+};
 
-  const root = path.resolve(info.path);
-  const absPath = path.resolve(root, ...id.split("/"));
-
-  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
-  if (absPath !== root && !absPath.startsWith(rootWithSep)) {
-    throw new Error("Invalid file path");
-  }
+export const readSceneFile = async (id: string) => {
+  const { absPath } = await resolveInsideRoot(id);
 
   const content = await readFile(absPath, "utf8");
-
   if (!isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be read");
   }
@@ -96,11 +126,55 @@ export const readSceneFile = async (id: string): Promise<string> => {
   return content;
 };
 
-export const listEntries = async (): Promise<FileEntry[]> => {
-  const info = await getDrawings();
-  if (!info.configured || !info.path) {
-    return [];
+export const renameEntry = async (id: string, newName: string): Promise<FileEntry> => {
+  const { root, absPath } = await resolveInsideRoot(id);
+
+  const stats = await stat(absPath);
+  if (stats.isDirectory()) throw new Error("Only files can be renamed");
+
+  if (!isExcalidrawFileName(path.basename(id))) {
+    throw new Error("Only .excalidraw files can be renamed");
   }
 
-  return walkEntries(info.path);
+  const leaf = newName.trim();
+  if (!leaf) throw new Error("Name cannot be empty");
+  if (leaf.includes("/") || leaf.includes("\\")) {
+    throw new Error("Name cannot contain path separators");
+  }
+
+  const nameWithExt = isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
+  const nextAbs = path.join(path.dirname(absPath), nameWithExt);
+
+  assertInsideRoot(root, nextAbs);
+
+  if (nextAbs === absPath) {
+    return entryFromAbs(root, absPath, "file");
+  }
+
+  const exists = await stat(nextAbs).catch(() => null);
+  if (exists) throw new Error("A file with that name already exists");
+
+  await rename(absPath, nextAbs);
+  return entryFromAbs(root, nextAbs, "file");
+};
+
+export const deleteEntry = async (id: string) => {
+  const { root, absPath } = await resolveInsideRoot(id);
+
+  if (absPath === root) throw new Error("Cannot delete drawings root");
+
+  const stats = await stat(absPath);
+  if (stats.isDirectory()) throw new Error("Only files can be deleted");
+
+  if (!isExcalidrawFileName(path.basename(id))) {
+    throw new Error("Only .excalidraw files can be deleted");
+  }
+
+  await rm(absPath, { force: false });
+};
+
+export const listEntries = async (): Promise<FileEntry[]> => {
+  const info = await getDrawings();
+  if (!info.configured || !info.path) return [];
+  return walkEntries(path.resolve(info.path));
 };

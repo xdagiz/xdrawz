@@ -23,3 +23,14 @@ export type FileEntry = {
   modifiedAt: number;
   size: number;
 };
+
+export type ContextMenuItem = {
+  id: string;
+  label: string;
+};
+
+export type ContextMenuRequest = {
+  items: ContextMenuItem[];
+  x: number;
+  y: number;
+};
