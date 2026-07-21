@@ -1,3 +1,8 @@
+import type { DrawingInfo } from "@shared/ipc";
+
 export interface NativeApi {
-  ping: () => void;
+  drawings: {
+    get: () => Promise<DrawingInfo>;
+    pick: () => Promise<DrawingInfo | null>;
+  };
 }

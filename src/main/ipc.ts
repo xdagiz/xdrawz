@@ -1,6 +1,16 @@
-import { PING } from "@shared/channels";
-import { ipcMain } from "electron";
+import { DRAWINGS_GET, DRAWINGS_PICK } from "@shared/channels";
+import type { DrawingInfo } from "@shared/ipc";
+import { BrowserWindow, ipcMain } from "electron";
 
-export const registerIpcHandlers = () => {
-  ipcMain.on(PING, async (_event) => console.log("pong"));
+type Deps = {
+  getDrawings: () => Promise<DrawingInfo>;
+  pickDrawings: (parentWindow: BrowserWindow | null) => Promise<DrawingInfo | null>;
+};
+
+export const registerIpcHandlers = (deps: Deps) => {
+  ipcMain.handle(DRAWINGS_GET, () => deps.getDrawings());
+
+  ipcMain.handle(DRAWINGS_PICK, (event) =>
+    deps.pickDrawings(BrowserWindow.fromWebContents(event.sender)),
+  );
 };

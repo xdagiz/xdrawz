@@ -1,10 +1,13 @@
-import { PING } from "@shared/channels";
+import { DRAWINGS_GET, DRAWINGS_PICK } from "@shared/channels";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
 
 const api: NativeApi = {
-  ping: () => ipcRenderer.send(PING),
+  drawings: {
+    get: () => ipcRenderer.invoke(DRAWINGS_GET),
+    pick: () => ipcRenderer.invoke(DRAWINGS_PICK),
+  },
 };
 
 if (process.contextIsolated) {
