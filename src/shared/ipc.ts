@@ -9,6 +9,12 @@ export type Prefs = {
   lastOpenedFileId: string | null;
 };
 
+export type DrawingsSnapshot = {
+  info: DrawingInfo;
+  entries: FileEntry[];
+  prefs: Prefs;
+};
+
 export type FileEntry = {
   id: string;
   name: string;

@@ -5,7 +5,9 @@ import { app, shell, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
 import { getDrawings, pickDrawings } from "./drawings";
+import { listEntries } from "./files";
 import { registerIpcHandlers } from "./ipc";
+import { getPrefs } from "./store";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -112,6 +114,16 @@ app.whenReady().then(async () => {
 
   registerIpcHandlers({
     getDrawings,
+    loadDrawings: async () => {
+      const info = await getDrawings();
+      const entries = await listEntries();
+      return {
+        info,
+        entries,
+        prefs: getPrefs(),
+      };
+    },
+    listEntries,
     pickDrawings: async (parentWindow) => {
       const info = await pickDrawings(parentWindow);
       if (info) {

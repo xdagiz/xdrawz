@@ -1,4 +1,4 @@
-import { CSSProperties } from "react";
+import { CSSProperties, useEffect } from "react";
 
 import { useStore } from "@/lib/store";
 
@@ -7,6 +7,28 @@ import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
 
 const App = () => {
   const openFileId = useStore((s) => s.openFileId);
+  const loadSnapshot = useStore((s) => s.loadSnapshot);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    window.api.drawings
+      .load()
+      .then((snapshot) => {
+        if (!cancelled) {
+          loadSnapshot(snapshot);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          console.error(err instanceof Error ? err.message : String(err));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSnapshot]);
 
   return (
     <SidebarProvider
