@@ -8,5 +8,6 @@ export interface NativeApi {
   };
   files: {
     list: () => Promise<FileEntry[]>;
+    read: (id: string) => Promise<string>;
   };
 }

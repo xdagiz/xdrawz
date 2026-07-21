@@ -3,6 +3,7 @@ import { CSSProperties, useEffect } from "react";
 import { useStore } from "@/lib/store";
 
 import AppSidebar from "./components/app-sidebar";
+import { ExcalidrawEditor } from "./components/excalidraw-editor";
 import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
 
 const App = () => {
@@ -42,7 +43,15 @@ const App = () => {
     >
       <AppSidebar />
       <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
-        <div>{openFileId ? <div>editor will be here</div> : <div>no drawing selected</div>}</div>
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {openFileId ? (
+            <ExcalidrawEditor key={openFileId} fileId={openFileId} />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <p className="text-muted-foreground text-sm">No file selected</p>
+            </div>
+          )}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

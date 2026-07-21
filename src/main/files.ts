@@ -1,4 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
+import { Dirent, Stats } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { FileEntry } from "@shared/ipc";
@@ -19,7 +20,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
   const out: FileEntry[] = [];
 
   const walk = async (dirAbs: string): Promise<void> => {
-    let dirents;
+    let dirents: Dirent[];
     try {
       dirents = await readdir(dirAbs, { withFileTypes: true });
     } catch {
@@ -33,7 +34,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
 
       const absPath = path.join(dirAbs, dirent.name);
 
-      let stats;
+      let stats: Stats;
       try {
         stats = await stat(absPath);
       } catch {
@@ -70,6 +71,29 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
 
   await walk(root);
   return out.sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }));
+};
+
+export const readSceneFile = async (id: string): Promise<string> => {
+  const info = await getDrawings();
+  if (!info.configured || !info.path) {
+    throw new Error("Drawings folder not configured");
+  }
+
+  const root = path.resolve(info.path);
+  const absPath = path.resolve(root, ...id.split("/"));
+
+  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  if (absPath !== root && !absPath.startsWith(rootWithSep)) {
+    throw new Error("Invalid file path");
+  }
+
+  const content = await readFile(absPath, "utf8");
+
+  if (!isExcalidrawFileName(path.basename(id))) {
+    throw new Error("Only .excalidraw files can be read");
+  }
+
+  return content;
 };
 
 export const listEntries = async (): Promise<FileEntry[]> => {

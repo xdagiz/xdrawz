@@ -1,4 +1,10 @@
-import { DRAWINGS_GET, DRAWINGS_LOAD, DRAWINGS_PICK, FILES_LIST } from "@shared/channels";
+import {
+  DRAWINGS_GET,
+  DRAWINGS_LOAD,
+  DRAWINGS_PICK,
+  FILES_LIST,
+  FILES_READ,
+} from "@shared/channels";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
@@ -11,6 +17,7 @@ const api: NativeApi = {
   },
   files: {
     list: () => ipcRenderer.invoke(FILES_LIST),
+    read: (id) => ipcRenderer.invoke(FILES_READ, id),
   },
 };
 
