@@ -8,7 +8,9 @@ import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
 
 const App = () => {
   const openFileId = useStore((s) => s.openFileId);
+  const error = useStore((s) => s.error);
   const loadSnapshot = useStore((s) => s.loadSnapshot);
+  const ensureCleanOrConfirm = useStore((s) => s.ensureCleanOrConfirm);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,6 +33,15 @@ const App = () => {
     };
   }, [loadSnapshot]);
 
+  useEffect(() => {
+    return window.api.window.onWillClose(() => {
+      void (async () => {
+        const ok = await ensureCleanOrConfirm("quit");
+        if (ok) await window.api.window.close();
+      })();
+    });
+  }, [ensureCleanOrConfirm]);
+
   return (
     <SidebarProvider
       defaultOpen
@@ -43,6 +54,11 @@ const App = () => {
     >
       <AppSidebar />
       <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
+        {error && (
+          <div className="bg-destructive/10 text-destructive border-b px-3 py-1.5 text-xs">
+            {error}
+          </div>
+        )}
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {openFileId ? (
             <ExcalidrawEditor key={openFileId} fileId={openFileId} />

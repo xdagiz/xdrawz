@@ -1,10 +1,12 @@
+import { Buffer } from "node:buffer";
 import { Dirent, Stats } from "node:fs";
-import { readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { FileEntry } from "@shared/ipc";
+import { MAX_FILE_CONTENT_BYTES, type FileEntry } from "@shared/ipc";
 
 import { getDrawings } from "./drawings";
+import { assertSceneJson } from "./scene";
 
 const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
 
@@ -115,15 +117,62 @@ const requireDrawingsRoot = async (): Promise<string> => {
   return path.resolve(info.path);
 };
 
+const assertContentSize = (content: string) => {
+  const bytes = Buffer.byteLength(content, "utf8");
+  if (bytes > MAX_FILE_CONTENT_BYTES) {
+    throw new Error(`Content exceeds ${MAX_FILE_CONTENT_BYTES} bytes`);
+  }
+};
+
+const atomicWriteFile = async (absPath: string, data: string) => {
+  const dir = path.dirname(absPath);
+  const tmp = path.join(dir, `.${path.basename(absPath)}.${process.pid}.${Date.now()}.tmp`);
+
+  try {
+    await writeFile(tmp, data, "utf8");
+    await rename(tmp, absPath);
+  } catch (error) {
+    await unlink(tmp).catch(() => {
+      /* ignore cleanup errors */
+    });
+    throw error;
+  }
+};
+
 export const readSceneFile = async (id: string) => {
   const { absPath } = await resolveInsideRoot(id);
 
-  const content = await readFile(absPath, "utf8");
   if (!isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be read");
   }
 
+  const stats = await stat(absPath);
+  if (stats.isDirectory()) throw new Error("Cannot read a directory as a scene");
+
+  if (stats.size > MAX_FILE_CONTENT_BYTES) throw new Error("File is too large to load");
+
+  const content = await readFile(absPath, "utf8");
+  assertSceneJson(content);
   return content;
+};
+
+export const writeSceneFile = async (id: string, content: string) => {
+  if (typeof content !== "string") throw new Error("Content must be a string");
+
+  assertContentSize(content);
+  assertSceneJson(content);
+
+  const { absPath } = await resolveInsideRoot(id);
+
+  if (!isExcalidrawFileName(path.basename(id))) {
+    throw new Error("Only .excalidraw files can be written");
+  }
+
+  const existing = await stat(absPath).catch(() => null);
+  if (!existing) throw new Error("File not found");
+  if (existing.isDirectory()) throw new Error("Cannot write over a directory");
+
+  await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`);
 };
 
 export const renameEntry = async (id: string, newName: string): Promise<FileEntry> => {

@@ -17,6 +17,7 @@ import { stripExcalidraw } from "@/lib/utils";
 const AppSidebar = () => {
   const entries = useStore((s) => s.entries);
   const openFileId = useStore((s) => s.openFileId);
+  const dirtyById = useStore((s) => s.dirtyById);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
   const renameFile = useStore((s) => s.renameFile);
   const deleteFile = useStore((s) => s.deleteFile);
@@ -90,10 +91,12 @@ const AppSidebar = () => {
                     <SidebarMenuButton
                       isActive={file.id === openFileId}
                       tooltip={file.id}
-                      onClick={() => setOpenFileId(file.id)}
+                      onClick={() => void setOpenFileId(file.id)}
                       onContextMenu={(e) => handleContextMenu(e, file.id)}
+                      data-dirty={dirtyById[file.id] ? "true" : undefined}
+                      className="data-[dirty=true]:after:bg-primary relative pr-6 data-[dirty=true]:after:absolute data-[dirty=true]:after:top-1/2 data-[dirty=true]:after:right-2 data-[dirty=true]:after:size-1.5 data-[dirty=true]:after:-translate-y-1/2 data-[dirty=true]:after:rounded-full data-[dirty=true]:after:content-['']"
                     >
-                      <span>{stripExcalidraw(file.name)}</span>
+                      <span className="truncate">{stripExcalidraw(file.name)}</span>
                     </SidebarMenuButton>
                   )}
                 </SidebarMenuItem>

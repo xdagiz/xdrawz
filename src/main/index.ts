@@ -4,8 +4,9 @@ import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { app, shell, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
+import { destroyWindow, installCloseGuard } from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
-import { listEntries, readSceneFile, renameEntry, deleteEntry } from "./files";
+import { deleteEntry, listEntries, readSceneFile, renameEntry, writeSceneFile } from "./files";
 import { registerIpcHandlers } from "./ipc";
 import { getPrefs } from "./store";
 
@@ -49,6 +50,7 @@ function createMainWindow() {
   });
 
   showWhenReady(mainWindow);
+  installCloseGuard(mainWindow);
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) =>
     console.error("Preload failed:", preloadPath, error),
@@ -125,8 +127,10 @@ app.whenReady().then(async () => {
     },
     listEntries,
     readSceneFile,
+    writeSceneFile,
     renameEntry,
     deleteEntry,
+    destroyWindow,
     pickDrawings: async (parentWindow) => {
       const info = await pickDrawings(parentWindow);
       if (info) {
