@@ -39,3 +39,10 @@ export const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
 
 export type UnsavedReason = "quit" | "switch";
 export type UnsavedChoice = "save" | "discard" | "cancel";
+
+export type StoreType = {
+  drawingsPath?: string;
+  lastOpenedFileId?: string | null;
+};
+
+export type StoreKey = keyof StoreType;

@@ -58,13 +58,13 @@ export const useStore = create<State>((set, get) => ({
 
     if (fileId === null) {
       set({ openFileId: null, error: null });
-      return;
+      window.api.store.set("lastOpenedFileId", null);
+    } else if (isOpenableFile(get().entries, fileId)) {
+      set({ openFileId: fileId, error: null });
+      window.api.store.set("lastOpenedFileId", fileId);
+    } else {
+      set({ error: null });
     }
-
-    set((state) => ({
-      openFileId: isOpenableFile(state.entries, fileId) ? fileId : state.openFileId,
-      error: null,
-    }));
   },
 
   renameFile: async (id, newName) => {

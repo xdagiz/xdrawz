@@ -9,6 +9,10 @@ import {
   FILES_READ,
   FILES_RENAME,
   FILES_WRITE,
+  STORE_CLEAR,
+  STORE_DELETE,
+  STORE_GET,
+  STORE_SET,
   WINDOW_CLOSE,
 } from "@shared/channels";
 import type {
@@ -16,10 +20,13 @@ import type {
   DrawingInfo,
   DrawingsSnapshot,
   FileEntry,
+  StoreKey,
   UnsavedChoice,
   UnsavedReason,
 } from "@shared/ipc";
 import { BrowserWindow, dialog, ipcMain, Menu } from "electron";
+
+import { store } from "./store";
 
 type Deps = {
   getDrawings: () => Promise<DrawingInfo>;
@@ -67,6 +74,16 @@ const confirmUnsavedChanges = async (
 export const registerIpcHandlers = (deps: Deps): void => {
   ipcMain.handle(DRAWINGS_GET, () => deps.getDrawings());
   ipcMain.handle(DRAWINGS_LOAD, () => deps.loadDrawings());
+
+  ipcMain.handle(STORE_GET, (_event, key: StoreKey) => {
+    const value = store.get(key);
+    if (value === undefined || value === null) return null;
+    return typeof value === "string" ? value : JSON.stringify(value);
+  });
+
+  ipcMain.handle(STORE_SET, (_event, key: StoreKey, value: string | null) => store.set(key, value));
+  ipcMain.handle(STORE_DELETE, (_event, key: StoreKey) => store.delete(key));
+  ipcMain.handle(STORE_CLEAR, () => store.clear());
 
   ipcMain.handle(FILES_LIST, () => deps.listEntries());
   ipcMain.handle(FILES_READ, (_event, id: string) => deps.readSceneFile(id));

@@ -9,6 +9,10 @@ import {
   FILES_READ,
   FILES_RENAME,
   FILES_WRITE,
+  STORE_CLEAR,
+  STORE_DELETE,
+  STORE_GET,
+  STORE_SET,
   WINDOW_CLOSE,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
@@ -28,6 +32,12 @@ const api: NativeApi = {
     write: (id, content) => ipcRenderer.invoke(FILES_WRITE, id, content),
     rename: (id, newName) => ipcRenderer.invoke(FILES_RENAME, id, newName),
     delete: (id) => ipcRenderer.invoke(FILES_DELETE, id),
+  },
+  store: {
+    get: (key) => ipcRenderer.invoke(STORE_GET, key),
+    set: (key, value) => ipcRenderer.invoke(STORE_SET, key, value),
+    delete: (key) => ipcRenderer.invoke(STORE_DELETE, key),
+    clear: () => ipcRenderer.invoke(STORE_CLEAR),
   },
   contextMenu: {
     show: (items, x, y) => ipcRenderer.invoke(CONTEXT_MENU_SHOW, { items, x, y }),

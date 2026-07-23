@@ -10,3 +10,7 @@ export const CONTEXT_MENU_SHOW = "context-menu:show";
 export const WINDOW_WILL_CLOSE = "window:will-close";
 export const WINDOW_CLOSE = "window:close";
 export const DIALOG_UNSAVED_CHANGES = "dialog:unsaved-changes";
+export const STORE_GET = "store:get";
+export const STORE_SET = "store:set";
+export const STORE_DELETE = "store:delete";
+export const STORE_CLEAR = "store:clear";

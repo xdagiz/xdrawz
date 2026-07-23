@@ -8,7 +8,7 @@ import { destroyWindow, installCloseGuard } from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
 import { deleteEntry, listEntries, readSceneFile, renameEntry, writeSceneFile } from "./files";
 import { registerIpcHandlers } from "./ipc";
-import { getPrefs } from "./store";
+import { getLastOpenedFileId } from "./store";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -122,7 +122,9 @@ app.whenReady().then(async () => {
       return {
         info,
         entries,
-        prefs: getPrefs(),
+        prefs: {
+          lastOpenedFileId: getLastOpenedFileId(),
+        },
       };
     },
     listEntries,
