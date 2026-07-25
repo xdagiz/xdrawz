@@ -2,7 +2,10 @@ import type {
   ContextMenuItem,
   DrawingInfo,
   DrawingsSnapshot,
+  FileChangedChoice,
   FileEntry,
+  FileRecoverChoice,
+  FilesChangedEvent,
   StoreKey,
   UnsavedChoice,
   UnsavedReason,
@@ -18,8 +21,10 @@ export interface NativeApi {
     list: () => Promise<FileEntry[]>;
     read: (id: string) => Promise<string>;
     write: (id: string, content: string) => Promise<void>;
+    writeRecover: (id: string, content: string) => Promise<void>;
     rename: (id: string, newName: string) => Promise<FileEntry>;
     delete: (id: string) => Promise<void>;
+    onChanged: (cb: (event: FilesChangedEvent) => void) => () => void;
   };
   store: {
     get: (key: StoreKey) => Promise<string | null>;
@@ -32,6 +37,8 @@ export interface NativeApi {
   };
   dialog: {
     unsavedChanges: (reason?: UnsavedReason) => Promise<UnsavedChoice>;
+    fileRecover: (fileName: string) => Promise<FileRecoverChoice>;
+    fileChanged: (fileName: string) => Promise<FileChangedChoice>;
   };
   window: {
     onWillClose: (cb: () => void) => () => void;

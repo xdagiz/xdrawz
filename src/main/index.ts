@@ -1,16 +1,76 @@
 import { join } from "path";
 
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
+import { FILES_CHANGED } from "@shared/channels";
+import type { FilesChangedEvent } from "@shared/ipc";
 import { app, shell, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
 import { destroyWindow, installCloseGuard } from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
-import { deleteEntry, listEntries, readSceneFile, renameEntry, writeSceneFile } from "./files";
+import {
+  deleteEntry,
+  listEntries,
+  readSceneFile,
+  renameEntry,
+  writeSceneFile,
+  writeSceneFileRecover,
+  type FsMutationHooks,
+} from "./files";
 import { registerIpcHandlers } from "./ipc";
 import { getLastOpenedFileId } from "./store";
+import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 
 let mainWindow: BrowserWindow | null = null;
+let watcher: DrawingsWatcher | null = null;
+
+function broadcastFilesChanged(event: FilesChangedEvent) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    if (win.webContents.isDestroyed() || win.webContents.isCrashed()) continue;
+    win.webContents.send(FILES_CHANGED, event);
+  }
+}
+
+function createWatcher() {
+  return createDrawingsWatcher(
+    {
+      onChange: broadcastFilesChanged,
+      onRootInvalid: async (_reason, revision) => {
+        const info = await getDrawings();
+        broadcastFilesChanged({
+          entries: [],
+          revision,
+          root: null,
+          info,
+        });
+      },
+      onError: (error) => {
+        console.error("[watcher]", error);
+      },
+    },
+    {
+      listEntries,
+      getDrawings,
+    },
+  );
+}
+
+function ensureWatcher() {
+  if (!watcher) watcher = createWatcher();
+  return watcher;
+}
+
+function withWatchIgnore<TArgs extends unknown[], TRet>(
+  mutator: (...args: [...TArgs, FsMutationHooks?]) => TRet,
+) {
+  return (...args: [...TArgs]): TRet => {
+    const w = ensureWatcher();
+    return mutator(...args, {
+      beforeMutate: (paths) => w.ignorePaths(paths),
+    } as FsMutationHooks);
+  };
+}
 
 function ensureMainWindow(): BrowserWindow {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -114,6 +174,11 @@ app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
   }
 
+  const writeSceneFileWatched = withWatchIgnore(writeSceneFile);
+  const writeSceneFileRecoverWatched = withWatchIgnore(writeSceneFileRecover);
+  const renameEntryWatched = withWatchIgnore(renameEntry);
+  const deleteEntryWatched = withWatchIgnore(deleteEntry);
+
   registerIpcHandlers({
     getDrawings,
     loadDrawings: async () => {
@@ -129,17 +194,24 @@ app.whenReady().then(async () => {
     },
     listEntries,
     readSceneFile,
-    writeSceneFile,
-    renameEntry,
-    deleteEntry,
+    writeSceneFile: writeSceneFileWatched,
+    renameEntry: renameEntryWatched,
+    deleteEntry: deleteEntryWatched,
+    writeSceneFileRecover: writeSceneFileRecoverWatched,
     destroyWindow,
     pickDrawings: async (parentWindow) => {
       const info = await pickDrawings(parentWindow);
       if (info) {
-        ensureMainWindow();
-        if (parentWindow && !parentWindow.isDestroyed()) {
-          parentWindow.close();
+        const w = ensureWatcher();
+        if (info.configured && info.path) {
+          await w.restart(info.path);
+          void w.refreshNow();
+        } else {
+          await w.stop();
         }
+
+        ensureMainWindow();
+        if (parentWindow && !parentWindow.isDestroyed()) parentWindow.close();
       }
       return info;
     },
@@ -147,7 +219,9 @@ app.whenReady().then(async () => {
 
   const info = await getDrawings();
 
-  if (info.configured) {
+  if (info.configured && info.path) {
+    const w = ensureWatcher();
+    await w.start(info.path);
     ensureMainWindow();
   } else {
     createGreetingWindow();
@@ -164,10 +238,19 @@ app.whenReady().then(async () => {
     }
 
     getDrawings().then((i) => {
-      if (i.configured) ensureMainWindow();
-      else createGreetingWindow();
+      if (i.configured && i.path) {
+        const w = ensureWatcher();
+        void w.start(i.path);
+        ensureMainWindow();
+      } else {
+        createGreetingWindow();
+      }
     });
   });
+});
+
+app.on("before-quit", () => {
+  void watcher?.stop();
 });
 
 app.on("window-all-closed", () => {

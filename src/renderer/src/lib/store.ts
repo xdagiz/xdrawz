@@ -1,4 +1,12 @@
-import type { DrawingInfo, DrawingsSnapshot, FileEntry, UnsavedReason } from "@shared/ipc";
+import type {
+  DrawingInfo,
+  DrawingsSnapshot,
+  ExternalConflict,
+  FileEntry,
+  FilesChangedEvent,
+  UnsavedReason,
+} from "@shared/ipc";
+import { FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { create } from "zustand";
 
 import type { SceneSessionControls } from "@/lib/scene-session";
@@ -11,6 +19,25 @@ const isOpenableFile = (
   fileId.length > 0 &&
   entries.some((entry) => entry.id === fileId && entry.kind === "file");
 
+const removeKey = (obj: Record<string, true>, key: string): Record<string, true> => {
+  const next = { ...obj };
+  delete next[key];
+  return next;
+};
+
+const fileNameOf = (entries: FileEntry[], id: string): string => {
+  const entry = entries.find((e) => e.id === id);
+  return entry?.name ?? id.split("/").pop() ?? id;
+};
+
+const isFileNotFoundMessage = (message: string) => {
+  return message === FILE_NOT_FOUND_MESSAGE || message.includes(FILE_NOT_FOUND_MESSAGE);
+};
+
+let fileChangedDialogInflight: Promise<"reload" | "overwrite" | "cancel"> | null = null;
+let fileRecoverDialogInflight: Promise<"recover" | "discard" | "cancel"> | null = null;
+let fileRecoverContent: string | undefined;
+
 type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
@@ -18,13 +45,21 @@ type State = {
   dirtyById: Record<string, true>;
   error: string | null;
   activeSession: SceneSessionControls | null;
-
+  filesRevision: number;
+  externalConflict: ExternalConflict;
+  editorEpoch: number;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
+  applyEntries: (event: FilesChangedEvent) => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
   renameFile: (id: string, newName: string) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   saveFile: (id: string, content: string) => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
+  clearExternalConflict: () => void;
+  reloadOpenFileFromDisk: () => void;
+  discardMissingOpenFile: () => void;
+  resolveChangedConflict: () => Promise<"reload" | "overwrite" | "cancel">;
+  resolveMissingConflict: (content?: string) => Promise<"recover" | "discard" | "cancel">;
   registerSession: (session: SceneSessionControls) => void;
   unregisterSession: (session: SceneSessionControls) => void;
   ensureCleanOrConfirm: (reason?: UnsavedReason) => Promise<boolean>;
@@ -37,9 +72,12 @@ export const useStore = create<State>((set, get) => ({
   dirtyById: {},
   error: null,
   activeSession: null,
+  filesRevision: 0,
+  externalConflict: null,
+  editorEpoch: 0,
 
   loadSnapshot: (snapshot) =>
-    set({
+    set((state) => ({
       drawings: snapshot.info,
       entries: snapshot.entries,
       openFileId: isOpenableFile(snapshot.entries, snapshot.prefs.lastOpenedFileId)
@@ -47,7 +85,72 @@ export const useStore = create<State>((set, get) => ({
         : null,
       dirtyById: {},
       error: null,
-    }),
+      filesRevision: state.filesRevision,
+      externalConflict: null,
+    })),
+
+  applyEntries: (event) => {
+    const state = get();
+
+    if (event.revision > 0 && event.revision <= state.filesRevision) return;
+
+    const entries = event.entries;
+    const openFileId = state.openFileId;
+    const dirtyById = state.dirtyById;
+    const prevConflict = state.externalConflict;
+
+    let externalConflict: ExternalConflict = null;
+    let nextOpenFileId = openFileId;
+
+    if (openFileId) {
+      const stillExists = entries.some((e) => e.id === openFileId && e.kind === "file");
+
+      if (!stillExists && dirtyById[openFileId]) {
+        externalConflict = { type: "missing", fileId: openFileId };
+      } else if (stillExists && dirtyById[openFileId]) {
+        const oldEntry = state.entries.find((e) => e.id === openFileId);
+        const newEntry = entries.find((e) => e.id === openFileId);
+
+        if (
+          prevConflict?.type === "changed" &&
+          prevConflict.fileId === openFileId &&
+          newEntry &&
+          newEntry.modifiedAt >= prevConflict.diskModifiedAt
+        ) {
+          externalConflict = {
+            type: "changed",
+            fileId: openFileId,
+            diskModifiedAt: Math.max(prevConflict.diskModifiedAt, newEntry.modifiedAt),
+          };
+        } else if (oldEntry && newEntry && newEntry.modifiedAt > oldEntry.modifiedAt) {
+          externalConflict = {
+            type: "changed",
+            fileId: openFileId,
+            diskModifiedAt: newEntry.modifiedAt,
+          };
+        }
+      }
+
+      if (!stillExists && !dirtyById[openFileId]) {
+        nextOpenFileId = null;
+      }
+    }
+
+    const nextDirty = { ...dirtyById };
+    for (const id of Object.keys(nextDirty)) {
+      if (id === openFileId && externalConflict?.type === "missing") continue;
+      if (!entries.some((e) => e.id === id)) delete nextDirty[id];
+    }
+
+    set({
+      entries,
+      openFileId: nextOpenFileId,
+      drawings: event.info ?? state.drawings,
+      filesRevision: event.revision,
+      externalConflict,
+      dirtyById: nextDirty,
+    });
+  },
 
   setOpenFileId: async (fileId) => {
     const current = get().openFileId;
@@ -57,10 +160,10 @@ export const useStore = create<State>((set, get) => ({
     if (!ok) return;
 
     if (fileId === null) {
-      set({ openFileId: null, error: null });
+      set({ openFileId: null, error: null, externalConflict: null });
       window.api.store.set("lastOpenedFileId", null);
     } else if (isOpenableFile(get().entries, fileId)) {
-      set({ openFileId: fileId, error: null });
+      set({ openFileId: fileId, error: null, externalConflict: null });
       window.api.store.set("lastOpenedFileId", fileId);
     } else {
       set({ error: null });
@@ -114,12 +217,37 @@ export const useStore = create<State>((set, get) => ({
 
   saveFile: async (id, content) => {
     if (!id) return false;
+
+    const state = get();
+    const conflict = state.externalConflict;
+
+    if (conflict?.type === "changed" && conflict.fileId === id) {
+      const choice = await get().resolveChangedConflict();
+      if (choice !== "overwrite") return false;
+    }
+
+    if (conflict?.type === "missing" && conflict.fileId === id) {
+      const choice = await get().resolveMissingConflict(content);
+      return choice !== "cancel";
+    }
+
     try {
       await window.api.files.write(id, content);
-      set({ error: null });
+      set({ error: null, externalConflict: null });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save";
+
+      if (isFileNotFoundMessage(message)) {
+        const latest = get();
+        if (latest.externalConflict?.type !== "missing" || latest.externalConflict.fileId !== id) {
+          set({ externalConflict: { type: "missing", fileId: id } });
+        }
+
+        const choice = await get().resolveMissingConflict(content);
+        return choice !== "cancel";
+      }
+
       set({ error: message });
       return false;
     }
@@ -141,6 +269,122 @@ export const useStore = create<State>((set, get) => ({
 
       return { dirtyById: next };
     });
+  },
+
+  clearExternalConflict: () => set({ externalConflict: null }),
+
+  resolveChangedConflict: async () => {
+    if (!fileChangedDialogInflight) {
+      const state = get();
+      const conflict = state.externalConflict;
+      if (!conflict || conflict.type !== "changed") return "cancel";
+
+      const fileName = fileNameOf(state.entries, conflict.fileId);
+      const expectedFileId = conflict.fileId;
+
+      fileChangedDialogInflight = (async () => {
+        const choice = await window.api.dialog.fileChanged(fileName);
+
+        const current = get().externalConflict;
+        if (!current || current.type !== "changed" || current.fileId !== expectedFileId) {
+          return "cancel" as const;
+        }
+
+        if (choice === "reload") get().reloadOpenFileFromDisk();
+        else if (choice === "overwrite") set({ externalConflict: null });
+
+        return choice;
+      })().finally(() => {
+        fileChangedDialogInflight = null;
+      });
+    }
+
+    return fileChangedDialogInflight;
+  },
+
+  resolveMissingConflict: async (content) => {
+    if (content !== undefined) fileRecoverContent = content;
+
+    if (!fileRecoverDialogInflight) {
+      const state = get();
+      const conflict = state.externalConflict;
+      const fileId = conflict?.type === "missing" ? conflict.fileId : (state.openFileId ?? null);
+      if (!fileId) return "cancel";
+
+      const fileName = fileNameOf(state.entries, fileId);
+      const expectedFileId = fileId;
+
+      fileRecoverDialogInflight = (async () => {
+        const choice = await window.api.dialog.fileRecover(fileName);
+
+        const current = get().externalConflict;
+        if (current && (current.type !== "missing" || current.fileId !== expectedFileId)) {
+          return "cancel" as const;
+        }
+
+        if (choice === "cancel") return "cancel";
+
+        if (choice === "discard") {
+          get().discardMissingOpenFile();
+          return "discard";
+        }
+
+        const body = fileRecoverContent ?? get().activeSession?.getSerializedContent() ?? null;
+        fileRecoverContent = undefined;
+
+        if (!body) {
+          set({ error: "Nothing to recover" });
+          return "cancel";
+        }
+
+        try {
+          await window.api.files.writeRecover(expectedFileId, body);
+          const entries = await window.api.files.list();
+          set({
+            error: null,
+            externalConflict: null,
+            entries,
+            dirtyById: removeKey(get().dirtyById, expectedFileId),
+          });
+          return "recover" as const;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "Recovery failed";
+          set({ error: errMsg });
+          return "cancel";
+        }
+      })().finally(() => {
+        fileRecoverDialogInflight = null;
+        fileRecoverContent = undefined;
+      });
+    }
+
+    return fileRecoverDialogInflight;
+  },
+
+  reloadOpenFileFromDisk: () => {
+    const { openFileId, dirtyById, editorEpoch } = get();
+    if (!openFileId) {
+      set({ externalConflict: null });
+      return;
+    }
+
+    set({
+      externalConflict: null,
+      dirtyById: removeKey(dirtyById, openFileId),
+      editorEpoch: editorEpoch + 1,
+      error: null,
+    });
+  },
+
+  discardMissingOpenFile: () => {
+    const { openFileId, dirtyById } = get();
+    set({
+      openFileId: null,
+      externalConflict: null,
+      dirtyById: openFileId ? removeKey(dirtyById, openFileId) : dirtyById,
+      error: null,
+    });
+    window.api.store.set("lastOpenedFileId", null);
   },
 
   registerSession: (session) => set({ activeSession: session }),

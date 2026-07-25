@@ -22,6 +22,7 @@ export type SceneSessionControls = {
   ) => void;
   saveNow: () => Promise<void>;
   flush: (opts?: FlushOpts) => Promise<void>;
+  getSerializedContent: () => string | null;
   ensureCleanOrConfirm: (
     reason: UnsavedReason,
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
@@ -120,6 +121,12 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     await persistScene(elements, appState, files);
   };
 
+  const getSerializedContent = (): string | null => {
+    if (!latestScene) return null;
+    const [elements, appState, files] = latestScene;
+    return serializeAsJSON(elements, appState, files, "local");
+  };
+
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -201,6 +208,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     onChange,
     saveNow,
     flush,
+    getSerializedContent,
     ensureCleanOrConfirm,
     isDirty: () => dirty,
     dispose,

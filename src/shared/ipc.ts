@@ -39,10 +39,26 @@ export const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
 
 export type UnsavedReason = "quit" | "switch";
 export type UnsavedChoice = "save" | "discard" | "cancel";
+export type FileRecoverChoice = "recover" | "discard" | "cancel";
+export type FileChangedChoice = "reload" | "overwrite" | "cancel";
+
+export const FILE_NOT_FOUND_MESSAGE = "File not found";
 
 export type StoreType = {
   drawingsPath?: string;
   lastOpenedFileId?: string | null;
 };
+
+export type FilesChangedEvent = {
+  entries: FileEntry[];
+  revision: number;
+  root: string | null;
+  info?: DrawingInfo;
+};
+
+export type ExternalConflict =
+  | { type: "missing"; fileId: string }
+  | { type: "changed"; fileId: string; diskModifiedAt: number }
+  | null;
 
 export type StoreKey = keyof StoreType;

@@ -1,5 +1,7 @@
 import {
   CONTEXT_MENU_SHOW,
+  DIALOG_FILE_CHANGED,
+  DIALOG_FILE_RECOVER,
   DIALOG_UNSAVED_CHANGES,
   DRAWINGS_GET,
   DRAWINGS_LOAD,
@@ -9,6 +11,7 @@ import {
   FILES_READ,
   FILES_RENAME,
   FILES_WRITE,
+  FILES_WRITE_RECOVER,
   STORE_CLEAR,
   STORE_DELETE,
   STORE_GET,
@@ -19,7 +22,9 @@ import type {
   ContextMenuRequest,
   DrawingInfo,
   DrawingsSnapshot,
+  FileChangedChoice,
   FileEntry,
+  FileRecoverChoice,
   StoreKey,
   UnsavedChoice,
   UnsavedReason,
@@ -31,10 +36,11 @@ import { store } from "./store";
 type Deps = {
   getDrawings: () => Promise<DrawingInfo>;
   loadDrawings: () => Promise<DrawingsSnapshot>;
-  listEntries: () => Promise<FileEntry[]>;
+  listEntries: (root?: string) => Promise<FileEntry[]>;
   pickDrawings: (parentWindow: BrowserWindow | null) => Promise<DrawingInfo | null>;
   readSceneFile: (id: string) => Promise<string>;
   writeSceneFile: (id: string, content: string) => Promise<void>;
+  writeSceneFileRecover: (id: string, content: string) => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
   deleteEntry: (id: string) => Promise<void>;
   destroyWindow: (win: BrowserWindow) => void;
@@ -44,31 +50,6 @@ const windowFromEvent = (event: Electron.IpcMainInvokeEvent): BrowserWindow | nu
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return null;
   return win;
-};
-
-const confirmUnsavedChanges = async (
-  win: BrowserWindow | null,
-  reason: UnsavedReason = "quit",
-): Promise<UnsavedChoice> => {
-  const options: Electron.MessageBoxOptions = {
-    type: "warning",
-    buttons: ["Save", "Don't save", "Cancel"],
-    defaultId: 0,
-    cancelId: 2,
-    message: "You have unsaved changes.",
-    detail:
-      reason === "switch"
-        ? "Do you want to save before leaving this drawing?"
-        : "Do you want to save before quitting?",
-  };
-
-  const { response } = win
-    ? await dialog.showMessageBox(win, options)
-    : await dialog.showMessageBox(options);
-
-  if (response === 0) return "save";
-  if (response === 1) return "discard";
-  return "cancel";
 };
 
 export const registerIpcHandlers = (deps: Deps): void => {
@@ -131,7 +112,81 @@ export const registerIpcHandlers = (deps: Deps): void => {
     deps.destroyWindow(win);
   });
 
-  ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason?: UnsavedReason) =>
-    confirmUnsavedChanges(windowFromEvent(event), reason),
+  ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason: UnsavedReason = "quit") => {
+    const win = windowFromEvent(event);
+    const options: Electron.MessageBoxOptions = {
+      type: "warning",
+      buttons: ["Save", "Don't save", "Cancel"],
+      defaultId: 0,
+      cancelId: 2,
+      message: "You have unsaved changes.",
+      detail:
+        reason === "switch"
+          ? "Do you want to save before leaving this drawing?"
+          : "Do you want to save before quitting?",
+    };
+
+    const doShow = async (): Promise<UnsavedChoice> => {
+      const { response } = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options);
+      if (response === 0) return "save";
+      if (response === 1) return "discard";
+      return "cancel";
+    };
+
+    return doShow();
+  });
+
+  ipcMain.handle(FILES_WRITE_RECOVER, (_event, id: string, content: string) =>
+    deps.writeSceneFileRecover(id, content),
   );
+
+  ipcMain.handle(DIALOG_FILE_RECOVER, (event, fileName: string) => {
+    const win = windowFromEvent(event);
+    const options: Electron.MessageBoxOptions = {
+      type: "warning",
+      buttons: ["Recover file", "Discard changes", "Cancel"],
+      defaultId: 0,
+      cancelId: 2,
+      message: `"${fileName}" was deleted on disk.`,
+    };
+
+    const doShow = async (): Promise<FileRecoverChoice> => {
+      const { response } = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options);
+
+      if (response === 0) return "recover";
+      if (response === 1) return "discard";
+      return "cancel";
+    };
+
+    return doShow();
+  });
+
+  ipcMain.handle(DIALOG_FILE_CHANGED, (event, fileName: string) => {
+    const win = windowFromEvent(event);
+    const options: Electron.MessageBoxOptions = {
+      type: "warning",
+      buttons: ["Reload from disk", "Keep my changes", "Cancel"],
+      defaultId: 0,
+      cancelId: 2,
+      message: `"${fileName}" was changed on disk.`,
+      detail:
+        "You have unsaved edits in this drawing. Reload discards your edits; keep writes your version to disk now.",
+    };
+
+    const doShow = async (): Promise<FileChangedChoice> => {
+      const { response } = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options);
+
+      if (response === 0) return "reload";
+      if (response === 1) return "overwrite";
+      return "cancel";
+    };
+
+    return doShow();
+  });
 };

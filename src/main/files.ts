@@ -1,12 +1,16 @@
 import { Buffer } from "node:buffer";
 import { Dirent, Stats } from "node:fs";
-import { readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { MAX_FILE_CONTENT_BYTES, type FileEntry } from "@shared/ipc";
+import { FILE_NOT_FOUND_MESSAGE, MAX_FILE_CONTENT_BYTES, type FileEntry } from "@shared/ipc";
 
 import { getDrawings } from "./drawings";
 import { assertSceneJson } from "./scene";
+
+export type FsMutationHooks = {
+  beforeMutate?: (absPaths: string[]) => void;
+};
 
 const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
 
@@ -124,9 +128,11 @@ const assertContentSize = (content: string) => {
   }
 };
 
-const atomicWriteFile = async (absPath: string, data: string) => {
+const atomicWriteFile = async (absPath: string, data: string, hooks?: FsMutationHooks) => {
   const dir = path.dirname(absPath);
   const tmp = path.join(dir, `.${path.basename(absPath)}.${process.pid}.${Date.now()}.tmp`);
+
+  hooks?.beforeMutate?.([absPath, tmp]);
 
   try {
     await writeFile(tmp, data, "utf8");
@@ -148,7 +154,6 @@ export const readSceneFile = async (id: string) => {
 
   const stats = await stat(absPath);
   if (stats.isDirectory()) throw new Error("Cannot read a directory as a scene");
-
   if (stats.size > MAX_FILE_CONTENT_BYTES) throw new Error("File is too large to load");
 
   const content = await readFile(absPath, "utf8");
@@ -156,7 +161,12 @@ export const readSceneFile = async (id: string) => {
   return content;
 };
 
-export const writeSceneFile = async (id: string, content: string) => {
+const ensureNotDirectory = async (absPath: string) => {
+  const existing = await stat(absPath).catch(() => null);
+  if (existing?.isDirectory()) throw new Error("Cannot write over a directory");
+};
+
+export const writeSceneFile = async (id: string, content: string, hooks?: FsMutationHooks) => {
   if (typeof content !== "string") throw new Error("Content must be a string");
 
   assertContentSize(content);
@@ -169,13 +179,38 @@ export const writeSceneFile = async (id: string, content: string) => {
   }
 
   const existing = await stat(absPath).catch(() => null);
-  if (!existing) throw new Error("File not found");
+  if (!existing) throw new Error(FILE_NOT_FOUND_MESSAGE);
   if (existing.isDirectory()) throw new Error("Cannot write over a directory");
 
-  await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`);
+  await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);
 };
 
-export const renameEntry = async (id: string, newName: string): Promise<FileEntry> => {
+export const writeSceneFileRecover = async (
+  id: string,
+  content: string,
+  hooks?: FsMutationHooks,
+) => {
+  if (typeof content !== "string") throw new Error("Content must be a string");
+
+  assertContentSize(content);
+  assertSceneJson(content);
+
+  const { absPath } = await resolveInsideRoot(id);
+
+  if (!isExcalidrawFileName(path.basename(id))) {
+    throw new Error("Only .excalidraw files can be written");
+  }
+
+  await mkdir(path.dirname(absPath), { recursive: true });
+  await ensureNotDirectory(absPath);
+  await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);
+};
+
+export const renameEntry = async (
+  id: string,
+  newName: string,
+  hooks?: FsMutationHooks,
+): Promise<FileEntry> => {
   const { root, absPath } = await resolveInsideRoot(id);
 
   const stats = await stat(absPath);
@@ -203,11 +238,12 @@ export const renameEntry = async (id: string, newName: string): Promise<FileEntr
   const exists = await stat(nextAbs).catch(() => null);
   if (exists) throw new Error("A file with that name already exists");
 
+  hooks?.beforeMutate?.([absPath, nextAbs]);
   await rename(absPath, nextAbs);
   return entryFromAbs(root, nextAbs, "file");
 };
 
-export const deleteEntry = async (id: string) => {
+export const deleteEntry = async (id: string, hooks?: FsMutationHooks) => {
   const { root, absPath } = await resolveInsideRoot(id);
 
   if (absPath === root) throw new Error("Cannot delete drawings root");
@@ -219,11 +255,23 @@ export const deleteEntry = async (id: string) => {
     throw new Error("Only .excalidraw files can be deleted");
   }
 
+  hooks?.beforeMutate?.([absPath]);
   await rm(absPath, { force: false });
 };
 
-export const listEntries = async (): Promise<FileEntry[]> => {
+export const listEntries = async (root?: string): Promise<FileEntry[]> => {
   const info = await getDrawings();
   if (!info.configured || !info.path) return [];
-  return walkEntries(path.resolve(info.path));
+
+  const configured = path.resolve(info.path);
+  if (root) {
+    const resolved = path.resolve(root);
+    // Watcher may pass its root explicitly — only the configured drawings root is allowed.
+    if (resolved !== configured) {
+      throw new Error("Path escapes drawings root");
+    }
+    return walkEntries(resolved);
+  }
+
+  return walkEntries(configured);
 };

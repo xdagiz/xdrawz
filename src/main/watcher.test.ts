@@ -1,0 +1,446 @@
+import type { DrawingInfo, FileEntry } from "@shared/ipc";
+import type { FSWatcher } from "chokidar";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+import { createDrawingsWatcher, type WatcherDeps } from "./watcher";
+
+type ChokidarListener = (...args: unknown[]) => void;
+
+function createFakeWatcher(): FSWatcher & {
+  _emit: (event: string, path: string) => void;
+  _error: (err: unknown) => void;
+} {
+  const listeners = new Map<string, Set<ChokidarListener>>();
+
+  const on = (event: string, listener: ChokidarListener): FSWatcher => {
+    if (!listeners.has(event)) listeners.set(event, new Set());
+    listeners.get(event)!.add(listener);
+    return instance;
+  };
+
+  const close = async (): Promise<void> => listeners.clear();
+
+  const instance: FSWatcher & {
+    _emit: (...args: unknown[]) => void;
+    _error: (err: unknown) => void;
+  } = {
+    on,
+    close,
+    _emit: (event: string, p: string) => {
+      const allListeners = listeners.get("all");
+      if (allListeners) {
+        for (const cb of allListeners) cb(event, p);
+      }
+    },
+    _error: (err: unknown) => {
+      const errListeners = listeners.get("error");
+      if (errListeners) {
+        for (const cb of errListeners) cb(err);
+      }
+    },
+    add: vi.fn(),
+    unwatch: vi.fn(),
+    getWatched: vi.fn().mockReturnValue({}),
+  } as unknown as FSWatcher & {
+    _emit: (...args: unknown[]) => void;
+    _error: (err: unknown) => void;
+  };
+
+  return instance;
+}
+
+const info: DrawingInfo = {
+  path: "/home/user/drawings",
+  displayName: "drawings",
+  configured: true,
+  missing: false,
+};
+
+const makeEntry = (id: string, overrides: Partial<FileEntry> = {}): FileEntry => ({
+  id,
+  name: id.split("/").pop() ?? id,
+  kind: "file",
+  parentId: null,
+  modifiedAt: 100,
+  size: 100,
+  ...overrides,
+});
+
+const mockEntries: FileEntry[] = [
+  makeEntry("drawing1.excalidraw"),
+  makeEntry("drawing2.excalidraw"),
+  makeEntry("folder/drawing3.excalidraw", { parentId: "folder" }),
+];
+
+async function tick(ms: number): Promise<void> {
+  vi.advanceTimersByTime(ms);
+  await vi.waitFor(() => Promise.resolve());
+}
+
+function setupWatcher(opts?: {
+  fakeWatch?: () => ReturnType<typeof createFakeWatcher>;
+  coalesceMs?: number;
+  defaultIgnoreTtlMs?: number;
+  overrideDeps?: Partial<WatcherDeps>;
+}) {
+  const onChange = vi.fn();
+  const onRootInvalid = vi.fn();
+  const onError = vi.fn();
+
+  const fakeWatcher = opts?.fakeWatch?.() ?? createFakeWatcher();
+
+  const deps: WatcherDeps = {
+    listEntries: vi.fn().mockResolvedValue(mockEntries),
+    getDrawings: vi.fn().mockResolvedValue(info),
+    watch: opts?.fakeWatch
+      ? (() => {
+          const fw = fakeWatcher;
+          return () => fw;
+        })()
+      : ((() => fakeWatcher) as unknown as typeof import("chokidar").watch),
+    now: () => Date.now(),
+    coalesceMs: opts?.coalesceMs ?? 50, // faster for tests
+    defaultIgnoreTtlMs: opts?.defaultIgnoreTtlMs ?? 200,
+    ...opts?.overrideDeps,
+  };
+
+  const watcher = createDrawingsWatcher({ onChange, onRootInvalid, onError }, deps);
+  return { watcher, fakeWatcher, onChange, onRootInvalid, onError, deps };
+}
+
+describe("createDrawingsWatcher", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("starts watching and sets root", async () => {
+    const { watcher } = setupWatcher();
+
+    expect(watcher.isWatching()).toBe(false);
+    expect(watcher.getRoot()).toBeNull();
+    expect(watcher.getRevision()).toBe(0);
+
+    await watcher.start("/home/user/drawings");
+
+    expect(watcher.isWatching()).toBe(true);
+    expect(watcher.getRoot()).toBe("/home/user/drawings");
+    expect(watcher.getRevision()).toBe(0);
+  });
+
+  it("stop() clears state and invokes no more callbacks", async () => {
+    const { watcher } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    expect(watcher.isWatching()).toBe(true);
+
+    await watcher.stop();
+    expect(watcher.isWatching()).toBe(false);
+    expect(watcher.getRoot()).toBeNull();
+  });
+
+  it("restart(null) stops without starting new", async () => {
+    const { watcher } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    await watcher.restart(null);
+
+    expect(watcher.isWatching()).toBe(false);
+    expect(watcher.getRoot()).toBeNull();
+  });
+
+  it("restart(path) stops old and starts new", async () => {
+    const { watcher } = setupWatcher();
+
+    await watcher.start("/home/user/old");
+    await watcher.restart("/home/user/new");
+
+    expect(watcher.isWatching()).toBe(true);
+    expect(watcher.getRoot()).toBe("/home/user/new");
+  });
+
+  it("start with same root is a no-op", async () => {
+    const { watcher } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    const rev1 = watcher.getRevision();
+
+    await watcher.start("/home/user/drawings");
+    expect(watcher.getRevision()).toBe(rev1);
+  });
+
+  it("emits onChange after coalesce timer fires", async () => {
+    const { watcher, fakeWatcher, onChange, deps } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    expect(onChange).not.toHaveBeenCalled();
+
+    fakeWatcher._emit("change", "/home/user/drawings/drawing1.excalidraw");
+
+    // Timer not yet fired.
+    expect(onChange).not.toHaveBeenCalled();
+
+    // Advance past coalesce window.
+    await tick(60);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(deps.listEntries).toHaveBeenCalledOnce();
+    const payload = onChange.mock.calls[0][0];
+    expect(payload.entries).toEqual(mockEntries);
+    expect(payload.revision).toBe(1);
+    expect(payload.root).toBe("/home/user/drawings");
+    expect(payload.info).toEqual(info);
+  });
+
+  it("coalesces multiple events within the window", async () => {
+    const { watcher, fakeWatcher, onChange, deps } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+
+    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    fakeWatcher._emit("unlink", "/home/user/drawings/c.excalidraw");
+
+    await tick(60);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(deps.listEntries).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-emits when new events arrive during a pending re-list", async () => {
+    vi.useRealTimers();
+
+    const { watcher, fakeWatcher, onChange, deps } = setupWatcher({
+      coalesceMs: 10,
+    });
+
+    const listSpy = deps.listEntries as ReturnType<typeof vi.fn>;
+
+    let resolveFirst!: (v: FileEntry[]) => void;
+    let firstCalled = false;
+
+    listSpy.mockImplementation((_root: string) => {
+      if (!firstCalled) {
+        firstCalled = true;
+        return new Promise<FileEntry[]>((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve(mockEntries);
+    });
+
+    await watcher.start("/home/user/drawings");
+
+    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    await new Promise((r) => setTimeout(r, 20));
+
+    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    resolveFirst(mockEntries);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onChange).toHaveBeenCalledTimes(2);
+
+    vi.useFakeTimers();
+  });
+
+  it("drops events for ignored paths", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    watcher.ignorePath("/home/user/drawings/ignore-me.excalidraw");
+    fakeWatcher._emit("change", "/home/user/drawings/ignore-me.excalidraw");
+    await tick(60);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("ignored path expires after TTL", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher({
+      defaultIgnoreTtlMs: 100,
+    });
+
+    await watcher.start("/home/user/drawings");
+    watcher.ignorePath("/home/user/drawings/temp.excalidraw");
+    fakeWatcher._emit("change", "/home/user/drawings/temp.excalidraw");
+
+    await tick(60);
+    expect(onChange).not.toHaveBeenCalled();
+
+    await tick(200);
+    fakeWatcher._emit("change", "/home/user/drawings/temp.excalidraw");
+
+    await tick(60);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignorePaths suppresses multiple paths", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+
+    watcher.ignorePaths(["/home/user/drawings/a.excalidraw", "/home/user/drawings/b.excalidraw"]);
+
+    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    fakeWatcher._emit("change", "/home/user/drawings/c.excalidraw");
+
+    await tick(60);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops dotfile events", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+
+    fakeWatcher._emit("change", "/home/user/drawings/.hidden.excalidraw");
+    fakeWatcher._emit("add", "/home/user/drawings/.DS_Store");
+
+    await tick(60);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("drops non-excalidraw file events", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+
+    fakeWatcher._emit("change", "/home/user/drawings/readme.txt");
+    fakeWatcher._emit("add", "/home/user/drawings/config.json");
+
+    await tick(60);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("filters case-insensitively for .excalidraw extension", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    fakeWatcher._emit("change", "/home/user/drawings/Drawing.EXCALIDRAW");
+    await tick(60);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts directory add/unlink events", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+
+    fakeWatcher._emit("addDir", "/home/user/drawings/new-folder");
+    await tick(60);
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    fakeWatcher._emit("unlinkDir", "/home/user/drawings/new-folder");
+    await tick(60);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("increments revision on each refresh", async () => {
+    const { watcher, fakeWatcher } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    expect(watcher.getRevision()).toBe(0);
+
+    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    await tick(60);
+    expect(watcher.getRevision()).toBe(1);
+
+    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    await tick(60);
+    expect(watcher.getRevision()).toBe(2);
+  });
+
+  it("keeps revision monotonic across restart", async () => {
+    const { watcher, fakeWatcher } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    await tick(60);
+    expect(watcher.getRevision()).toBe(1);
+
+    await watcher.restart("/home/user/other");
+    expect(watcher.getRevision()).toBe(1);
+
+    fakeWatcher._emit("change", "/home/user/other/b.excalidraw");
+    await tick(60);
+    expect(watcher.getRevision()).toBe(2);
+  });
+
+  it("refreshNow immediately triggers onChange", async () => {
+    const { watcher, onChange, deps } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+    await watcher.refreshNow();
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(deps.listEntries).toHaveBeenCalledOnce();
+  });
+
+  it("calls onRootInvalid with 'missing' when stat returns ENOENT", async () => {
+    const enoentErr = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    const statMock = vi.fn().mockRejectedValue(enoentErr);
+    const { watcher, fakeWatcher, onRootInvalid } = setupWatcher({
+      overrideDeps: { statFn: statMock },
+    });
+
+    await watcher.start("/home/user/drawings");
+    fakeWatcher._error(new Error("watch error EACCES"));
+
+    await vi.waitFor(() => Promise.resolve());
+
+    expect(onRootInvalid).toHaveBeenCalledWith("missing", 1);
+    expect(watcher.getRevision()).toBe(1);
+    expect(watcher.isWatching()).toBe(false);
+  });
+
+  it("keeps watching on non-ENOENT stat errors (transient access failures)", async () => {
+    const eaccesErr = Object.assign(new Error("EACCES"), { code: "EACCES" });
+    const statMock = vi.fn().mockRejectedValue(eaccesErr);
+    const { watcher, fakeWatcher, onRootInvalid, onError } = setupWatcher({
+      overrideDeps: { statFn: statMock },
+    });
+
+    await watcher.start("/home/user/drawings");
+    fakeWatcher._error(new Error("watch error EACCES"));
+
+    await vi.waitFor(() => Promise.resolve());
+
+    expect(onError).toHaveBeenCalled();
+    expect(onRootInvalid).not.toHaveBeenCalled();
+    expect(watcher.isWatching()).toBe(true);
+  });
+
+  it("calls onRootInvalid with 'not-directory' when root is a file", async () => {
+    const statMock = vi.fn().mockResolvedValue({ isDirectory: () => false });
+    const { watcher, fakeWatcher, onRootInvalid } = setupWatcher({
+      overrideDeps: { statFn: statMock },
+    });
+
+    await watcher.start("/home/user/drawings");
+    fakeWatcher._error(new Error("watch error"));
+
+    await vi.waitFor(() => Promise.resolve());
+
+    expect(onRootInvalid).toHaveBeenCalledWith("not-directory", 1);
+    expect(watcher.getRevision()).toBe(1);
+    expect(watcher.isWatching()).toBe(false);
+  });
+
+  it("calls onError for chokidar errors", async () => {
+    const { watcher, fakeWatcher, onError } = setupWatcher();
+
+    await watcher.start("/home/user/drawings");
+
+    const testError = new Error("test error");
+    fakeWatcher._error(testError);
+
+    await vi.waitFor(() => Promise.resolve());
+    expect(onError).toHaveBeenCalledWith(testError);
+  });
+});
