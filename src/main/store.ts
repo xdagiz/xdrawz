@@ -1,10 +1,20 @@
-import { StoreType } from "@shared/ipc";
+import { DEFAULT_THEME, StoreType } from "@shared/ipc";
 import Store from "electron-store";
 
 export const store = new Store<StoreType>({
   name: "settings",
-  defaults: {
-    drawingsPath: undefined,
+  schema: {
+    drawingsPath: {
+      type: ["string", "null"],
+    },
+    lastOpenedFileId: {
+      type: ["string", "null"],
+    },
+    theme: {
+      type: "string",
+      enum: ["light", "dark", "system"],
+      default: DEFAULT_THEME,
+    },
   },
 });
 

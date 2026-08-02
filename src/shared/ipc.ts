@@ -47,6 +47,7 @@ export const FILE_NOT_FOUND_MESSAGE = "File not found";
 export type StoreType = {
   drawingsPath?: string;
   lastOpenedFileId?: string | null;
+  theme?: ThemePreference;
 };
 
 export type FilesChangedEvent = {
@@ -62,3 +63,18 @@ export type ExternalConflict =
   | null;
 
 export type StoreKey = keyof StoreType;
+
+export type ThemePreference = "light" | "dark" | "system";
+
+export const THEME_PREFERENCES: readonly ThemePreference[] = ["light", "dark", "system"];
+
+export type AppSettings = {
+  theme: ThemePreference;
+};
+
+export type SettingsUpdate = Partial<Pick<AppSettings, "theme">>;
+
+export const DEFAULT_THEME: ThemePreference = "system";
+export const DEFAULT_SETTINGS: AppSettings = {
+  theme: DEFAULT_THEME,
+};

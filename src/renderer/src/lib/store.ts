@@ -1,12 +1,14 @@
 import type {
+  AppSettings,
   DrawingInfo,
   DrawingsSnapshot,
   ExternalConflict,
   FileEntry,
   FilesChangedEvent,
+  SettingsUpdate,
   UnsavedReason,
 } from "@shared/ipc";
-import { FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
+import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { create } from "zustand";
 
 import type { SceneSessionControls } from "@/lib/scene-session";
@@ -48,6 +50,7 @@ type State = {
   filesRevision: number;
   externalConflict: ExternalConflict;
   editorEpoch: number;
+  settings: AppSettings;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
@@ -63,6 +66,8 @@ type State = {
   registerSession: (session: SceneSessionControls) => void;
   unregisterSession: (session: SceneSessionControls) => void;
   ensureCleanOrConfirm: (reason?: UnsavedReason) => Promise<boolean>;
+  initSettings: () => Promise<void>;
+  updateSettings: (updated: SettingsUpdate) => Promise<void>;
 };
 
 export const useStore = create<State>((set, get) => ({
@@ -75,6 +80,10 @@ export const useStore = create<State>((set, get) => ({
   filesRevision: 0,
   externalConflict: null,
   editorEpoch: 0,
+  settings:
+    typeof window !== "undefined" && window.api?.settings?.getBoot
+      ? window.api.settings.getBoot()
+      : DEFAULT_SETTINGS,
 
   loadSnapshot: (snapshot) =>
     set((state) => ({
@@ -400,5 +409,23 @@ export const useStore = create<State>((set, get) => ({
     }
 
     return session.ensureCleanOrConfirm(reason, window.api.dialog.unsavedChanges);
+  },
+
+  initSettings: async () => {
+    try {
+      const settings = await window.api.settings.get();
+      set({ settings });
+    } catch (error) {
+      console.error("failed to load settings:", error);
+    }
+  },
+
+  updateSettings: async (updated) => {
+    try {
+      const settings = await window.api.settings.update(updated);
+      set({ settings });
+    } catch (error) {
+      console.error("failed to update settings:", error);
+    }
   },
 }));

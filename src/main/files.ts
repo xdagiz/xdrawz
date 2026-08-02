@@ -266,10 +266,10 @@ export const listEntries = async (root?: string): Promise<FileEntry[]> => {
   const configured = path.resolve(info.path);
   if (root) {
     const resolved = path.resolve(root);
-    // Watcher may pass its root explicitly — only the configured drawings root is allowed.
     if (resolved !== configured) {
       throw new Error("Path escapes drawings root");
     }
+
     return walkEntries(resolved);
   }
 

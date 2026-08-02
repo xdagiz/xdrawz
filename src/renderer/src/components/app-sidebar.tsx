@@ -1,9 +1,12 @@
+import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { ArrowLeftIcon, SettingsIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -15,6 +18,8 @@ import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 
 const AppSidebar = () => {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const entries = useStore((s) => s.entries);
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
@@ -22,6 +27,7 @@ const AppSidebar = () => {
   const renameFile = useStore((s) => s.renameFile);
   const deleteFile = useStore((s) => s.deleteFile);
   const files = entries.filter((entry) => entry.kind === "file");
+  const isSettingsRoute = pathname === "/settings";
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
@@ -72,6 +78,18 @@ const AppSidebar = () => {
     [renameFile],
   );
 
+  const openDrawing = useCallback(
+    async (fileId: string) => {
+      if (fileId !== useStore.getState().openFileId) {
+        await setOpenFileId(fileId);
+        if (useStore.getState().openFileId !== fileId) return;
+      }
+
+      if (pathname !== "/") await navigate({ to: "/" });
+    },
+    [setOpenFileId, pathname, navigate],
+  );
+
   return (
     <Sidebar side="left">
       <SidebarContent>
@@ -89,9 +107,9 @@ const AppSidebar = () => {
                     />
                   ) : (
                     <SidebarMenuButton
-                      isActive={file.id === openFileId}
+                      isActive={!isSettingsRoute && file.id === openFileId}
                       tooltip={file.id}
-                      onClick={() => void setOpenFileId(file.id)}
+                      onClick={() => void openDrawing(file.id)}
                       onContextMenu={(e) => handleContextMenu(e, file.id)}
                       data-dirty={dirtyById[file.id] ? "true" : undefined}
                       className="data-[dirty=true]:after:bg-primary relative pr-6 data-[dirty=true]:after:absolute data-[dirty=true]:after:top-1/2 data-[dirty=true]:after:right-2 data-[dirty=true]:after:size-1.5 data-[dirty=true]:after:-translate-y-1/2 data-[dirty=true]:after:rounded-full data-[dirty=true]:after:content-['']"
@@ -113,6 +131,22 @@ const AppSidebar = () => {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenuItem>
+          {isSettingsRoute ? (
+            <SidebarMenuButton onClick={() => void navigate({ to: "/" })}>
+              <ArrowLeftIcon />
+              Back
+            </SidebarMenuButton>
+          ) : (
+            <SidebarMenuButton onClick={() => void navigate({ to: "/settings" })}>
+              <SettingsIcon />
+              Settings
+            </SidebarMenuButton>
+          )}
+        </SidebarMenuItem>
+      </SidebarFooter>
     </Sidebar>
   );
 };

@@ -13,6 +13,9 @@ import {
   FILES_RENAME,
   FILES_WRITE,
   FILES_WRITE_RECOVER,
+  SETTINGS_GET,
+  SETTINGS_GET_SYNC,
+  SETTINGS_SET,
   STORE_CLEAR,
   STORE_DELETE,
   STORE_GET,
@@ -20,10 +23,25 @@ import {
   WINDOW_CLOSE,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
-import type { FilesChangedEvent } from "@shared/ipc";
+import { DEFAULT_SETTINGS, type AppSettings, type FilesChangedEvent } from "@shared/ipc";
+import { schedulePreferenceToDocument } from "@shared/theme";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
+
+const readBootSettings = (): AppSettings => {
+  try {
+    const value = ipcRenderer.sendSync(SETTINGS_GET_SYNC);
+    if (value && typeof value === "object" && value.theme) return value;
+  } catch (error) {
+    console.error("Failed to read boot settings:", error);
+  }
+
+  return DEFAULT_SETTINGS;
+};
+
+const bootSettings = readBootSettings();
+schedulePreferenceToDocument(bootSettings.theme);
 
 const api: NativeApi = {
   drawings: {
@@ -53,6 +71,11 @@ const api: NativeApi = {
     set: (key, value) => ipcRenderer.invoke(STORE_SET, key, value),
     delete: (key) => ipcRenderer.invoke(STORE_DELETE, key),
     clear: () => ipcRenderer.invoke(STORE_CLEAR),
+  },
+  settings: {
+    getBoot: () => bootSettings,
+    get: () => ipcRenderer.invoke(SETTINGS_GET),
+    update: (updates) => ipcRenderer.invoke(SETTINGS_SET, updates),
   },
   contextMenu: {
     show: (items, x, y) => ipcRenderer.invoke(CONTEXT_MENU_SHOW, { items, x, y }),

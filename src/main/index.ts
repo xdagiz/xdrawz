@@ -3,7 +3,7 @@ import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { FILES_CHANGED } from "@shared/channels";
 import type { FilesChangedEvent } from "@shared/ipc";
-import { app, shell, BrowserWindow, Menu } from "electron";
+import { app, shell, nativeTheme, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
 import { destroyWindow, installCloseGuard } from "./close-guard";
@@ -18,6 +18,13 @@ import {
   type FsMutationHooks,
 } from "./files";
 import { registerIpcHandlers } from "./ipc";
+import {
+  applyTheme,
+  getSettings,
+  setSettings,
+  windowBgColor,
+  applyWindowBgColor,
+} from "./settings";
 import { getLastOpenedFileId } from "./store";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 
@@ -102,6 +109,7 @@ function createMainWindow() {
     width: 1200,
     height: 800,
     show: false,
+    backgroundColor: windowBgColor(),
     ...(process.platform === "linux" ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -138,6 +146,7 @@ function createGreetingWindow() {
     resizable: false,
     center: true,
     show: false,
+    backgroundColor: windowBgColor(),
     ...(process.platform === "linux" ? { type: "splash" } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -167,6 +176,9 @@ function createGreetingWindow() {
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.xdrawz");
+
+  applyTheme();
+  nativeTheme.on("updated", applyWindowBgColor);
 
   app.on("browser-window-created", (_, window) => optimizer.watchWindowShortcuts(window));
 
@@ -199,6 +211,8 @@ app.whenReady().then(async () => {
     deleteEntry: deleteEntryWatched,
     writeSceneFileRecover: writeSceneFileRecoverWatched,
     destroyWindow,
+    getSettings,
+    updateSettings: setSettings,
     pickDrawings: async (parentWindow) => {
       const info = await pickDrawings(parentWindow);
       if (info) {

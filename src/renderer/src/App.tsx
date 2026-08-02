@@ -1,18 +1,20 @@
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { CSSProperties, useEffect, useRef } from "react";
 
 import { useStore } from "@/lib/store";
 
 import AppSidebar from "./components/app-sidebar";
-import { ExcalidrawEditor } from "./components/excalidraw-editor";
+import { EditorView } from "./components/editor-view";
+import { ThemeProvider } from "./components/theme-provider";
 import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
 
 const App = () => {
-  const openFileId = useStore((s) => s.openFileId);
   const error = useStore((s) => s.error);
-  const editorEpoch = useStore((s) => s.editorEpoch);
   const externalConflict = useStore((s) => s.externalConflict);
   const loadSnapshot = useStore((s) => s.loadSnapshot);
   const ensureCleanOrConfirm = useStore((s) => s.ensureCleanOrConfirm);
+  const themePreference = useStore((s) => s.settings.theme);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const conflictPromptRef = useRef<string | null>(null);
 
@@ -84,33 +86,34 @@ const App = () => {
   }, [externalConflict]);
 
   return (
-    <SidebarProvider
-      defaultOpen
-      className="h-svh! min-h-svh overflow-hidden"
-      style={
-        {
-          "--sidebar-width": "16rem",
-        } as CSSProperties
-      }
-    >
-      <AppSidebar />
-      <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
-        {error && (
-          <div className="bg-destructive/10 text-destructive border-b px-3 py-1.5 text-xs">
-            {error}
-          </div>
-        )}
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          {openFileId ? (
-            <ExcalidrawEditor key={`${openFileId}:${editorEpoch}`} fileId={openFileId} />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <p className="text-muted-foreground text-sm">No file selected</p>
+    <ThemeProvider preference={themePreference}>
+      <SidebarProvider
+        defaultOpen
+        className="h-svh! min-h-svh overflow-hidden"
+        style={
+          {
+            "--sidebar-width": "16rem",
+          } as CSSProperties
+        }
+      >
+        <AppSidebar />
+        <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
+          {error && (
+            <div className="bg-destructive/10 text-destructive border-b px-3 py-1.5 text-xs">
+              {error}
             </div>
           )}
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <EditorView />
+            {pathname === "/settings" && (
+              <div className="bg-sidebar absolute inset-0 z-10 overflow-y-auto">
+                <Outlet />
+              </div>
+            )}
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </ThemeProvider>
   );
 };
 

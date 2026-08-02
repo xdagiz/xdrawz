@@ -1,4 +1,5 @@
 import type {
+  AppSettings,
   ContextMenuItem,
   DrawingInfo,
   DrawingsSnapshot,
@@ -6,6 +7,7 @@ import type {
   FileEntry,
   FileRecoverChoice,
   FilesChangedEvent,
+  SettingsUpdate,
   StoreKey,
   UnsavedChoice,
   UnsavedReason,
@@ -31,6 +33,11 @@ export interface NativeApi {
     set: (key: StoreKey, value: string | null) => Promise<void>;
     delete: (key: StoreKey) => Promise<void>;
     clear: () => Promise<void>;
+  };
+  settings: {
+    getBoot: () => AppSettings;
+    get: () => Promise<AppSettings>;
+    update: (updated: SettingsUpdate) => Promise<AppSettings>;
   };
   contextMenu: {
     show: (items: ContextMenuItem[], x: number, y: number) => Promise<string | null>;

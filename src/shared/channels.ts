@@ -18,3 +18,6 @@ export const STORE_GET = "store:get";
 export const STORE_SET = "store:set";
 export const STORE_DELETE = "store:delete";
 export const STORE_CLEAR = "store:clear";
+export const SETTINGS_GET = "settings:get";
+export const SETTINGS_SET = "settings:set";
+export const SETTINGS_GET_SYNC = "settings:get-sync";

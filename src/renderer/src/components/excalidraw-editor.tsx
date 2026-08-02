@@ -9,6 +9,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
+import { useTheme } from "@/hooks/use-theme";
 import { createSceneSession, type SceneSessionControls } from "@/lib/scene-session";
 import { useStore } from "@/lib/store";
 
@@ -55,6 +56,7 @@ type Props = {
 };
 
 export const ExcalidrawEditor = ({ fileId }: Props) => {
+  const theme = useTheme();
   const saveFile = useStore((s) => s.saveFile);
   const setFileDirty = useStore((s) => s.setFileDirty);
   const registerSession = useStore((s) => s.registerSession);
@@ -107,7 +109,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden">
       <Excalidraw
-        theme="dark"
+        theme={theme}
         initialData={initialData}
         onChange={handleChange}
         UIOptions={{
