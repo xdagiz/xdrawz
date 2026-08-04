@@ -180,7 +180,29 @@ app.whenReady().then(async () => {
   applyTheme();
   nativeTheme.on("updated", applyWindowBgColor);
 
-  app.on("browser-window-created", (_, window) => optimizer.watchWindowShortcuts(window));
+  app.on("browser-window-created", (_, win) => {
+    optimizer.watchWindowShortcuts(win);
+    win.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return;
+      if (!(input.control || input.meta)) return;
+
+      const zoomIn = input.code === "Equal" || input.code === "NumpadAdd";
+      const zoomOut = input.code === "Minus" || input.code === "NumpadSubtract";
+      const zoomReset = input.code === "Digit0" || input.code === "Numpad0";
+
+      if (!zoomIn && !zoomOut && !zoomReset) return;
+      event.preventDefault();
+
+      const level = win.webContents.getZoomLevel();
+      if (zoomIn) {
+        win.webContents.setZoomLevel(level + 0.5);
+      } else if (zoomOut) {
+        win.webContents.setZoomLevel(level - 0.5);
+      } else {
+        win.webContents.setZoomLevel(0);
+      }
+    });
+  });
 
   if (process.platform !== "darwin") {
     Menu.setApplicationMenu(null);
