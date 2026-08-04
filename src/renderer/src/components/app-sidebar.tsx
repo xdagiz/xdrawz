@@ -2,6 +2,16 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { ArrowLeftIcon, SettingsIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import {
   Sidebar,
@@ -30,6 +40,19 @@ const AppSidebar = () => {
   const isSettingsRoute = pathname === "/settings";
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+
+    try {
+      await deleteFile(deleteTarget.id);
+    } catch (error) {
+      console.error("delete failed:", error);
+    } finally {
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget, deleteFile]);
 
   const handleContextMenu = useCallback(
     async (event: React.MouseEvent, fileId: string) => {
@@ -51,18 +74,12 @@ const AppSidebar = () => {
         case "delete": {
           const entry = entries.find((e) => e.id === fileId);
           const name = entry ? stripExcalidraw(entry.name) : fileId;
-          if (window.confirm(`Delete "${name}"? This cannot be undone.`)) {
-            try {
-              await deleteFile(fileId);
-            } catch (error) {
-              console.error("Delete failed:", error);
-            }
-          }
+          setDeleteTarget({ id: fileId, name });
           break;
         }
       }
     },
-    [entries, deleteFile],
+    [entries],
   );
 
   const handleRename = useCallback(
@@ -91,63 +108,83 @@ const AppSidebar = () => {
   );
 
   return (
-    <Sidebar side="left">
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Drawings</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {files.map((file) => (
-                <SidebarMenuItem key={file.id}>
-                  {renamingId === file.id ? (
-                    <RenameInput
-                      initial={stripExcalidraw(file.name)}
-                      onCommit={(v) => handleRename(file.id, v)}
-                      onCancel={() => setRenamingId(null)}
-                    />
-                  ) : (
-                    <SidebarMenuButton
-                      isActive={!isSettingsRoute && file.id === openFileId}
-                      tooltip={file.id}
-                      onClick={() => void openDrawing(file.id)}
-                      onContextMenu={(e) => handleContextMenu(e, file.id)}
-                      data-dirty={dirtyById[file.id] ? "true" : undefined}
-                      className="data-[dirty=true]:after:bg-primary relative pr-6 data-[dirty=true]:after:absolute data-[dirty=true]:after:top-1/2 data-[dirty=true]:after:right-2 data-[dirty=true]:after:size-1.5 data-[dirty=true]:after:-translate-y-1/2 data-[dirty=true]:after:rounded-full data-[dirty=true]:after:content-['']"
-                    >
-                      <span className="truncate">{stripExcalidraw(file.name)}</span>
+    <>
+      <Sidebar side="left">
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Drawings</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {files.map((file) => (
+                  <SidebarMenuItem key={file.id}>
+                    {renamingId === file.id ? (
+                      <RenameInput
+                        initial={stripExcalidraw(file.name)}
+                        onCommit={(v) => handleRename(file.id, v)}
+                        onCancel={() => setRenamingId(null)}
+                      />
+                    ) : (
+                      <SidebarMenuButton
+                        isActive={!isSettingsRoute && file.id === openFileId}
+                        tooltip={file.id}
+                        onClick={() => void openDrawing(file.id)}
+                        onContextMenu={(e) => handleContextMenu(e, file.id)}
+                        data-dirty={dirtyById[file.id] ? "true" : undefined}
+                        className="data-[dirty=true]:after:bg-primary relative pr-6 data-[dirty=true]:after:absolute data-[dirty=true]:after:top-1/2 data-[dirty=true]:after:right-2 data-[dirty=true]:after:size-1.5 data-[dirty=true]:after:-translate-y-1/2 data-[dirty=true]:after:rounded-full data-[dirty=true]:after:content-['']"
+                      >
+                        <span className="truncate">{stripExcalidraw(file.name)}</span>
+                      </SidebarMenuButton>
+                    )}
+                  </SidebarMenuItem>
+                ))}
+
+                {files.length === 0 && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton disabled>
+                      <span>No drawings</span>
                     </SidebarMenuButton>
-                  )}
-                </SidebarMenuItem>
-              ))}
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
 
-              {files.length === 0 && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton disabled>
-                    <span>No drawings</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenuItem>
+            {isSettingsRoute ? (
+              <SidebarMenuButton onClick={() => void navigate({ to: "/" })}>
+                <ArrowLeftIcon />
+                Back
+              </SidebarMenuButton>
+            ) : (
+              <SidebarMenuButton onClick={() => void navigate({ to: "/settings" })}>
+                <SettingsIcon />
+                Settings
+              </SidebarMenuButton>
+            )}
+          </SidebarMenuItem>
+        </SidebarFooter>
+      </Sidebar>
 
-      <SidebarFooter>
-        <SidebarMenuItem>
-          {isSettingsRoute ? (
-            <SidebarMenuButton onClick={() => void navigate({ to: "/" })}>
-              <ArrowLeftIcon />
-              Back
-            </SidebarMenuButton>
-          ) : (
-            <SidebarMenuButton onClick={() => void navigate({ to: "/settings" })}>
-              <SettingsIcon />
-              Settings
-            </SidebarMenuButton>
-          )}
-        </SidebarMenuItem>
-      </SidebarFooter>
-    </Sidebar>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &quot;{deleteTarget?.name}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel variant="outline">Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void handleDeleteConfirm()}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 
@@ -200,7 +237,7 @@ const RenameInput = ({
         }
       }}
       onBlur={() => finish("commit")}
-      className="h-7 text-xs"
+      className="h-8 text-xs"
     />
   );
 };
