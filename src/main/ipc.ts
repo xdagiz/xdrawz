@@ -59,6 +59,27 @@ const windowFromEvent = (event: Electron.IpcMainInvokeEvent): BrowserWindow | nu
   return win;
 };
 
+export const normalizeContextMenuPos = (
+  x: number,
+  y: number,
+  zoomFactor: number,
+): { x: number; y: number } | null => {
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(zoomFactor) ||
+    x < 0 ||
+    y < 0
+  ) {
+    return null;
+  }
+
+  return {
+    x: Math.floor(x * zoomFactor),
+    y: Math.floor(y * zoomFactor),
+  };
+};
+
 export const registerIpcHandlers = (deps: Deps): void => {
   ipcMain.handle(DRAWINGS_GET, () => deps.getDrawings());
   ipcMain.handle(DRAWINGS_LOAD, () => deps.loadDrawings());
@@ -102,10 +123,12 @@ export const registerIpcHandlers = (deps: Deps): void => {
       }));
 
       const menu = Menu.buildFromTemplate(template);
+      const zoomFactor = win.webContents.getZoomFactor();
+      const position = normalizeContextMenuPos(request.x, request.y, zoomFactor);
+
       menu.popup({
         window: win,
-        x: request.x,
-        y: request.y,
+        ...(position ?? {}),
         callback: () => {
           if (!resolved) resolve(null);
         },
