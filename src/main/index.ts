@@ -18,6 +18,7 @@ import {
   type FsMutationHooks,
 } from "./files";
 import { registerIpcHandlers } from "./ipc";
+import { initLogger, log } from "./logger";
 import {
   applyTheme,
   getSettings,
@@ -53,7 +54,7 @@ function createWatcher() {
         });
       },
       onError: (error) => {
-        console.error("[watcher]", error);
+        log.error("[watcher]", error);
       },
     },
     {
@@ -121,7 +122,7 @@ function createMainWindow() {
   installCloseGuard(mainWindow);
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) =>
-    console.error("Preload failed:", preloadPath, error),
+    log.error("Preload failed:", preloadPath, error),
   );
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -176,6 +177,7 @@ function createGreetingWindow() {
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.xdrawz");
+  initLogger();
 
   applyTheme();
   nativeTheme.on("updated", applyWindowBgColor);
