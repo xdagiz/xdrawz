@@ -1,4 +1,5 @@
 import { serializeAsJSON } from "@excalidraw/excalidraw";
+import { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { UnsavedChoice, UnsavedReason } from "@shared/ipc";
@@ -6,7 +7,6 @@ import type { UnsavedChoice, UnsavedReason } from "@shared/ipc";
 import { debounceAsync } from "@/lib/debounce";
 
 export const AUTOSAVE_MS = 5_000;
-const USER_CHANGE_ENABLE_DELAY_MS = 100;
 
 type SceneSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFiles];
 
@@ -28,6 +28,7 @@ export type SceneSessionControls = {
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
   ) => Promise<boolean>;
   isDirty: () => boolean;
+  setInitialBaseline: (signature: string | null) => void;
   dispose: () => void;
 };
 
@@ -35,32 +36,32 @@ type SceneSessionDeps = {
   fileId: string;
   save: (id: string, content: string) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
+  initialBaseline?: string | null;
 };
 
-const sceneSignature = (
+export const sceneSignature = (
   elements: readonly OrderedExcalidrawElement[],
-  appState: AppState,
-  files: BinaryFiles,
+  appState: RestoredDataState["appState"],
+  files: BinaryFiles | undefined,
 ) =>
   JSON.stringify({
     elements: elements ?? [],
     files: files ?? {},
     viewBackgroundColor: appState.viewBackgroundColor,
+    gridSize: appState.gridSize,
+    gridStep: appState.gridStep,
+    gridModeEnabled: appState.gridModeEnabled,
   });
 
 export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls => {
-  const { fileId, save, onDirtyChange } = deps;
+  const { fileId, save, onDirtyChange, initialBaseline = null } = deps;
 
-  let baseline = "";
-  let isUserChange = false;
+  let baseline: string | null = null;
+  let diskBaseline = initialBaseline;
   let latestScene: SceneSnapshot | null = null;
   let disposed = false;
   let blocked = false;
   let dirty = false;
-
-  const enableUserChangeTimer = window.setTimeout(() => {
-    isUserChange = true;
-  }, USER_CHANGE_ENABLE_DELAY_MS);
 
   const setDirty = (next: boolean) => {
     if (dirty === next) return;
@@ -135,12 +136,18 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     if (disposed) return;
     latestScene = [elements, appState, files];
 
-    if (appState.isLoading || !isUserChange) {
-      baseline = sceneSignature(elements, appState, files);
+    if (appState.isLoading) return;
+
+    const current = sceneSignature(elements, appState, files);
+    if (baseline === null) {
+      baseline = current;
+      if (diskBaseline != null && current !== diskBaseline) {
+        void persistScene(elements, appState, files);
+      }
+
       return;
     }
 
-    const current = sceneSignature(elements, appState, files);
     if (current === baseline) {
       setDirty(false);
       debounced.cancel();
@@ -200,7 +207,6 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   const dispose = () => {
     if (disposed) return;
     disposed = true;
-    window.clearTimeout(enableUserChangeTimer);
     debounced.cancel();
   };
 
@@ -211,6 +217,10 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     getSerializedContent,
     ensureCleanOrConfirm,
     isDirty: () => dirty,
+    setInitialBaseline: (signature: string | null) => {
+      if (disposed || baseline !== null) return;
+      diskBaseline = signature;
+    },
     dispose,
   };
 };

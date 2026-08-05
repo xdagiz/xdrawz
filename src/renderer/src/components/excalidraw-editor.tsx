@@ -10,7 +10,7 @@ import type {
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useTheme } from "@/hooks/use-theme";
-import { createSceneSession, type SceneSessionControls } from "@/lib/scene-session";
+import { createSceneSession, sceneSignature, type SceneSessionControls } from "@/lib/scene-session";
 import { useStore } from "@/lib/store";
 
 type SceneData = {
@@ -19,7 +19,12 @@ type SceneData = {
   files?: ExcalidrawInitialDataState["files"];
 };
 
-const loadScene = async (fileId: string): Promise<ExcalidrawInitialDataState | null> => {
+type LoadedScene = {
+  scene: ExcalidrawInitialDataState | null;
+  baseline: string | null;
+};
+
+const loadScene = async (fileId: string): Promise<LoadedScene> => {
   try {
     const content = await window.api.files.read(fileId);
     const parsed: SceneData = JSON.parse(content);
@@ -39,15 +44,18 @@ const loadScene = async (fileId: string): Promise<ExcalidrawInitialDataState | n
       }
     }
 
+    const appState = restoreAppState(appStateForRestore as Partial<AppState> | null, null);
     const elements = restoreElements(rawElements as ExcalidrawInitialDataState["elements"], null, {
       repairBindings: true,
     });
-    const appState = restoreAppState(appStateForRestore as Partial<AppState> | null, null);
 
-    return { elements, appState, files };
+    return {
+      scene: { elements, appState, files },
+      baseline: sceneSignature(elements, appState, files),
+    };
   } catch (error) {
     console.error("Failed to load excalidraw scene:", error);
-    return null;
+    return { scene: null, baseline: null };
   }
 };
 
@@ -65,8 +73,10 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const sessionRef = useRef<SceneSessionControls | null>(null);
 
   const initialData = useMemo(() => {
-    return async (): Promise<ExcalidrawInitialDataState | null> => {
-      return loadScene(fileId);
+    return async () => {
+      const loaded = await loadScene(fileId);
+      sessionRef.current?.setInitialBaseline(loaded.baseline);
+      return loaded.scene;
     };
   }, [fileId]);
 
