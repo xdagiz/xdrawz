@@ -14,6 +14,7 @@
   "rules": {
     "constructor-super": "error",
     "for-direction": "error",
+    "getter-return": "error",
     "no-async-promise-executor": "error",
     "no-case-declarations": "error",
     "no-class-assign": "error",
@@ -57,6 +58,9 @@
     "no-unsafe-finally": "error",
     "no-unsafe-negation": "error",
     "no-unsafe-optional-chaining": "error",
+    "no-undef": "error",
+    "no-unexpected-multiline": "error",
+    "no-unreachable": "error",
     "no-unused-labels": "warn",
     "no-unused-private-class-members": "warn",
     "no-unused-vars": "warn",
