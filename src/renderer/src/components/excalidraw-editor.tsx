@@ -98,6 +98,22 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }, [fileId, saveFile, setFileDirty, registerSession, unregisterSession]);
 
   useEffect(() => {
+    const flushOnEdge = () => {
+      void sessionRef.current?.flush();
+    };
+
+    window.addEventListener("blur", flushOnEdge);
+    document.addEventListener("visibilitychange", flushOnEdge);
+    window.addEventListener("beforeunload", flushOnEdge);
+
+    return () => {
+      window.removeEventListener("blur", flushOnEdge);
+      document.removeEventListener("visibilitychange", flushOnEdge);
+      window.removeEventListener("beforeunload", flushOnEdge);
+    };
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
       event.preventDefault();

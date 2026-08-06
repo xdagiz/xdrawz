@@ -7,7 +7,7 @@ vi.mock("@excalidraw/excalidraw", () => ({
     JSON.stringify({ scene: true, vbg: appState?.viewBackgroundColor }),
 }));
 
-import { AUTOSAVE_MS, createSceneSession, sceneSignature } from "./scene-session";
+import { AUTOSAVE_MS, createSceneSession, MAX_SAVE_RETRIES, sceneSignature } from "./scene-session";
 
 const el = (id: string) => ({ id, type: "rectangle" }) as unknown as OrderedExcalidrawElement;
 
@@ -47,7 +47,6 @@ describe("createSceneSession", () => {
 
   it("establishes baseline on the first post-load onChange no matter when it lands", async () => {
     const { session, dirty, save } = makeSession();
-
     await vi.advanceTimersByTimeAsync(150);
 
     session.onChange([el("a")], appState(), emptyFiles);
@@ -281,5 +280,110 @@ describe("createSceneSession", () => {
     const { session } = makeSession({ save: vi.fn().mockResolvedValue(true) });
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
     expect(session.getSerializedContent()).toBe(JSON.stringify({ scene: true, vbg: "#ffffff" }));
+  });
+
+  it("flush is a no-op when the session is clean", async () => {
+    const { session, save } = makeSession();
+    session.onChange([el("a")], appState(), emptyFiles);
+    await session.flush();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("flush persists immediately without force when dirty", async () => {
+    const { session, dirty, save } = makeSession();
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+    await session.flush();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+  });
+
+  it("retries a failed save after AUTOSAVE_MS", async () => {
+    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const { session, dirty } = makeSession({ save });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+  });
+
+  it("stops retrying after MAX_SAVE_RETRIES consecutive failures", async () => {
+    const save = vi.fn().mockResolvedValue(false);
+    const { session } = makeSession({ save });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+
+    for (let i = 0; i < MAX_SAVE_RETRIES + 1; i++) {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    }
+
+    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+  });
+
+  it("does not retry after dispose", async () => {
+    const save = vi.fn().mockResolvedValue(false);
+    const { session } = makeSession({ save });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    session.dispose();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * MAX_SAVE_RETRIES);
+
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-arms on the next user change after running out of retries", async () => {
+    const save = vi.fn().mockResolvedValue(false);
+    const { session } = makeSession({ save });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    for (let i = 0; i < MAX_SAVE_RETRIES; i++) {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    }
+    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+
+    session.onChange([el("a"), el("b"), el("c")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+
+    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES + 1);
+  });
+
+  it("collapses a retry and a newer change into a single write", async () => {
+    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const { session } = makeSession({ save });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    session.onChange([el("a"), el("b"), el("c")], appState(), emptyFiles);
+
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(2);
   });
 });

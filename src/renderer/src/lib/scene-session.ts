@@ -8,6 +8,8 @@ import { debounceAsync } from "@/lib/debounce";
 
 export const AUTOSAVE_MS = 5_000;
 
+export const MAX_SAVE_RETRIES = 3;
+
 type SceneSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFiles];
 
 type FlushOpts = {
@@ -62,6 +64,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   let disposed = false;
   let blocked = false;
   let dirty = false;
+  let saveFailures = 0;
 
   const setDirty = (next: boolean) => {
     if (dirty === next) return;
@@ -80,8 +83,13 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     if (ok) {
       baseline = sceneSignature(elements, appState, files);
       setDirty(false);
+      saveFailures = 0;
     } else {
       setDirty(true);
+      saveFailures += 1;
+      if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
+        debounced(elements, appState, files);
+      }
     }
 
     return ok;
@@ -103,6 +111,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     if (disposed) return;
     const force = opts?.force === true;
     if (!force && blocked) return;
+    if (!dirty && !force) return;
 
     await debounced.flush({ force });
 
@@ -170,6 +179,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
 
   const abandon = () => {
     debounced.cancel();
+    saveFailures = 0;
     if (latestScene) {
       const [elements, appState, files] = latestScene;
       baseline = sceneSignature(elements, appState, files);
