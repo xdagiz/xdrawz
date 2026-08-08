@@ -48,6 +48,7 @@ export type StoreType = {
   drawingsPath?: string;
   lastOpenedFileId?: string | null;
   theme?: ThemePreference;
+  zoomLevel?: number;
 };
 
 export type FilesChangedEvent = {

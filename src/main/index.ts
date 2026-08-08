@@ -26,7 +26,7 @@ import {
   windowBgColor,
   applyWindowBgColor,
 } from "./settings";
-import { getLastOpenedFileId } from "./store";
+import { getLastOpenedFileId, getZoomLevel, setZoomLevel } from "./store";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 
 let mainWindow: BrowserWindow | null = null;
@@ -184,6 +184,14 @@ app.whenReady().then(async () => {
 
   app.on("browser-window-created", (_, win) => {
     optimizer.watchWindowShortcuts(win);
+
+    const restoreZoom = () => {
+      win.webContents.setZoomLevel(getZoomLevel());
+    };
+
+    win.webContents.on("did-finish-load", restoreZoom);
+    win.webContents.on("did-navigate-in-page", restoreZoom);
+
     win.webContents.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown") return;
       if (!(input.control || input.meta)) return;
@@ -196,13 +204,9 @@ app.whenReady().then(async () => {
       event.preventDefault();
 
       const level = win.webContents.getZoomLevel();
-      if (zoomIn) {
-        win.webContents.setZoomLevel(level + 0.5);
-      } else if (zoomOut) {
-        win.webContents.setZoomLevel(level - 0.5);
-      } else {
-        win.webContents.setZoomLevel(0);
-      }
+      const next = zoomIn ? level + 0.5 : zoomOut ? level - 0.5 : 0;
+      win.webContents.setZoomLevel(next);
+      setZoomLevel(next);
     });
   });
 
