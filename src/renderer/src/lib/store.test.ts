@@ -1,6 +1,8 @@
 import type { DrawingsSnapshot, FileEntry, FilesChangedEvent } from "@shared/ipc";
-import { FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
+import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 import { useStore } from "./store";
 
@@ -471,5 +473,79 @@ describe("saveFile recovery", () => {
     expect(ok).toBe(true);
     expect(window.api.files.write).not.toHaveBeenCalled();
     expect(window.api.files.writeRecover).toHaveBeenCalledWith("file-1", "{}");
+  });
+});
+
+describe("settings theme sync", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", {
+      api: {
+        settings: {
+          get: vi.fn(),
+          update: vi.fn(),
+        },
+        store: { set: vi.fn(), get: vi.fn() },
+        dialog: {
+          unsavedChanges: vi.fn(),
+          fileRecover: vi.fn(),
+          fileChanged: vi.fn(),
+        },
+        files: {
+          write: vi.fn(),
+          writeRecover: vi.fn(),
+          list: vi.fn(),
+        },
+      },
+      localStorage: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(),
+      },
+    });
+
+    resetStore();
+    useStore.setState({ settings: DEFAULT_SETTINGS });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("seeds settings.theme from localStorage when window exists", async () => {
+    vi.mocked(window.localStorage.getItem).mockReturnValue("dark");
+    vi.resetModules();
+    const { useStore: freshStore } = await import("./store");
+
+    expect(freshStore.getState().settings.theme).toBe("dark");
+  });
+
+  it("updateSettings writes the mirror on success", async () => {
+    vi.mocked(window.api.settings.update).mockResolvedValue({ theme: "dark" });
+
+    await useStore.getState().updateSettings({ theme: "dark" });
+
+    expect(window.api.settings.update).toHaveBeenCalledWith({ theme: "dark" });
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(THEME_STORAGE_KEY, "dark");
+    expect(useStore.getState().settings.theme).toBe("dark");
+  });
+
+  it("updateSettings does not write the mirror when the IPC call fails", async () => {
+    vi.mocked(window.api.settings.update).mockRejectedValue(new Error("settings boom"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await useStore.getState().updateSettings({ theme: "dark" });
+
+    expect(window.api.settings.update).toHaveBeenCalledWith({ theme: "dark" });
+    expect(window.localStorage.setItem).not.toHaveBeenCalled();
+    expect(useStore.getState().settings).toEqual(DEFAULT_SETTINGS);
+    errorSpy.mockRestore();
+  });
+
+  it("initSettings reconciles the store and mirror from IPC", async () => {
+    vi.mocked(window.api.settings.get).mockResolvedValue({ theme: "light" });
+
+    await useStore.getState().initSettings();
+
+    expect(useStore.getState().settings.theme).toBe("light");
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(THEME_STORAGE_KEY, "light");
   });
 });

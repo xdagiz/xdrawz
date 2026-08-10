@@ -35,7 +35,6 @@ export interface NativeApi {
     clear: () => Promise<void>;
   };
   settings: {
-    getBoot: () => AppSettings;
     get: () => Promise<AppSettings>;
     update: (updated: SettingsUpdate) => Promise<AppSettings>;
   };

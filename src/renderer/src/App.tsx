@@ -13,10 +13,18 @@ const App = () => {
   const externalConflict = useStore((s) => s.externalConflict);
   const loadSnapshot = useStore((s) => s.loadSnapshot);
   const ensureCleanOrConfirm = useStore((s) => s.ensureCleanOrConfirm);
+  const initSettings = useStore((s) => s.initSettings);
+  const applyEntries = useStore((s) => s.applyEntries);
+  const resolveChangedConflict = useStore((s) => s.resolveChangedConflict);
+  const resolveMissingConflict = useStore((s) => s.resolveMissingConflict);
   const themePreference = useStore((s) => s.settings.theme);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const conflictPromptRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    void initSettings();
+  }, [initSettings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,8 +48,8 @@ const App = () => {
   }, [loadSnapshot]);
 
   useEffect(() => {
-    return window.api.files.onChanged((event) => useStore.getState().applyEntries(event));
-  }, []);
+    return window.api.files.onChanged((event) => applyEntries(event));
+  }, [applyEntries]);
 
   useEffect(() => {
     return window.api.window.onWillClose(() => {
@@ -68,7 +76,7 @@ const App = () => {
 
     void (async () => {
       if (externalConflict.type === "changed") {
-        const choice = await useStore.getState().resolveChangedConflict();
+        const choice = await resolveChangedConflict();
         if (choice === "cancel") {
           conflictPromptRef.current = null;
           return;
@@ -79,11 +87,11 @@ const App = () => {
       }
 
       if (externalConflict.type === "missing") {
-        const choice = await useStore.getState().resolveMissingConflict();
+        const choice = await resolveMissingConflict();
         if (choice === "cancel") conflictPromptRef.current = null;
       }
     })();
-  }, [externalConflict]);
+  }, [externalConflict, resolveChangedConflict, resolveMissingConflict]);
 
   return (
     <ThemeProvider preference={themePreference}>

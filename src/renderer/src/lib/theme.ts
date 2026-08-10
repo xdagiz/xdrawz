@@ -1,7 +1,8 @@
-import type { ThemePreference } from "./ipc";
+import { DEFAULT_THEME, type ThemePreference } from "@shared/ipc";
 
 export type ResolvedTheme = "light" | "dark";
 const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
+export const THEME_STORAGE_KEY = "xdrawz:theme";
 
 export const resolveTheme = (preference: ThemePreference, systemDark: boolean): ResolvedTheme => {
   if (preference === "system") return systemDark ? "dark" : "light";
@@ -14,6 +15,26 @@ export const getSystemPrefersDark = (): boolean => {
   }
 
   return window.matchMedia(SYSTEM_DARK_QUERY).matches;
+};
+
+export const parseThemePreference = (value: string | null) => {
+  return value === "light" || value === "dark" || value === "system" ? value : null;
+};
+
+export const readStoredTheme = (storage: Pick<Storage, "getItem">): ThemePreference => {
+  try {
+    return parseThemePreference(storage.getItem(THEME_STORAGE_KEY)) ?? DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
+};
+
+export const writeStoredTheme = (storage: Pick<Storage, "setItem">, theme: ThemePreference) => {
+  try {
+    storage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    /* boot cache must never break settings — silent */
+  }
 };
 
 export const subscribeSystemPrefersDark = (onStoreChange: () => void): (() => void) => {
@@ -35,28 +56,4 @@ export const applyDocumentTheme = (resolved: ResolvedTheme): void => {
   const root = document.documentElement;
   root.classList.toggle("dark", resolved === "dark");
   root.style.colorScheme = resolved;
-};
-
-export const applyPreferenceToDocument = (preference: ThemePreference) => {
-  const resolved = resolveTheme(preference, getSystemPrefersDark());
-  applyDocumentTheme(resolved);
-  return resolved;
-};
-
-export const schedulePreferenceToDocument = (preference: ThemePreference): void => {
-  const paint = () => applyPreferenceToDocument(preference);
-
-  if (hasDocumentElement()) {
-    paint();
-    return;
-  }
-
-  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
-    document.addEventListener("DOMContentLoaded", paint, { once: true });
-    return;
-  }
-
-  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-    window.addEventListener("DOMContentLoaded", paint, { once: true });
-  }
 };

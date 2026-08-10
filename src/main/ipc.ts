@@ -13,7 +13,6 @@ import {
   FILES_WRITE,
   FILES_WRITE_RECOVER,
   SETTINGS_GET,
-  SETTINGS_GET_SYNC,
   SETTINGS_SET,
   STORE_CLEAR,
   STORE_DELETE,
@@ -137,7 +136,6 @@ export const registerIpcHandlers = (deps: Deps): void => {
   });
 
   ipcMain.handle(SETTINGS_GET, () => deps.getSettings());
-  ipcMain.on(SETTINGS_GET_SYNC, (event) => (event.returnValue = deps.getSettings()));
   ipcMain.handle(SETTINGS_SET, (_event, update: SettingsUpdate) => deps.updateSettings(update));
 
   ipcMain.handle(WINDOW_CLOSE, (event) => {

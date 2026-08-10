@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { create } from "zustand";
 
 import type { SceneSessionControls } from "@/lib/scene-session";
+import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
 const isOpenableFile = (
   entries: FileEntry[],
@@ -81,8 +82,8 @@ export const useStore = create<State>((set, get) => ({
   externalConflict: null,
   editorEpoch: 0,
   settings:
-    typeof window !== "undefined" && window.api?.settings?.getBoot
-      ? window.api.settings.getBoot()
+    typeof window !== "undefined"
+      ? { theme: readStoredTheme(window.localStorage) }
       : DEFAULT_SETTINGS,
 
   loadSnapshot: (snapshot) =>
@@ -414,6 +415,7 @@ export const useStore = create<State>((set, get) => ({
   initSettings: async () => {
     try {
       const settings = await window.api.settings.get();
+      writeStoredTheme(window.localStorage, settings.theme);
       set({ settings });
     } catch (error) {
       console.error("failed to load settings:", error);
@@ -423,6 +425,7 @@ export const useStore = create<State>((set, get) => ({
   updateSettings: async (updated) => {
     try {
       const settings = await window.api.settings.update(updated);
+      writeStoredTheme(window.localStorage, settings.theme);
       set({ settings });
     } catch (error) {
       console.error("failed to update settings:", error);

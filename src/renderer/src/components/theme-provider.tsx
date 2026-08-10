@@ -1,11 +1,12 @@
 import type { ThemePreference } from "@shared/ipc";
+import { useLayoutEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+
 import {
   applyDocumentTheme,
   getSystemPrefersDark,
   resolveTheme,
   subscribeSystemPrefersDark,
-} from "@shared/theme";
-import { useLayoutEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+} from "@/lib/theme";
 
 import { ThemeContext } from "./theme-context";
 
