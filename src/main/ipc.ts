@@ -18,7 +18,9 @@ import {
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
+  WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
+  WINDOW_READY,
 } from "@shared/channels";
 import type {
   AppSettings,
@@ -48,6 +50,8 @@ type Deps = {
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
   deleteEntry: (id: string) => Promise<void>;
   destroyWindow: (win: BrowserWindow) => void;
+  markWindowReady: (win: BrowserWindow) => void;
+  cancelQuit: (win: BrowserWindow) => void;
   getSettings: () => AppSettings;
   updateSettings: (update: SettingsUpdate) => AppSettings;
 };
@@ -142,6 +146,16 @@ export const registerIpcHandlers = (deps: Deps): void => {
     const win = windowFromEvent(event);
     if (!win) return;
     deps.destroyWindow(win);
+  });
+
+  ipcMain.on(WINDOW_READY, (event) => {
+    const win = windowFromEvent(event);
+    if (win) deps.markWindowReady(win);
+  });
+
+  ipcMain.on(WINDOW_CANCEL_QUIT, (event) => {
+    const win = windowFromEvent(event);
+    if (win) deps.cancelQuit(win);
   });
 
   ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason: UnsavedReason = "quit") => {

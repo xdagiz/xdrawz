@@ -6,7 +6,15 @@ import type { FilesChangedEvent } from "@shared/ipc";
 import { app, shell, nativeTheme, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
-import { destroyWindow, installCloseGuard } from "./close-guard";
+import {
+  destroyWindow,
+  installCloseGuard,
+  isQuittingNow,
+  isWindowReady,
+  cancelQuit,
+  markWindowReady,
+  requestQuitViaRenderer,
+} from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
 import {
   deleteEntry,
@@ -239,6 +247,8 @@ app.whenReady().then(async () => {
     deleteEntry: deleteEntryWatched,
     writeSceneFileRecover: writeSceneFileRecoverWatched,
     destroyWindow,
+    markWindowReady,
+    cancelQuit,
     getSettings,
     updateSettings: setSettings,
     pickDrawings: async (parentWindow) => {
@@ -291,8 +301,20 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on("before-quit", () => {
-  void watcher?.stop();
+app.on("before-quit", (event) => {
+  if (
+    isQuittingNow() ||
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isCrashed() ||
+    !isWindowReady(mainWindow)
+  ) {
+    void watcher?.stop();
+    return;
+  }
+
+  event.preventDefault();
+  requestQuitViaRenderer(mainWindow);
 });
 
 app.on("window-all-closed", () => {

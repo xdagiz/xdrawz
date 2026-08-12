@@ -19,7 +19,9 @@ import {
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
+  WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
+  WINDOW_READY,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
 import { type FilesChangedEvent } from "@shared/ipc";
@@ -76,7 +78,9 @@ const api: NativeApi = {
         ipcRenderer.removeListener(WINDOW_WILL_CLOSE, listener);
       };
     },
+    ready: () => ipcRenderer.send(WINDOW_READY),
     close: () => ipcRenderer.invoke(WINDOW_CLOSE),
+    cancelQuit: () => ipcRenderer.send(WINDOW_CANCEL_QUIT),
   },
 };
 

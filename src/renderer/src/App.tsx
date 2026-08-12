@@ -52,12 +52,16 @@ const App = () => {
   }, [applyEntries]);
 
   useEffect(() => {
-    return window.api.window.onWillClose(() => {
+    const unsubscribe = window.api.window.onWillClose(() => {
       void (async () => {
         const ok = await ensureCleanOrConfirm("quit");
         if (ok) await window.api.window.close();
+        else window.api.window.cancelQuit?.();
       })();
     });
+
+    window.api.window.ready();
+    return unsubscribe;
   }, [ensureCleanOrConfirm]);
 
   useEffect(() => {
