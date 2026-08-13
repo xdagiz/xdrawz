@@ -47,9 +47,9 @@ export interface NativeApi {
     fileChanged: (fileName: string) => Promise<FileChangedChoice>;
   };
   window: {
-    onWillClose: (cb: () => void) => () => void;
+    onWillClose: (cb: (requestId: number) => void) => () => void;
     ready: () => void;
-    close: () => Promise<void>;
-    cancelQuit?: () => void;
+    close: (requestId: number) => Promise<void>;
+    cancelQuit?: (requestId: number) => void;
   };
 }

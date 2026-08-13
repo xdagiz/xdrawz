@@ -72,15 +72,15 @@ const api: NativeApi = {
   },
   window: {
     onWillClose: (cb) => {
-      const listener = () => cb();
+      const listener = (_event: Electron.IpcRendererEvent, requestId: number) => cb(requestId);
       ipcRenderer.on(WINDOW_WILL_CLOSE, listener);
       return () => {
         ipcRenderer.removeListener(WINDOW_WILL_CLOSE, listener);
       };
     },
     ready: () => ipcRenderer.send(WINDOW_READY),
-    close: () => ipcRenderer.invoke(WINDOW_CLOSE),
-    cancelQuit: () => ipcRenderer.send(WINDOW_CANCEL_QUIT),
+    close: (requestId: number) => ipcRenderer.invoke(WINDOW_CLOSE, requestId),
+    cancelQuit: (requestId: number) => ipcRenderer.send(WINDOW_CANCEL_QUIT, requestId),
   },
 };
 

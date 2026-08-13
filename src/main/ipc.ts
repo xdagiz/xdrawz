@@ -111,9 +111,9 @@ type Deps = {
   writeSceneFileRecover: (id: string, content: string) => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
   deleteEntry: (id: string) => Promise<void>;
-  destroyWindow: (win: BrowserWindow) => void;
+  destroyWindow: (win: BrowserWindow, requestId: number) => void;
   markWindowReady: (win: BrowserWindow) => void;
-  cancelQuit: (win: BrowserWindow) => void;
+  cancelQuit: (win: BrowserWindow, requestId: number) => void;
   getSettings: () => AppSettings;
   updateSettings: (update: SettingsUpdate) => AppSettings;
 };
@@ -220,10 +220,10 @@ export const registerIpcHandlers = (deps: Deps): void => {
   ipcMain.handle(SETTINGS_GET, () => deps.getSettings());
   ipcMain.handle(SETTINGS_SET, (_event, update: SettingsUpdate) => deps.updateSettings(update));
 
-  ipcMain.handle(WINDOW_CLOSE, (event) => {
+  ipcMain.handle(WINDOW_CLOSE, (event, requestId: number) => {
     const win = windowFromEvent(event);
     if (!win) return;
-    deps.destroyWindow(win);
+    deps.destroyWindow(win, requestId);
   });
 
   ipcMain.on(WINDOW_READY, (event) => {
@@ -231,9 +231,9 @@ export const registerIpcHandlers = (deps: Deps): void => {
     if (win) deps.markWindowReady(win);
   });
 
-  ipcMain.on(WINDOW_CANCEL_QUIT, (event) => {
+  ipcMain.on(WINDOW_CANCEL_QUIT, (event, requestId: number) => {
     const win = windowFromEvent(event);
-    if (win) deps.cancelQuit(win);
+    if (win) deps.cancelQuit(win, requestId);
   });
 
   ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason: UnsavedReason = "quit") => {

@@ -50,8 +50,12 @@ import {
   WINDOW_READY,
 } from "@shared/channels";
 
-import { APP_ORIGIN, installAppProtocolHandler, isTrustedRendererUrl, registerIpcHandlers } from "./ipc";
-
+import {
+  APP_ORIGIN,
+  installAppProtocolHandler,
+  isTrustedRendererUrl,
+  registerIpcHandlers,
+} from "./ipc";
 const env = process.env as Record<string, string | undefined>;
 
 describe("isTrustedRendererUrl", () => {
@@ -103,9 +107,7 @@ describe("installAppProtocolHandler", () => {
   beforeEach(() => {
     mocks.netFetch.mockReset().mockResolvedValue(new Response("ok"));
     mocks.protocolHandle.mockReset();
-    mocks.protocolHandle.mockImplementation((scheme, handler) =>
-      appSchemes.set(scheme, handler),
-    );
+    mocks.protocolHandle.mockImplementation((scheme, handler) => appSchemes.set(scheme, handler));
 
     installAppProtocolHandler();
   });
@@ -125,16 +127,12 @@ describe("installAppProtocolHandler", () => {
   it("serves files within the renderer directory", async () => {
     const res = await get("app://renderer/src/main.tsx");
     expect(res.status).toBe(200);
-    expect(mocks.netFetch).toHaveBeenCalledWith(
-      expect.stringMatching(/src[\\/]main\.tsx$/),
-    );
+    expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/src[\\/]main\.tsx$/));
   });
 
   it("serves index.html for directory paths", async () => {
     await get("app://renderer/assets/");
-    expect(mocks.netFetch).toHaveBeenCalledWith(
-      expect.stringMatching(/assets[\\/]index\.html$/),
-    );
+    expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/assets[\\/]index\.html$/));
   });
 
   it("resolves dot segments that stay inside the renderer directory", async () => {
@@ -146,9 +144,7 @@ describe("installAppProtocolHandler", () => {
   it("serves files requested with encoded slashes", async () => {
     const res = await get("app://renderer/assets%2Fmain.tsx");
     expect(res.status).toBe(200);
-    expect(mocks.netFetch).toHaveBeenCalledWith(
-      expect.stringMatching(/assets[\\/]main\.tsx$/),
-    );
+    expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/assets[\\/]main\.tsx$/));
   });
 
   it("rejects requests for other hosts without touching the filesystem", async () => {
@@ -258,6 +254,16 @@ describe("registerIpcHandlers wiring", () => {
     for (const channel of sendChannels) {
       expect(listeners.has(channel), channel).toBe(true);
     }
+  });
+
+  it("forwards the close request id to destroyWindow", () => {
+    handlers.get(WINDOW_CLOSE)!(eventFor(), 5);
+    expect(deps.destroyWindow).toHaveBeenCalledWith(expect.any(Object), 5);
+  });
+
+  it("forwards the cancel-quit request id to cancelQuit", () => {
+    listeners.get(WINDOW_CANCEL_QUIT)!(eventFor(), 6);
+    expect(deps.cancelQuit).toHaveBeenCalledWith(expect.any(Object), 6);
   });
 
   it("forwards invoke messages to the dep and returns the result", async () => {

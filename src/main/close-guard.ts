@@ -7,9 +7,42 @@ const approvedCloses = new WeakSet<BrowserWindow>();
 const readyWindows = new WeakSet<BrowserWindow>();
 
 type QuitState = "idle" | "pending";
+type CloseState = {
+  awaitingRenderer: boolean;
+  requestId: number;
+};
+
 let quitState: QuitState = "idle";
 let isQuitting = false;
-let awaitingCloseAck = false;
+let nextCloseRequestId = 0;
+const closeStates = new WeakMap<BrowserWindow, CloseState>();
+
+const closeStateFor = (win: BrowserWindow): CloseState => {
+  const existing = closeStates.get(win);
+  if (existing) return existing;
+
+  const state = { awaitingRenderer: false, requestId: 0 };
+  closeStates.set(win, state);
+  return state;
+};
+
+const clearCloseRequest = (win: BrowserWindow) => {
+  closeStateFor(win).awaitingRenderer = false;
+};
+
+const isCurrentCloseRequest = (win: BrowserWindow, requestId: number) => {
+  const state = closeStateFor(win);
+  return state.awaitingRenderer && state.requestId === requestId;
+};
+
+const requestCloseViaRenderer = (win: BrowserWindow) => {
+  const state = closeStateFor(win);
+  if (state.awaitingRenderer) return;
+
+  state.awaitingRenderer = true;
+  state.requestId = ++nextCloseRequestId;
+  win.webContents.send(WINDOW_WILL_CLOSE, state.requestId);
+};
 
 export const isQuittingNow = () => isQuitting;
 
@@ -21,8 +54,9 @@ export const markWindowReady = (win: BrowserWindow) => {
 
 const forceClose = (win: BrowserWindow): void => {
   if (win.isDestroyed()) return;
+
   approvedCloses.add(win);
-  awaitingCloseAck = false;
+  clearCloseRequest(win);
   const wasQuit = quitState === "pending";
   quitState = "idle";
   log.warn("[close-guard] force-closing window: renderer unresponsive/crashed during close prompt");
@@ -37,10 +71,11 @@ export const installCloseGuard = (win: BrowserWindow) => {
   win.once("closed", () => {
     readyWindows.delete(win);
     approvedCloses.delete(win);
+    closeStates.delete(win);
   });
 
   const onRendererGone = () => {
-    if (!awaitingCloseAck || approvedCloses.has(win)) return;
+    if (!closeStateFor(win).awaitingRenderer || approvedCloses.has(win)) return;
     forceClose(win);
   };
 
@@ -54,27 +89,28 @@ export const installCloseGuard = (win: BrowserWindow) => {
     if (!readyWindows.has(win)) return;
 
     event.preventDefault();
-    awaitingCloseAck = true;
-    win.webContents.send(WINDOW_WILL_CLOSE);
+    requestCloseViaRenderer(win);
   });
 };
 
 export const requestQuitViaRenderer = (win: BrowserWindow) => {
   if (quitState === "pending") return;
   quitState = "pending";
-  awaitingCloseAck = true;
-  win.webContents.send(WINDOW_WILL_CLOSE);
+  requestCloseViaRenderer(win);
 };
 
-export const cancelQuit = (): void => {
-  if (quitState !== "pending") return;
-  quitState = "idle";
-  awaitingCloseAck = false;
+export const cancelQuit = (win: BrowserWindow, requestId: number) => {
+  if (!isCurrentCloseRequest(win, requestId)) return;
+
+  clearCloseRequest(win);
+  if (quitState === "pending") quitState = "idle";
 };
 
-export const destroyWindow = (win: BrowserWindow) => {
+export const destroyWindow = (win: BrowserWindow, requestId: number) => {
+  if (!isCurrentCloseRequest(win, requestId)) return;
+
   approvedCloses.add(win);
-  awaitingCloseAck = false;
+  clearCloseRequest(win);
   if (quitState === "pending") {
     quitState = "idle";
     isQuitting = true;
