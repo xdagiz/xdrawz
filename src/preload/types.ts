@@ -11,6 +11,7 @@ import type {
   StoreKey,
   UnsavedChoice,
   UnsavedReason,
+  WatcherErrorEvent,
 } from "@shared/ipc";
 
 export interface NativeApi {
@@ -27,6 +28,7 @@ export interface NativeApi {
     rename: (id: string, newName: string) => Promise<FileEntry>;
     delete: (id: string) => Promise<void>;
     onChanged: (cb: (event: FilesChangedEvent) => void) => () => void;
+    onWatcherError: (cb: (event: WatcherErrorEvent) => void) => () => void;
   };
   store: {
     get: (key: StoreKey) => Promise<string | null>;

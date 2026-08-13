@@ -58,6 +58,10 @@ export type FilesChangedEvent = {
   info?: DrawingInfo;
 };
 
+export type WatcherErrorEvent = {
+  message: string;
+};
+
 export type ExternalConflict =
   | { type: "missing"; fileId: string }
   | { type: "changed"; fileId: string; diskModifiedAt: number }
