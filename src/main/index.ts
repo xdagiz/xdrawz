@@ -1,8 +1,8 @@
 import { join } from "path";
 
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
-import { FILES_CHANGED } from "@shared/channels";
-import type { FilesChangedEvent } from "@shared/ipc";
+import { FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
+import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
 import { app, shell, nativeTheme, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
@@ -57,6 +57,26 @@ function broadcastFilesChanged(event: FilesChangedEvent) {
   }
 }
 
+const WATCHER_ERROR_INTERVAL_MS = 10_000;
+let lastWatcherErrorAt = 0;
+
+function broadcastWatcherError(error: unknown) {
+  log.error("[watcher]", error);
+
+  const now = Date.now();
+  if (now - lastWatcherErrorAt < WATCHER_ERROR_INTERVAL_MS) return;
+  lastWatcherErrorAt = now;
+
+  const message = error instanceof Error ? error.message : String(error);
+  const event: WatcherErrorEvent = { message };
+
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    if (win.webContents.isDestroyed() || win.webContents.isCrashed()) continue;
+    win.webContents.send(WATCHER_ERROR, event);
+  }
+}
+
 function createWatcher() {
   return createDrawingsWatcher(
     {
@@ -71,7 +91,7 @@ function createWatcher() {
         });
       },
       onError: (error) => {
-        log.error("[watcher]", error);
+        broadcastWatcherError(error);
       },
     },
     {

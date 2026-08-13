@@ -19,12 +19,13 @@ import {
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
+  WATCHER_ERROR,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
   WINDOW_READY,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
-import { type FilesChangedEvent } from "@shared/ipc";
+import { type FilesChangedEvent, type WatcherErrorEvent } from "@shared/ipc";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
@@ -49,6 +50,15 @@ const api: NativeApi = {
       ipcRenderer.on(FILES_CHANGED, listener);
       return () => {
         ipcRenderer.removeListener(FILES_CHANGED, listener);
+      };
+    },
+    onWatcherError: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: WatcherErrorEvent) => {
+        cb(payload);
+      };
+      ipcRenderer.on(WATCHER_ERROR, listener);
+      return () => {
+        ipcRenderer.removeListener(WATCHER_ERROR, listener);
       };
     },
   },
