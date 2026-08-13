@@ -122,7 +122,9 @@ function createMainWindow() {
     ...(process.platform === "linux" ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
-      sandbox: false,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 
@@ -159,7 +161,7 @@ function createGreetingWindow() {
     ...(process.platform === "linux" ? { type: "splash" } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
     },
