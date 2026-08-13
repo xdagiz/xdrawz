@@ -52,11 +52,11 @@ const App = () => {
   }, [applyEntries]);
 
   useEffect(() => {
-    const unsubscribe = window.api.window.onWillClose(() => {
+    const unsubscribe = window.api.window.onWillClose((requestId) => {
       void (async () => {
         const ok = await ensureCleanOrConfirm("quit");
-        if (ok) await window.api.window.close();
-        else window.api.window.cancelQuit?.();
+        if (ok) await window.api.window.close(requestId);
+        else window.api.window.cancelQuit?.(requestId);
       })();
     });
 
