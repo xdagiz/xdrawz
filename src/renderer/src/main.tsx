@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster, toast } from "./components/ui/toast";
+import { useStore } from "./lib/store";
 import { router } from "./router";
 
 const reportUnexpected = (error: unknown) => {
@@ -23,6 +24,42 @@ window.addEventListener("unhandledrejection", (event) => {
 window.addEventListener("error", (event) => {
   if (event.error) reportUnexpected(event.error);
 });
+
+window.api.window.onWillClose((request) => {
+  if (request.kind === "check") {
+    const session = useStore.getState().activeSession;
+    const dirty = Object.keys(useStore.getState().dirtyById).length > 0;
+    if (dirty) session?.setAutosavePaused(true);
+    window.api.window.reportDirtyState(request.requestId, dirty);
+    return;
+  }
+
+  void (async () => {
+    window.api.window.flushStarted(request.requestId);
+    const session = useStore.getState().activeSession;
+    try {
+      if (session) await session.flush({ force: true });
+    } catch (error) {
+      console.error("failed to flush scene while closing:", error);
+      useStore.getState().reportError(error, "save");
+      window.api.window.cancelQuit(request.requestId);
+      return;
+    }
+
+    if (session?.isDirty()) {
+      window.api.window.cancelQuit(request.requestId);
+      return;
+    }
+
+    await window.api.window.close(request.requestId);
+  })();
+});
+
+window.api.window.onCloseCancelled(() => {
+  useStore.getState().activeSession?.setAutosavePaused(false);
+});
+
+window.api.window.ready();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

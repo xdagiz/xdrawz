@@ -22,10 +22,17 @@ import {
   WATCHER_ERROR,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
+  WINDOW_CLOSE_CANCELLED,
+  WINDOW_DIRTY_STATE,
+  WINDOW_FLUSH_STARTED,
   WINDOW_READY,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
-import { type FilesChangedEvent, type WatcherErrorEvent } from "@shared/ipc";
+import {
+  type FilesChangedEvent,
+  type WatcherErrorEvent,
+  type WindowCloseRequest,
+} from "@shared/ipc";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
@@ -82,15 +89,26 @@ const api: NativeApi = {
   },
   window: {
     onWillClose: (cb) => {
-      const listener = (_event: Electron.IpcRendererEvent, requestId: number) => cb(requestId);
+      const listener = (_event: Electron.IpcRendererEvent, request: WindowCloseRequest) =>
+        cb(request);
       ipcRenderer.on(WINDOW_WILL_CLOSE, listener);
       return () => {
         ipcRenderer.removeListener(WINDOW_WILL_CLOSE, listener);
       };
     },
+    onCloseCancelled: (cb) => {
+      const listener = () => cb();
+      ipcRenderer.on(WINDOW_CLOSE_CANCELLED, listener);
+      return () => {
+        ipcRenderer.removeListener(WINDOW_CLOSE_CANCELLED, listener);
+      };
+    },
     ready: () => ipcRenderer.send(WINDOW_READY),
     close: (requestId: number) => ipcRenderer.invoke(WINDOW_CLOSE, requestId),
     cancelQuit: (requestId: number) => ipcRenderer.send(WINDOW_CANCEL_QUIT, requestId),
+    reportDirtyState: (requestId: number, dirty: boolean) =>
+      ipcRenderer.send(WINDOW_DIRTY_STATE, requestId, dirty),
+    flushStarted: (requestId: number) => ipcRenderer.send(WINDOW_FLUSH_STARTED, requestId),
   },
 };
 

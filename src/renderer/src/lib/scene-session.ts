@@ -24,6 +24,7 @@ export type SceneSessionControls = {
   ) => void;
   saveNow: () => Promise<boolean>;
   flush: (opts?: FlushOpts) => Promise<void>;
+  setAutosavePaused: (paused: boolean) => void;
   getSerializedContent: () => string | null;
   setInitialBaseline: (signature: string | null) => void;
   resetBaseline: () => void;
@@ -204,6 +205,11 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     debounced.resume();
   };
 
+  const setAutosavePaused = (paused: boolean) => {
+    if (paused) block();
+    else unblock();
+  };
+
   const abandon = () => {
     debounced.cancel();
     saveFailures = 0;
@@ -251,6 +257,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     onChange,
     saveNow,
     flush,
+    setAutosavePaused,
     getSerializedContent,
     ensureCleanOrConfirm,
     isDirty: () => dirty,

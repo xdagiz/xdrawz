@@ -41,6 +41,10 @@ export type UnsavedReason = "quit" | "switch";
 export type UnsavedChoice = "save" | "discard" | "cancel";
 export type FileRecoverChoice = "recover" | "discard" | "cancel";
 export type FileChangedChoice = "reload" | "overwrite" | "cancel";
+export type WindowCloseRequest = {
+  requestId: number;
+  kind: "check" | "flush";
+};
 
 export const FILE_NOT_FOUND_MESSAGE = "File not found";
 

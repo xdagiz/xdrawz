@@ -12,6 +12,7 @@ import type {
   UnsavedChoice,
   UnsavedReason,
   WatcherErrorEvent,
+  WindowCloseRequest,
 } from "@shared/ipc";
 
 export interface NativeApi {
@@ -49,9 +50,12 @@ export interface NativeApi {
     fileChanged: (fileName: string) => Promise<FileChangedChoice>;
   };
   window: {
-    onWillClose: (cb: (requestId: number) => void) => () => void;
+    onWillClose: (cb: (request: WindowCloseRequest) => void) => () => void;
+    onCloseCancelled: (cb: () => void) => () => void;
     ready: () => void;
     close: (requestId: number) => Promise<void>;
-    cancelQuit?: (requestId: number) => void;
+    cancelQuit: (requestId: number) => void;
+    reportDirtyState: (requestId: number, dirty: boolean) => void;
+    flushStarted: (requestId: number) => void;
   };
 }

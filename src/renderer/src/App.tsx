@@ -19,7 +19,6 @@ const App = () => {
   const reportError = useStore((s) => s.reportError);
   const externalConflict = useStore((s) => s.externalConflict);
   const loadSnapshot = useStore((s) => s.loadSnapshot);
-  const ensureCleanOrConfirm = useStore((s) => s.ensureCleanOrConfirm);
   const initSettings = useStore((s) => s.initSettings);
   const applyEntries = useStore((s) => s.applyEntries);
   const resolveChangedConflict = useStore((s) => s.resolveChangedConflict);
@@ -90,19 +89,6 @@ const App = () => {
   useEffect(() => {
     return window.api.files.onChanged((event) => applyEntries(event));
   }, [applyEntries]);
-
-  useEffect(() => {
-    const unsubscribe = window.api.window.onWillClose((requestId) => {
-      void (async () => {
-        const ok = await ensureCleanOrConfirm("quit");
-        if (ok) await window.api.window.close(requestId);
-        else window.api.window.cancelQuit?.(requestId);
-      })();
-    });
-
-    window.api.window.ready();
-    return unsubscribe;
-  }, [ensureCleanOrConfirm]);
 
   useEffect(() => {
     if (!externalConflict) {

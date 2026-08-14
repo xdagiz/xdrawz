@@ -227,6 +227,39 @@ describe("createSceneSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
+  it("setAutosavePaused(true) freezes autosave until unpaused", async () => {
+    const { session, dirty, save } = makeSession();
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+
+    session.setAutosavePaused(true);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+
+    expect(save).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+
+    session.setAutosavePaused(false);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+  });
+
+  it("force flush writes while autosave is paused (the Save path during the dialog)", async () => {
+    const { session, dirty, save } = makeSession();
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+    session.setAutosavePaused(true);
+    await session.flush({ force: true });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+  });
+
   it("saveNow persists the latest scene immediately", async () => {
     const { session, dirty, save } = makeSession({
       initialBaseline: sceneSignature([el("a")], appState(), emptyFiles),

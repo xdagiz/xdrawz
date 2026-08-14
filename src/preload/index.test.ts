@@ -22,7 +22,14 @@ vi.mock("electron", () => ({
 // contextBridge instead of the (absent) window global.
 Object.defineProperty(process, "contextIsolated", { value: true, configurable: true });
 
-import { WINDOW_CANCEL_QUIT, WINDOW_CLOSE, WINDOW_WILL_CLOSE } from "@shared/channels";
+import {
+  WINDOW_CANCEL_QUIT,
+  WINDOW_CLOSE,
+  WINDOW_CLOSE_CANCELLED,
+  WINDOW_DIRTY_STATE,
+  WINDOW_FLUSH_STARTED,
+  WINDOW_WILL_CLOSE,
+} from "@shared/channels";
 
 import type { NativeApi } from "./types";
 
@@ -42,19 +49,39 @@ describe("preload window api", () => {
     mocks.removeListener.mockReset();
   });
 
-  it("forwards the will-close request id to the callback", () => {
+  it("forwards the will-close request to the callback", () => {
     const cb = vi.fn();
     const unsubscribe = api.window.onWillClose(cb);
 
     const registration = mocks.on.mock.calls.find(([channel]) => channel === WINDOW_WILL_CLOSE);
     expect(registration).toBeDefined();
-    const [, listener] = registration as [string, (event: unknown, requestId: number) => void];
+    const [, listener] = registration as [
+      string,
+      (event: unknown, request: { requestId: number; kind: "check" | "flush" }) => void,
+    ];
 
-    listener({} as Electron.IpcRendererEvent, 7);
-    expect(cb).toHaveBeenCalledWith(7);
+    listener({} as Electron.IpcRendererEvent, { requestId: 7, kind: "check" });
+    expect(cb).toHaveBeenCalledWith({ requestId: 7, kind: "check" });
 
     unsubscribe();
     expect(mocks.removeListener).toHaveBeenCalledWith(WINDOW_WILL_CLOSE, listener);
+  });
+
+  it("forwards the close-cancelled signal to the callback", () => {
+    const cb = vi.fn();
+    const unsubscribe = api.window.onCloseCancelled(cb);
+
+    const registration = mocks.on.mock.calls.find(
+      ([channel]) => channel === WINDOW_CLOSE_CANCELLED,
+    );
+    expect(registration).toBeDefined();
+    const [, listener] = registration as [string, (event: unknown) => void];
+
+    listener({} as Electron.IpcRendererEvent);
+    expect(cb).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    expect(mocks.removeListener).toHaveBeenCalledWith(WINDOW_CLOSE_CANCELLED, listener);
   });
 
   it("passes the request id back on close", () => {
@@ -63,7 +90,17 @@ describe("preload window api", () => {
   });
 
   it("passes the request id back on cancelQuit", () => {
-    api.window.cancelQuit?.(4);
+    api.window.cancelQuit(4);
     expect(mocks.send).toHaveBeenCalledWith(WINDOW_CANCEL_QUIT, 4);
+  });
+
+  it("reports the dirty state on the dirty-state channel", () => {
+    api.window.reportDirtyState(7, true);
+    expect(mocks.send).toHaveBeenCalledWith(WINDOW_DIRTY_STATE, 7, true);
+  });
+
+  it("reports flush start on the flush-started channel", () => {
+    api.window.flushStarted(9);
+    expect(mocks.send).toHaveBeenCalledWith(WINDOW_FLUSH_STARTED, 9);
   });
 });
