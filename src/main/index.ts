@@ -12,7 +12,7 @@ import { FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
 import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
 import { app, shell, nativeTheme, BrowserWindow, Menu } from "electron";
 
-import icon from "../../resources/icon.png?asset";
+import icon from "../../assets/icon.png?asset";
 import {
   destroyWindow,
   installCloseGuard,

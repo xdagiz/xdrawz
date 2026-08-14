@@ -1,7 +1,7 @@
-appId: com.electron.app
+appId: com.xdrawz.app
 productName: xdrawz
 directories:
-  buildResources: build
+  buildResources: assets
 files:
   - "!**/.vscode/*"
   - "!src/*"
@@ -13,34 +13,30 @@ files:
 electronLanguages:
   - en-US
 asarUnpack:
-  - resources/**
+  - assets/**
 win:
   executableName: xdrawz
+  icon: assets/icon.ico
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  installerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
 mac:
-  entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+  icon: assets/icon.icns
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  icon: assets/icon.png
   target:
     - AppImage
     - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: xdagiz
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates

@@ -32,5 +32,4 @@ export const getZoomLevel = () => store.get("zoomLevel") ?? 0;
 
 export const setZoomLevel = (newLevel: number) => store.set("zoomLevel", newLevel);
 
-const nonEmptyString = (val: unknown): string | null =>
-  typeof val === "string" && val.length > 0 ? val : null;
+const nonEmptyString = (val: unknown) => (typeof val === "string" && val.length > 0 ? val : null);

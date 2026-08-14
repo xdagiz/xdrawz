@@ -5,7 +5,7 @@ import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { toAppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
 
-import AppSidebar from "./components/app-sidebar";
+import { AppSidebar } from "./components/app-sidebar";
 import { EditorView } from "./components/editor-view";
 import { ThemeProvider } from "./components/theme-provider";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";

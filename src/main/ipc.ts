@@ -165,7 +165,7 @@ export const normalizeContextMenuPos = (
   };
 };
 
-export const registerIpcHandlers = (deps: Deps): void => {
+export const registerIpcHandlers = (deps: Deps) => {
   ipcMain.handle(DRAWINGS_GET, () => deps.getDrawings());
   ipcMain.handle(DRAWINGS_LOAD, () => deps.loadDrawings());
 

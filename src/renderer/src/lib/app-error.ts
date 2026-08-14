@@ -17,7 +17,7 @@ export type AppError = {
   detail: string;
 };
 
-const copyableDetail = (error: unknown): string => {
+const copyableDetail = (error: unknown) => {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error) return error;
   return "Unknown error";

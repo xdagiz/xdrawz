@@ -14,7 +14,7 @@ export type FsMutationHooks = {
 
 const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
 
-const parentIdOf = (id: string): string | null => {
+const parentIdOf = (id: string) => {
   const idx = id.lastIndexOf("/");
   return idx === -1 ? null : id.slice(0, idx);
 };
@@ -49,7 +49,7 @@ const resolveInsideRoot = async (id: string) => {
 const walkEntries = async (root: string): Promise<FileEntry[]> => {
   const out: FileEntry[] = [];
 
-  const walk = async (dirAbs: string): Promise<void> => {
+  const walk = async (dirAbs: string) => {
     let dirents: Dirent[];
     try {
       dirents = await readdir(dirAbs, { withFileTypes: true });

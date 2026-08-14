@@ -24,7 +24,7 @@ let isQuitting = false;
 let nextCloseRequestId = 0;
 const closeStates = new WeakMap<BrowserWindow, CloseState>();
 
-const closeStateFor = (win: BrowserWindow): CloseState => {
+const closeStateFor = (win: BrowserWindow) => {
   const existing = closeStates.get(win);
   if (existing) return existing;
 

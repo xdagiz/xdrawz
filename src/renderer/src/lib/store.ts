@@ -31,7 +31,7 @@ const removeKey = (obj: Record<string, true>, key: string): Record<string, true>
   return next;
 };
 
-const fileNameOf = (entries: FileEntry[], id: string): string => {
+const fileNameOf = (entries: FileEntry[], id: string) => {
   const entry = entries.find((e) => e.id === id);
   return entry?.name ?? id.split("/").pop() ?? id;
 };

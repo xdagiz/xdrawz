@@ -18,7 +18,9 @@
     "build:unpack": "vp run build && electron-builder --dir",
     "build:win": "vp run build && electron-builder --win",
     "build:mac": "vp run build && electron-builder --mac",
-    "build:linux": "vp run build && electron-builder --linux"
+    "build:linux": "vp run build && electron-builder --linux",
+    "icons:export": "node scripts/export-icons.mjs",
+    "icons:check": "node scripts/export-icons.mjs --check"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",

@@ -151,7 +151,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     return lastSaveOk;
   };
 
-  const getSerializedContent = (): string | null => {
+  const getSerializedContent = () => {
     if (!latestScene) return null;
     const [elements, appState, files] = latestScene;
     return serializeAsJSON(elements, appState, files, "local");
@@ -223,7 +223,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   const ensureCleanOrConfirm = async (
     reason: UnsavedReason,
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
-  ): Promise<boolean> => {
+  ) => {
     if (!dirty) {
       await flush({ force: false });
       return true;

@@ -9,7 +9,7 @@ export const resolveTheme = (preference: ThemePreference, systemDark: boolean): 
   return preference;
 };
 
-export const getSystemPrefersDark = (): boolean => {
+export const getSystemPrefersDark = () => {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return false;
   }
@@ -37,7 +37,7 @@ export const writeStoredTheme = (storage: Pick<Storage, "setItem">, theme: Theme
   }
 };
 
-export const subscribeSystemPrefersDark = (onStoreChange: () => void): (() => void) => {
+export const subscribeSystemPrefersDark = (onStoreChange: () => void) => {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return () => {};
   }
@@ -47,10 +47,11 @@ export const subscribeSystemPrefersDark = (onStoreChange: () => void): (() => vo
   return () => mq.removeEventListener("change", onStoreChange);
 };
 
-const hasDocumentElement = (): boolean =>
-  typeof document !== "undefined" && document.documentElement != null;
+const hasDocumentElement = () => {
+  return typeof document !== "undefined" && document.documentElement != null;
+};
 
-export const applyDocumentTheme = (resolved: ResolvedTheme): void => {
+export const applyDocumentTheme = (resolved: ResolvedTheme) => {
   if (!hasDocumentElement()) return;
 
   const root = document.documentElement;

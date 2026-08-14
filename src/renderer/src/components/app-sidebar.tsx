@@ -31,7 +31,7 @@ import { stripExcalidraw } from "@/lib/utils";
 
 import { toast } from "./ui/toast";
 
-const AppSidebar = () => {
+export const AppSidebar = () => {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const entries = useStore((s) => s.entries);
@@ -279,5 +279,3 @@ const RenameInput = ({
     </Field>
   );
 };
-
-export default AppSidebar;

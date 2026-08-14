@@ -232,7 +232,7 @@ export const createDrawingsWatcher = (
 
   const stop = async () => await stopInternal();
 
-  const restart = async (root: string | null): Promise<void> => {
+  const restart = async (root: string | null) => {
     await stopInternal();
     if (root) await start(root);
   };

@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-function cleanIpcError(err: unknown): string {
+function cleanIpcError(err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
   return msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 }

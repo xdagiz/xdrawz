@@ -50,7 +50,6 @@ export const pickDrawings = async (win: BrowserWindow | null): Promise<DrawingIn
   };
 
   const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
-
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
@@ -62,6 +61,5 @@ export const pickDrawings = async (win: BrowserWindow | null): Promise<DrawingIn
   }
 
   setDrawingPath(chosen);
-
   return getDrawings();
 };

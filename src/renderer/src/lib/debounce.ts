@@ -4,7 +4,7 @@ export function debounceAsync<TArgs extends unknown[]>(
 ) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastArgs: TArgs | null = null;
-  let pending: Promise<void> = Promise.resolve();
+  let pending = Promise.resolve();
   let paused = false;
   let frozenRemainingMs: number | null = null;
   let deadlineMs: number | null = null;
