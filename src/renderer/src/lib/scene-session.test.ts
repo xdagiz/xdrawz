@@ -153,13 +153,13 @@ describe("createSceneSession", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it("quietly persists when the first commit differs from the disk baseline", async () => {
+  it("marks dirty until it persists when the first commit differs from the disk baseline", async () => {
     const diskBaseline = sceneSignature([el("raw")], appState("#000000"), emptyFiles);
     const { session, dirty, save } = makeSession({ initialBaseline: diskBaseline });
 
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
 
-    expect(dirty).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenCalledWith("f1", true);
     expect(save).toHaveBeenCalledTimes(1);
     expect(save).toHaveBeenCalledWith("f1", expect.any(String));
   });
@@ -182,7 +182,8 @@ describe("createSceneSession", () => {
 
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
 
-    expect(dirty).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenCalledWith("f1", true);
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
     expect(save).toHaveBeenCalledTimes(1);
   });
 
@@ -193,7 +194,7 @@ describe("createSceneSession", () => {
     session.setInitialBaseline("disk-version");
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
 
-    expect(dirty).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenCalledWith("f1", true);
     expect(save).toHaveBeenCalledTimes(1);
   });
 
@@ -298,6 +299,34 @@ describe("createSceneSession", () => {
     await session.flush();
 
     expect(save).toHaveBeenCalledTimes(1);
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+  });
+
+  it("persists a return to the baseline after an older save is already in flight", async () => {
+    let resolveFirstSave!: (ok: boolean) => void;
+    const save = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveFirstSave = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(true);
+    const { session, dirty } = makeSession({ save });
+
+    session.onChange([el("a")], appState("#000000"), emptyFiles);
+    session.onChange([el("a"), el("b")], appState("#ffffff"), emptyFiles);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // Reverting while the first write is unresolved must queue the final state.
+    session.onChange([el("a")], appState("#000000"), emptyFiles);
+    resolveFirstSave(true);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith("f1", expect.stringContaining('"vbg":"#000000"'));
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 

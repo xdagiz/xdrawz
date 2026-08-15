@@ -61,6 +61,9 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   let baseline: string | null = null;
   let diskBaseline = initialBaseline;
   let latestScene: SceneSnapshot | null = null;
+  let latestSignature: string | null = null;
+  let latestRevision = 0;
+  let savesInFlight = 0;
   let disposed = false;
   let blocked = false;
   let dirty = false;
@@ -76,23 +79,33 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
     files: BinaryFiles,
+    revision: number,
   ) => {
     const json = serializeAsJSON(elements, appState, files, "local");
-    const ok = await save(fileId, json);
+    savesInFlight += 1;
 
-    if (ok) {
-      baseline = sceneSignature(elements, appState, files);
-      setDirty(false);
-      saveFailures = 0;
-    } else {
-      setDirty(true);
-      saveFailures += 1;
-      if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
-        debounced(elements, appState, files);
+    try {
+      const ok = await save(fileId, json);
+      if (ok) {
+        saveFailures = 0;
+        if (revision === latestRevision) {
+          baseline = sceneSignature(elements, appState, files);
+          setDirty(false);
+        } else {
+          setDirty(true);
+        }
+      } else if (revision === latestRevision) {
+        setDirty(true);
+        saveFailures += 1;
+        if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
+          debounced(elements, appState, files, revision);
+        }
       }
-    }
 
-    return ok;
+      return ok;
+    } finally {
+      savesInFlight -= 1;
+    }
   };
 
   const debounced = debounceAsync(
@@ -100,9 +113,10 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
       elements: readonly OrderedExcalidrawElement[],
       appState: AppState,
       files: BinaryFiles,
+      revision: number,
     ) => {
       if (blocked || disposed) return;
-      await persistScene(elements, appState, files);
+      await persistScene(elements, appState, files, revision);
     },
     AUTOSAVE_MS,
   );
@@ -113,22 +127,22 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     if (!force && blocked) return;
     if (!dirty && !force) return;
 
-    await debounced.flush({ force });
+    const temporarilyUnblocked = force && blocked;
+    if (temporarilyUnblocked) blocked = false;
 
-    if (force && dirty && latestScene) {
-      const [elements, appState, files] = latestScene;
-      await persistScene(elements, appState, files);
+    try {
+      await debounced.flush({ force });
+    } finally {
+      if (temporarilyUnblocked) blocked = true;
     }
   };
 
   const saveNow = async () => {
-    if (disposed || blocked) return;
-    debounced.cancel();
-
-    if (!latestScene) return;
+    if (disposed || blocked || !latestScene) return;
 
     const [elements, appState, files] = latestScene;
-    await persistScene(elements, appState, files);
+    debounced(elements, appState, files, latestRevision);
+    await debounced.flush({ force: true });
   };
 
   const getSerializedContent = (): string | null => {
@@ -150,21 +164,29 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     const current = sceneSignature(elements, appState, files);
     if (baseline === null) {
       baseline = current;
+      latestSignature = current;
       if (diskBaseline != null && current !== diskBaseline) {
-        void persistScene(elements, appState, files);
+        latestRevision += 1;
+        setDirty(true);
+        void persistScene(elements, appState, files, latestRevision);
       }
 
       return;
     }
 
-    if (current === baseline) {
+    if (current === latestSignature) return;
+
+    latestSignature = current;
+    latestRevision += 1;
+
+    if (current === baseline && savesInFlight === 0) {
       setDirty(false);
       debounced.cancel();
       return;
     }
 
     setDirty(true);
-    if (!blocked) debounced(elements, appState, files);
+    if (!blocked) debounced(elements, appState, files, latestRevision);
   };
 
   const block = () => {
