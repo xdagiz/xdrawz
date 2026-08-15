@@ -23,6 +23,8 @@ import {
   STORE_SET,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
+  WINDOW_DIRTY_STATE,
+  WINDOW_FLUSH_STARTED,
   WINDOW_READY,
 } from "@shared/channels";
 import type {
@@ -35,11 +37,11 @@ import type {
   FileRecoverChoice,
   SettingsUpdate,
   StoreKey,
-  UnsavedChoice,
   UnsavedReason,
 } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
+import { showUnsavedChangesDialog } from "./close-guard";
 import { store } from "./store";
 
 export const APP_ORIGIN = "app://renderer";
@@ -114,6 +116,8 @@ type Deps = {
   destroyWindow: (win: BrowserWindow, requestId: number) => void;
   markWindowReady: (win: BrowserWindow) => void;
   cancelQuit: (win: BrowserWindow, requestId: number) => void;
+  onDirtyState: (win: BrowserWindow, requestId: number, dirty: boolean) => void;
+  onFlushStarted: (win: BrowserWindow, requestId: number) => void;
   getSettings: () => AppSettings;
   updateSettings: (update: SettingsUpdate) => AppSettings;
 };
@@ -236,31 +240,19 @@ export const registerIpcHandlers = (deps: Deps): void => {
     if (win) deps.cancelQuit(win, requestId);
   });
 
-  ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason: UnsavedReason = "quit") => {
+  ipcMain.on(WINDOW_DIRTY_STATE, (event, requestId: number, dirty: boolean) => {
     const win = windowFromEvent(event);
-    const options: Electron.MessageBoxOptions = {
-      type: "warning",
-      buttons: ["Save", "Don't save", "Cancel"],
-      defaultId: 0,
-      cancelId: 2,
-      message: "You have unsaved changes.",
-      detail:
-        reason === "switch"
-          ? "Do you want to save before leaving this drawing?"
-          : "Do you want to save before quitting?",
-    };
-
-    const doShow = async (): Promise<UnsavedChoice> => {
-      const { response } = win
-        ? await dialog.showMessageBox(win, options)
-        : await dialog.showMessageBox(options);
-      if (response === 0) return "save";
-      if (response === 1) return "discard";
-      return "cancel";
-    };
-
-    return doShow();
+    if (win) deps.onDirtyState(win, requestId, dirty);
   });
+
+  ipcMain.on(WINDOW_FLUSH_STARTED, (event, requestId: number) => {
+    const win = windowFromEvent(event);
+    if (win) deps.onFlushStarted(win, requestId);
+  });
+
+  ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason: UnsavedReason = "quit") =>
+    showUnsavedChangesDialog(windowFromEvent(event), reason),
+  );
 
   ipcMain.handle(FILES_WRITE_RECOVER, (_event, id: string, content: string) =>
     deps.writeSceneFileRecover(id, content),

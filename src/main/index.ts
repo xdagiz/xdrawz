@@ -20,6 +20,8 @@ import {
   isWindowReady,
   cancelQuit,
   markWindowReady,
+  onDirtyState,
+  onFlushStarted,
   requestQuitViaRenderer,
 } from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
@@ -306,6 +308,8 @@ app.whenReady().then(async () => {
     destroyWindow,
     markWindowReady,
     cancelQuit,
+    onDirtyState,
+    onFlushStarted,
     getSettings,
     updateSettings: setSettings,
     pickDrawings: async (parentWindow) => {

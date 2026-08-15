@@ -197,6 +197,8 @@ const deps = {
   destroyWindow: vi.fn(),
   markWindowReady: vi.fn(),
   cancelQuit: vi.fn(),
+  onDirtyState: vi.fn(),
+  onFlushStarted: vi.fn(),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
 };
