@@ -1,3 +1,10 @@
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EPIPE") return;
+    process.emitWarning(`stdio stream error: ${error.message}`);
+  });
+}
+
 import { join } from "path";
 
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
@@ -192,9 +199,9 @@ function createMainWindow() {
   );
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+    void mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {
-    mainWindow.loadURL(APP_INDEX_URL);
+    void mainWindow.loadURL(APP_INDEX_URL);
   }
 
   return mainWindow;
@@ -313,7 +320,9 @@ app.whenReady().then(async () => {
         }
 
         ensureMainWindow();
-        if (parentWindow && !parentWindow.isDestroyed()) parentWindow.close();
+        if (parentWindow && parentWindow !== mainWindow && !parentWindow.isDestroyed()) {
+          parentWindow.close();
+        }
       }
       return info;
     },
