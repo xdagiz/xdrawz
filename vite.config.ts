@@ -114,6 +114,7 @@ export default defineConfig({
       "no-unused-vars": "warn",
       "no-useless-backreference": "error",
       "no-useless-catch": "error",
+      "no-useless-fallback-in-spread": "warn",
       "no-useless-escape": "error",
       "no-with": "error",
       "require-yield": "error",
