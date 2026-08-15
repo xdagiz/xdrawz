@@ -23,6 +23,7 @@ vi.mock("electron", () => ({
 Object.defineProperty(process, "contextIsolated", { value: true, configurable: true });
 
 import {
+  FILES_READ,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
   WINDOW_CLOSE_CANCELLED,
@@ -43,7 +44,7 @@ describe("preload window api", () => {
   });
 
   beforeEach(() => {
-    mocks.invoke.mockReset();
+    mocks.invoke.mockReset().mockResolvedValue(undefined);
     mocks.send.mockReset();
     mocks.on.mockReset();
     mocks.removeListener.mockReset();
@@ -87,6 +88,13 @@ describe("preload window api", () => {
   it("passes the request id back on close", () => {
     void api.window.close(3);
     expect(mocks.invoke).toHaveBeenCalledWith(WINDOW_CLOSE, 3);
+  });
+
+  it("passes rejections through without preprocessing", async () => {
+    mocks.invoke.mockRejectedValueOnce(new Error("boom"));
+
+    await expect(api.files.read("big.excalidraw")).rejects.toThrow("boom");
+    expect(mocks.invoke).toHaveBeenCalledWith(FILES_READ, "big.excalidraw");
   });
 
   it("passes the request id back on cancelQuit", () => {

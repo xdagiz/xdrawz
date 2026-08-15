@@ -32,9 +32,7 @@ import type {
   ContextMenuRequest,
   DrawingInfo,
   DrawingsSnapshot,
-  FileChangedChoice,
   FileEntry,
-  FileRecoverChoice,
   SettingsUpdate,
   StoreKey,
   UnsavedReason,
@@ -166,8 +164,8 @@ export const normalizeContextMenuPos = (
 };
 
 export const registerIpcHandlers = (deps: Deps) => {
-  ipcMain.handle(DRAWINGS_GET, () => deps.getDrawings());
-  ipcMain.handle(DRAWINGS_LOAD, () => deps.loadDrawings());
+  ipcMain.handle(DRAWINGS_GET, async () => deps.getDrawings());
+  ipcMain.handle(DRAWINGS_LOAD, async () => deps.loadDrawings());
 
   ipcMain.handle(STORE_GET, (_event, key: StoreKey) => {
     const value = store.get(key);
@@ -179,19 +177,21 @@ export const registerIpcHandlers = (deps: Deps) => {
   ipcMain.handle(STORE_DELETE, (_event, key: StoreKey) => store.delete(key));
   ipcMain.handle(STORE_CLEAR, () => store.clear());
 
-  ipcMain.handle(FILES_LIST, () => deps.listEntries());
-  ipcMain.handle(FILES_READ, (_event, id: string) => deps.readSceneFile(id));
-  ipcMain.handle(FILES_RENAME, (_event, id: string, newName: string) =>
+  ipcMain.handle(FILES_LIST, async () => deps.listEntries());
+
+  ipcMain.handle(FILES_READ, async (_event, id: string) => deps.readSceneFile(id));
+  ipcMain.handle(FILES_RENAME, async (_event, id: string, newName: string) =>
     deps.renameEntry(id, newName),
   );
-  ipcMain.handle(FILES_WRITE, (_event, id: string, content: string) =>
+
+  ipcMain.handle(FILES_WRITE, async (_event, id: string, content: string) =>
     deps.writeSceneFile(id, content),
   );
-  ipcMain.handle(FILES_DELETE, (_event, id: string) => deps.deleteEntry(id));
+  ipcMain.handle(FILES_DELETE, async (_event, id: string) => deps.deleteEntry(id));
 
-  ipcMain.handle(DRAWINGS_PICK, (event) => deps.pickDrawings(windowFromEvent(event)));
+  ipcMain.handle(DRAWINGS_PICK, async (event) => deps.pickDrawings(windowFromEvent(event)));
 
-  ipcMain.handle(CONTEXT_MENU_SHOW, (event, request: ContextMenuRequest) => {
+  ipcMain.handle(CONTEXT_MENU_SHOW, async (event, request: ContextMenuRequest) => {
     const win = windowFromEvent(event);
     if (!win) return null;
 
@@ -231,34 +231,50 @@ export const registerIpcHandlers = (deps: Deps) => {
   });
 
   ipcMain.on(WINDOW_READY, (event) => {
-    const win = windowFromEvent(event);
-    if (win) deps.markWindowReady(win);
+    try {
+      const win = windowFromEvent(event);
+      if (win) deps.markWindowReady(win);
+    } catch (error) {
+      console.error("[ipcMain.on] WINDOW_READY listener error:", error);
+    }
   });
 
   ipcMain.on(WINDOW_CANCEL_QUIT, (event, requestId: number) => {
-    const win = windowFromEvent(event);
-    if (win) deps.cancelQuit(win, requestId);
+    try {
+      const win = windowFromEvent(event);
+      if (win) deps.cancelQuit(win, requestId);
+    } catch (error) {
+      console.error("[ipcMain.on] WINDOW_CANCEL_QUIT listener error:", error);
+    }
   });
 
   ipcMain.on(WINDOW_DIRTY_STATE, (event, requestId: number, dirty: boolean) => {
-    const win = windowFromEvent(event);
-    if (win) deps.onDirtyState(win, requestId, dirty);
+    try {
+      const win = windowFromEvent(event);
+      if (win) deps.onDirtyState(win, requestId, dirty);
+    } catch (error) {
+      console.error("[ipcMain.on] WINDOW_DIRTY_STATE listener error:", error);
+    }
   });
 
   ipcMain.on(WINDOW_FLUSH_STARTED, (event, requestId: number) => {
-    const win = windowFromEvent(event);
-    if (win) deps.onFlushStarted(win, requestId);
+    try {
+      const win = windowFromEvent(event);
+      if (win) deps.onFlushStarted(win, requestId);
+    } catch (error) {
+      console.error("[ipcMain.on] WINDOW_FLUSH_STARTED listener error:", error);
+    }
   });
 
-  ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason: UnsavedReason = "quit") =>
+  ipcMain.handle(DIALOG_UNSAVED_CHANGES, async (event, reason: UnsavedReason = "quit") =>
     showUnsavedChangesDialog(windowFromEvent(event), reason),
   );
 
-  ipcMain.handle(FILES_WRITE_RECOVER, (_event, id: string, content: string) =>
+  ipcMain.handle(FILES_WRITE_RECOVER, async (_event, id: string, content: string) =>
     deps.writeSceneFileRecover(id, content),
   );
 
-  ipcMain.handle(DIALOG_FILE_RECOVER, (event, fileName: string) => {
+  ipcMain.handle(DIALOG_FILE_RECOVER, async (event, fileName: string) => {
     const win = windowFromEvent(event);
     const options: Electron.MessageBoxOptions = {
       type: "warning",
@@ -268,20 +284,16 @@ export const registerIpcHandlers = (deps: Deps) => {
       message: `"${fileName}" was deleted on disk.`,
     };
 
-    const doShow = async (): Promise<FileRecoverChoice> => {
-      const { response } = win
-        ? await dialog.showMessageBox(win, options)
-        : await dialog.showMessageBox(options);
+    const { response } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options);
 
-      if (response === 0) return "recover";
-      if (response === 1) return "discard";
-      return "cancel";
-    };
-
-    return doShow();
+    if (response === 0) return "recover";
+    if (response === 1) return "discard";
+    return "cancel";
   });
 
-  ipcMain.handle(DIALOG_FILE_CHANGED, (event, fileName: string) => {
+  ipcMain.handle(DIALOG_FILE_CHANGED, async (event, fileName: string) => {
     const win = windowFromEvent(event);
     const options: Electron.MessageBoxOptions = {
       type: "warning",
@@ -293,16 +305,12 @@ export const registerIpcHandlers = (deps: Deps) => {
         "You have unsaved edits in this drawing. Reload discards your edits; keep writes your version to disk now.",
     };
 
-    const doShow = async (): Promise<FileChangedChoice> => {
-      const { response } = win
-        ? await dialog.showMessageBox(win, options)
-        : await dialog.showMessageBox(options);
+    const { response } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options);
 
-      if (response === 0) return "reload";
-      if (response === 1) return "overwrite";
-      return "cancel";
-    };
-
-    return doShow();
+    if (response === 0) return "reload";
+    if (response === 1) return "overwrite";
+    return "cancel";
   });
 };

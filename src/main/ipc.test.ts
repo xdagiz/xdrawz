@@ -56,6 +56,7 @@ import {
   isTrustedRendererUrl,
   registerIpcHandlers,
 } from "./ipc";
+
 const env = process.env as Record<string, string | undefined>;
 
 describe("isTrustedRendererUrl", () => {
@@ -92,8 +93,6 @@ describe("isTrustedRendererUrl", () => {
     mocks.isPackaged = true;
     env["ELECTRON_RENDERER_URL"] = "http://localhost:5173/";
 
-    // Packaged trust rules apply: the stale dev-server origin is not trusted,
-    // and the app: rule still accepts pages.
     expect(isTrustedRendererUrl("http://localhost:5173/greeting.html")).toBe(false);
     expect(isTrustedRendererUrl(`${APP_ORIGIN}/index.html`)).toBe(true);
   });
@@ -203,7 +202,7 @@ const deps = {
   updateSettings: vi.fn(),
 };
 
-const handlers = new Map<string, (...args: unknown[]) => unknown>();
+const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
 const listeners = new Map<string, (...args: unknown[]) => void>();
 
 const eventFor = () => ({ sender: {} }) as Electron.IpcMainInvokeEvent;
@@ -259,7 +258,7 @@ describe("registerIpcHandlers wiring", () => {
   });
 
   it("forwards the close request id to destroyWindow", () => {
-    handlers.get(WINDOW_CLOSE)!(eventFor(), 5);
+    void handlers.get(WINDOW_CLOSE)!(eventFor(), 5);
     expect(deps.destroyWindow).toHaveBeenCalledWith(expect.any(Object), 5);
   });
 
@@ -300,5 +299,54 @@ describe("registerIpcHandlers wiring", () => {
     deps.getDrawings.mockResolvedValue("drawings");
     void handler(eventFor());
     expect(deps.getDrawings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("registerIpcHandlers error propagation", () => {
+  beforeEach(() => {
+    mocks.fromWebContents.mockReset().mockReturnValue({ isDestroyed: () => false });
+    for (const fn of Object.values(deps)) fn.mockReset();
+
+    handlers.clear();
+    listeners.clear();
+    mocks.handle.mockClear();
+    mocks.on.mockClear();
+    mocks.handle.mockImplementation((channel, listener) => handlers.set(channel, listener));
+    mocks.on.mockImplementation((channel, listener) => listeners.set(channel, listener));
+
+    registerIpcHandlers(deps);
+  });
+
+  it("propagates handler rejections as plain errors", async () => {
+    const handler = handlers.get(FILES_READ)!;
+    deps.readSceneFile.mockRejectedValue(new Error("Scene content is not valid JSON"));
+
+    await expect(handler(eventFor(), "broken.excalidraw")).rejects.toThrow(
+      "Scene content is not valid JSON",
+    );
+  });
+
+  it("propagates sync handler throws as plain errors", async () => {
+    const handler = handlers.get(FILES_WRITE)!;
+    deps.writeSceneFile.mockRejectedValue(new Error("disk on fire"));
+
+    await expect(handler(eventFor(), "a.excalidraw", "{}")).rejects.toThrow("disk on fire");
+  });
+
+  it("propagates successful results unchanged", async () => {
+    const handler = handlers.get(DRAWINGS_LOAD)!;
+    deps.loadDrawings.mockResolvedValue({ info: { configured: true }, entries: [] });
+    await expect(handler(eventFor())).resolves.toEqual({
+      info: { configured: true },
+      entries: [],
+    });
+  });
+
+  it("catches send-style listener failures", () => {
+    deps.markWindowReady.mockImplementation(() => {
+      throw new Error("listener exploded");
+    });
+
+    expect(() => listeners.get(WINDOW_READY)!(eventFor())).not.toThrow();
   });
 });

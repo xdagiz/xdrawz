@@ -438,6 +438,22 @@ describe("saveFile recovery", () => {
     expect(useStore.getState().dirtyById["file-1"]).toBeUndefined();
   });
 
+  it("offers recover when the write rejection contains FILE_NOT_FOUND", async () => {
+    vi.mocked(window.api.files.write).mockRejectedValue(
+      new Error(`Error invoking remote method 'files:write': Error: ${FILE_NOT_FOUND_MESSAGE}`),
+    );
+    vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("recover");
+    vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
+
+    const ok = await useStore.getState().saveFile("file-1", "{}");
+
+    expect(ok).toBe(true);
+    expect(window.api.dialog.fileRecover).toHaveBeenCalled();
+    expect(window.api.files.writeRecover).toHaveBeenCalledWith("file-1", "{}");
+    expect(useStore.getState().externalConflict).toBeNull();
+    expect(useStore.getState().dirtyById["file-1"]).toBeUndefined();
+  });
+
   it("discards missing file when user chooses discard", async () => {
     vi.mocked(window.api.files.write).mockRejectedValue(new Error(FILE_NOT_FOUND_MESSAGE));
     vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("discard");

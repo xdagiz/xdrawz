@@ -4,15 +4,34 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "./components/error-boundary";
-import { Toaster, toast } from "./components/ui/toast";
+import { Toaster } from "./components/ui/toast";
 import { useStore } from "./lib/store";
+import { cleanErrorMessage } from "@shared/errors";
+import { toAppError } from "./lib/app-error";
+import { toast } from "./components/ui/toast";
 import { router } from "./router";
 
-const reportUnexpected = (error: unknown) => {
+const DEDUP_WINDOW_MS = 1000;
+let lastUnexpected: { message: string; at: number } | null = null;
+
+const reportUnexpected = (error: unknown): void => {
+  const message = cleanErrorMessage(error);
+  const now = Date.now();
+
+  if (
+    lastUnexpected &&
+    lastUnexpected.message === message &&
+    now - lastUnexpected.at < DEDUP_WINDOW_MS
+  ) {
+    return;
+  }
+  lastUnexpected = { message, at: now };
+
   console.error("unexpected error:", error);
+  const appError = toAppError(error, "unexpected");
   toast.add({
-    title: "Something went wrong",
-    description: "The app recovered. If this keeps happening, restart xdrawz.",
+    title: appError.title,
+    description: appError.detail,
     type: "error",
   });
 };

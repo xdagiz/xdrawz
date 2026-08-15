@@ -29,7 +29,7 @@ describe("toAppError", () => {
     expect(error.retryable).toBe(true);
   });
 
-  it("does not leak the raw IPC message into rename copy", () => {
+  it("does not leak the raw IPC message into the copy title or body", () => {
     const error = toAppError(
       new Error("Error invoking remote method 'files:rename': Error: EACCES"),
       "rename",
@@ -40,7 +40,7 @@ describe("toAppError", () => {
     expect(error.detail).toBe("EACCES");
   });
 
-  it("strips the Electron IPC wrappers from the detail", () => {
+  it("keeps an already-unwrapped wire message in the detail", () => {
     const error = toAppError(
       new Error("Error invoking remote method 'files:write': Error: File not found"),
       "save",
@@ -57,5 +57,27 @@ describe("toAppError", () => {
     const a = toAppError(new Error("x"), "rename");
     const b = toAppError(new Error("x"), "rename");
     expect(a.id).not.toBe(b.id);
+  });
+
+  it("uses caller operation for copy selection", () => {
+    const readError = toAppError(new Error("file not found"), "read");
+    expect(readError.title).toBe("Couldn\u2019t open this drawing");
+
+    const saveError = toAppError(new Error("permission denied"), "save");
+    expect(saveError.title).toBe("Couldn\u2019t save this drawing");
+
+    const settingsError = toAppError(new Error("invalid theme"), "settings");
+    expect(settingsError.title).toBe("Couldn\u2019t update settings");
+  });
+
+  it("uses cleanErrorMessage for detail", () => {
+    const error = toAppError(new Error("raw error message"), "save");
+    expect(error.detail).toBe("raw error message");
+
+    const withPrefix = toAppError(
+      new Error("Error invoking remote method 'files:save': Error: disk full"),
+      "save",
+    );
+    expect(withPrefix.detail).toBe("disk full");
   });
 });

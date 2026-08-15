@@ -1,12 +1,4 @@
-export type ErrorOperation =
-  | "load"
-  | "read"
-  | "save"
-  | "recover"
-  | "rename"
-  | "delete"
-  | "settings"
-  | "unexpected";
+import { cleanErrorMessage, type ErrorOperation } from "@shared/errors";
 
 export type AppError = {
   id: string;
@@ -15,12 +7,6 @@ export type AppError = {
   message: string;
   retryable: boolean;
   detail: string;
-};
-
-const copyableDetail = (error: unknown) => {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error) return error;
-  return "Unknown error";
 };
 
 const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "message"> => {
@@ -66,20 +52,14 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
 
 export const toAppError = (
   error: unknown,
-  operation: ErrorOperation,
+  operation: ErrorOperation = "unexpected",
   retryable = true,
 ): AppError => {
-  const message = messageFor(operation);
-  const detail = copyableDetail(error).replace(
-    /^Error invoking remote method '[^']+': (Error: )?/,
-    "",
-  );
-
   return {
     id: `${operation}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     operation,
     retryable,
-    detail,
-    ...message,
+    detail: cleanErrorMessage(error),
+    ...messageFor(operation),
   };
 };

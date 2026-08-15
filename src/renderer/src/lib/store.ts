@@ -1,3 +1,4 @@
+import { cleanErrorMessage } from "@shared/errors";
 import type {
   AppSettings,
   DrawingInfo,
@@ -278,7 +279,7 @@ export const useStore = create<State>((set, get) => ({
       set({ error: null, externalConflict: null });
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save";
+      const message = cleanErrorMessage(error);
 
       if (isFileNotFoundMessage(message)) {
         const latest = get();

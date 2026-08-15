@@ -28,11 +28,7 @@ import {
   WINDOW_READY,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
-import {
-  type FilesChangedEvent,
-  type WatcherErrorEvent,
-  type WindowCloseRequest,
-} from "@shared/ipc";
+import type { FilesChangedEvent, WatcherErrorEvent, WindowCloseRequest } from "@shared/ipc";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";

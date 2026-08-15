@@ -1,12 +1,8 @@
+import { cleanErrorMessage } from "@shared/errors";
 import { Folder, X } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-
-function cleanIpcError(err: unknown) {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
-}
 
 export function Greeting() {
   const [picking, setPicking] = useState(false);
@@ -23,7 +19,7 @@ export function Greeting() {
       }
       setPicking(false);
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(cleanErrorMessage(err));
       setPicking(false);
     }
   };
