@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
@@ -14,6 +14,7 @@ const BOOT_SCRIPT_PATH = resolve(
 );
 
 const bootScript = readFileSync(BOOT_SCRIPT_PATH, "utf8");
+// oxlint-disable-next-line typescript/no-implied-eval -- deliberately executes the plain boot script to test it
 const run = () => Function(bootScript)();
 
 type BootDom = {

@@ -195,7 +195,7 @@ export const registerIpcHandlers = (deps: Deps) => {
     const win = windowFromEvent(event);
     if (!win) return null;
 
-    return new Promise<string | null>((resolve) => {
+    return new Promise<string | null>((resolveSelection) => {
       let resolved = false;
 
       const template = request.items.map((item) => ({
@@ -203,7 +203,7 @@ export const registerIpcHandlers = (deps: Deps) => {
         enabled: true,
         click: () => {
           resolved = true;
-          resolve(item.id);
+          resolveSelection(item.id);
         },
       }));
 
@@ -215,7 +215,7 @@ export const registerIpcHandlers = (deps: Deps) => {
         window: win,
         ...position,
         callback: () => {
-          if (!resolved) resolve(null);
+          if (!resolved) resolveSelection(null);
         },
       });
     });

@@ -1,6 +1,6 @@
 import type { DrawingsSnapshot, FileEntry, FilesChangedEvent } from "@shared/ipc";
 import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
 import type { SceneSessionControls } from "@/lib/scene-session";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
@@ -47,6 +47,22 @@ const resetStore = () => {
     externalConflict: null,
     editorEpoch: 0,
   });
+};
+
+const registerSession = (allowed: boolean) => {
+  useStore.getState().registerSession({
+    ensureCleanOrConfirm: async () => allowed,
+    getSerializedContent: () => "{}",
+    saveNow: async () => {},
+  } as unknown as SceneSessionControls);
+};
+
+const registerSessionWithContent = (content: string | null) => {
+  useStore.getState().registerSession({
+    ensureCleanOrConfirm: async () => true,
+    getSerializedContent: () => content,
+    saveNow: async () => {},
+  } as unknown as SceneSessionControls);
 };
 
 describe("lastOpenedFileId", () => {
@@ -255,7 +271,7 @@ describe("applyEntries + conflicts", () => {
 
   it("updates entries and revision on fresh events", () => {
     useStore.setState({ entries: [], filesRevision: 0 });
-    const next = [mockEntries[0]!];
+    const next = [mockEntries[0]];
 
     useStore.getState().applyEntries(event({ revision: 1, entries: next }));
 
@@ -366,16 +382,16 @@ describe("applyEntries + conflicts", () => {
 
     useStore.getState().loadSnapshot({
       info: baseInfo,
-      entries: [mockEntries[0]!],
+      entries: [mockEntries[0]],
       prefs: { lastOpenedFileId: null },
     });
 
     expect(useStore.getState().filesRevision).toBe(7);
-    expect(useStore.getState().entries).toEqual([mockEntries[0]!]);
+    expect(useStore.getState().entries).toEqual([mockEntries[0]]);
 
     // Stale rev must still be ignored after reload.
     useStore.getState().applyEntries(event({ revision: 4, entries: [] }));
-    expect(useStore.getState().entries).toEqual([mockEntries[0]!]);
+    expect(useStore.getState().entries).toEqual([mockEntries[0]]);
   });
 });
 
@@ -509,14 +525,6 @@ describe("renameFile/deleteFile cancellation", () => {
     vi.unstubAllGlobals();
   });
 
-  const registerSession = (allowed: boolean) => {
-    useStore.getState().registerSession({
-      ensureCleanOrConfirm: async () => allowed,
-      getSerializedContent: () => "{}",
-      saveNow: async () => {},
-    } as unknown as SceneSessionControls);
-  };
-
   it("renameFile returns false without renaming when the unsaved-changes prompt is cancelled", async () => {
     registerSession(false);
 
@@ -546,9 +554,9 @@ describe("renameFile/deleteFile cancellation", () => {
       size: 100,
     });
     vi.mocked(window.api.files.list).mockResolvedValue([
-      { ...mockEntries[0]!, id: "renamed.excalidraw", name: "renamed.excalidraw" },
-      mockEntries[1]!,
-      mockEntries[2]!,
+      { ...mockEntries[0], id: "renamed.excalidraw", name: "renamed.excalidraw" },
+      mockEntries[1],
+      mockEntries[2],
     ]);
 
     const ok = await useStore.getState().renameFile("file-1", "renamed");
@@ -595,14 +603,6 @@ describe("retryRecover", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
-
-  const registerSessionWithContent = (content: string | null) => {
-    useStore.getState().registerSession({
-      ensureCleanOrConfirm: async () => true,
-      getSerializedContent: () => content,
-      saveNow: async () => {},
-    } as unknown as SceneSessionControls);
-  };
 
   it("retries writeRecover without re-opening the recovery dialog", async () => {
     registerSessionWithContent('{"recovered":true}');
@@ -675,6 +675,7 @@ describe("settings theme sync", () => {
   });
 
   it("seeds settings.theme from localStorage when window exists", async () => {
+    // oxlint-disable-next-line typescript/unbound-method -- localStorage methods keep `this` through the member call
     vi.mocked(window.localStorage.getItem).mockReturnValue("dark");
     vi.resetModules();
     const { useStore: freshStore } = await import("./store");
@@ -688,6 +689,7 @@ describe("settings theme sync", () => {
     await useStore.getState().updateSettings({ theme: "dark" });
 
     expect(window.api.settings.update).toHaveBeenCalledWith({ theme: "dark" });
+    // oxlint-disable-next-line typescript/unbound-method -- localStorage methods keep `this` through the member call
     expect(window.localStorage.setItem).toHaveBeenCalledWith(THEME_STORAGE_KEY, "dark");
     expect(useStore.getState().settings.theme).toBe("dark");
   });
@@ -700,6 +702,7 @@ describe("settings theme sync", () => {
     );
 
     expect(window.api.settings.update).toHaveBeenCalledWith({ theme: "dark" });
+    // oxlint-disable-next-line typescript/unbound-method -- localStorage methods keep `this` through the member call
     expect(window.localStorage.setItem).not.toHaveBeenCalled();
     expect(useStore.getState().settings).toEqual(DEFAULT_SETTINGS);
   });
@@ -710,6 +713,7 @@ describe("settings theme sync", () => {
     await useStore.getState().initSettings();
 
     expect(useStore.getState().settings.theme).toBe("light");
+    // oxlint-disable-next-line typescript/unbound-method -- localStorage methods keep `this` through the member call
     expect(window.localStorage.setItem).toHaveBeenCalledWith(THEME_STORAGE_KEY, "light");
   });
 });

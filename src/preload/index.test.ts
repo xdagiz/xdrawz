@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -60,7 +60,7 @@ describe("preload window api", () => {
       (event: unknown, request: { requestId: number; kind: "check" | "flush" }) => void,
     ];
 
-    listener({} as Electron.IpcRendererEvent, { requestId: 7, kind: "check" });
+    listener({}, { requestId: 7, kind: "check" });
     expect(cb).toHaveBeenCalledWith({ requestId: 7, kind: "check" });
 
     unsubscribe();
@@ -77,7 +77,7 @@ describe("preload window api", () => {
     expect(registration).toBeDefined();
     const [, listener] = registration as [string, (event: unknown) => void];
 
-    listener({} as Electron.IpcRendererEvent);
+    listener({});
     expect(cb).toHaveBeenCalledTimes(1);
 
     unsubscribe();
@@ -85,7 +85,7 @@ describe("preload window api", () => {
   });
 
   it("passes the request id back on close", () => {
-    api.window.close(3);
+    void api.window.close(3);
     expect(mocks.invoke).toHaveBeenCalledWith(WINDOW_CLOSE, 3);
   });
 

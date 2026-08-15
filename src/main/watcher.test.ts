@@ -1,6 +1,6 @@
 import type { DrawingInfo, FileEntry } from "@shared/ipc";
 import type { FSWatcher } from "chokidar";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
 import { createDrawingsWatcher, type WatcherDeps } from "./watcher";
 
@@ -97,7 +97,7 @@ function setupWatcher(opts?: {
           const fw = fakeWatcher;
           return () => fw;
         })()
-      : ((() => fakeWatcher) as unknown as typeof import("chokidar").watch),
+      : () => fakeWatcher,
     now: () => Date.now(),
     coalesceMs: opts?.coalesceMs ?? 50, // faster for tests
     defaultIgnoreTtlMs: opts?.defaultIgnoreTtlMs ?? 200,
@@ -178,7 +178,7 @@ describe("createDrawingsWatcher", () => {
     await watcher.start("/home/user/drawings");
     expect(onChange).not.toHaveBeenCalled();
 
-    fakeWatcher._emit("change", "/home/user/drawings/drawing1.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/drawing1.excalidraw");
 
     // Timer not yet fired.
     expect(onChange).not.toHaveBeenCalled();
@@ -200,9 +200,9 @@ describe("createDrawingsWatcher", () => {
 
     await watcher.start("/home/user/drawings");
 
-    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
-    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
-    fakeWatcher._emit("unlink", "/home/user/drawings/c.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    void fakeWatcher._emit("unlink", "/home/user/drawings/c.excalidraw");
 
     await tick(60);
 
@@ -234,10 +234,10 @@ describe("createDrawingsWatcher", () => {
 
     await watcher.start("/home/user/drawings");
 
-    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
     await new Promise((r) => setTimeout(r, 20));
 
-    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
     resolveFirst(mockEntries);
 
     await new Promise((r) => setTimeout(r, 0));
@@ -254,7 +254,7 @@ describe("createDrawingsWatcher", () => {
 
     await watcher.start("/home/user/drawings");
     watcher.ignorePath("/home/user/drawings/ignore-me.excalidraw");
-    fakeWatcher._emit("change", "/home/user/drawings/ignore-me.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/ignore-me.excalidraw");
     await tick(60);
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -266,13 +266,13 @@ describe("createDrawingsWatcher", () => {
 
     await watcher.start("/home/user/drawings");
     watcher.ignorePath("/home/user/drawings/temp.excalidraw");
-    fakeWatcher._emit("change", "/home/user/drawings/temp.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/temp.excalidraw");
 
     await tick(60);
     expect(onChange).not.toHaveBeenCalled();
 
     await tick(200);
-    fakeWatcher._emit("change", "/home/user/drawings/temp.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/temp.excalidraw");
 
     await tick(60);
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -285,9 +285,9 @@ describe("createDrawingsWatcher", () => {
 
     watcher.ignorePaths(["/home/user/drawings/a.excalidraw", "/home/user/drawings/b.excalidraw"]);
 
-    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
-    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
-    fakeWatcher._emit("change", "/home/user/drawings/c.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/c.excalidraw");
 
     await tick(60);
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -298,8 +298,8 @@ describe("createDrawingsWatcher", () => {
 
     await watcher.start("/home/user/drawings");
 
-    fakeWatcher._emit("change", "/home/user/drawings/.hidden.excalidraw");
-    fakeWatcher._emit("add", "/home/user/drawings/.DS_Store");
+    void fakeWatcher._emit("change", "/home/user/drawings/.hidden.excalidraw");
+    void fakeWatcher._emit("add", "/home/user/drawings/.DS_Store");
 
     await tick(60);
     expect(onChange).not.toHaveBeenCalled();
@@ -310,8 +310,8 @@ describe("createDrawingsWatcher", () => {
 
     await watcher.start("/home/user/drawings");
 
-    fakeWatcher._emit("change", "/home/user/drawings/readme.txt");
-    fakeWatcher._emit("add", "/home/user/drawings/config.json");
+    void fakeWatcher._emit("change", "/home/user/drawings/readme.txt");
+    void fakeWatcher._emit("add", "/home/user/drawings/config.json");
 
     await tick(60);
     expect(onChange).not.toHaveBeenCalled();
@@ -321,7 +321,7 @@ describe("createDrawingsWatcher", () => {
     const { watcher, fakeWatcher, onChange } = setupWatcher();
 
     await watcher.start("/home/user/drawings");
-    fakeWatcher._emit("change", "/home/user/drawings/Drawing.EXCALIDRAW");
+    void fakeWatcher._emit("change", "/home/user/drawings/Drawing.EXCALIDRAW");
     await tick(60);
 
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -332,11 +332,11 @@ describe("createDrawingsWatcher", () => {
 
     await watcher.start("/home/user/drawings");
 
-    fakeWatcher._emit("addDir", "/home/user/drawings/new-folder");
+    void fakeWatcher._emit("addDir", "/home/user/drawings/new-folder");
     await tick(60);
     expect(onChange).toHaveBeenCalledTimes(1);
 
-    fakeWatcher._emit("unlinkDir", "/home/user/drawings/new-folder");
+    void fakeWatcher._emit("unlinkDir", "/home/user/drawings/new-folder");
     await tick(60);
     expect(onChange).toHaveBeenCalledTimes(2);
   });
@@ -347,11 +347,11 @@ describe("createDrawingsWatcher", () => {
     await watcher.start("/home/user/drawings");
     expect(watcher.getRevision()).toBe(0);
 
-    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
     await tick(60);
     expect(watcher.getRevision()).toBe(1);
 
-    fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
     await tick(60);
     expect(watcher.getRevision()).toBe(2);
   });
@@ -360,14 +360,14 @@ describe("createDrawingsWatcher", () => {
     const { watcher, fakeWatcher } = setupWatcher();
 
     await watcher.start("/home/user/drawings");
-    fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
     await tick(60);
     expect(watcher.getRevision()).toBe(1);
 
     await watcher.restart("/home/user/other");
     expect(watcher.getRevision()).toBe(1);
 
-    fakeWatcher._emit("change", "/home/user/other/b.excalidraw");
+    void fakeWatcher._emit("change", "/home/user/other/b.excalidraw");
     await tick(60);
     expect(watcher.getRevision()).toBe(2);
   });

@@ -41,8 +41,8 @@ const App = () => {
     setPickingFolder(true);
     try {
       await window.api.drawings.pick();
-    } catch (error) {
-      const appError = toAppError(error, "unexpected", false);
+    } catch (err) {
+      const appError = toAppError(err, "unexpected", false);
       toast.add({
         title: "Couldn’t choose the drawings folder",
         description: appError.message,
@@ -128,6 +128,7 @@ const App = () => {
       <SidebarProvider
         defaultOpen
         className="h-svh! min-h-svh overflow-hidden"
+        // oxlint-disable typescript/no-unsafe-type-assertion
         style={
           {
             "--sidebar-width": "16rem",

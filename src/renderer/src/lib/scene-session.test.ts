@@ -1,6 +1,6 @@
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFiles, AppState } from "@excalidraw/excalidraw/types";
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
 vi.mock("@excalidraw/excalidraw", () => ({
   serializeAsJSON: (_elements: unknown, appState: { viewBackgroundColor?: string }) =>

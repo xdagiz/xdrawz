@@ -1,6 +1,6 @@
 import type { WindowCloseRequest } from "@shared/ipc";
 import type { ReactNode } from "react";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { SceneSessionControls } from "./lib/scene-session";
 import { useStore } from "./lib/store";

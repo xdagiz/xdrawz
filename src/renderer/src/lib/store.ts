@@ -200,10 +200,10 @@ export const useStore = create<State>((set, get) => ({
 
     if (fileId === null) {
       set({ openFileId: null, error: null, externalConflict: null });
-      window.api.store.set("lastOpenedFileId", null);
+      void window.api.store.set("lastOpenedFileId", null);
     } else if (isOpenableFile(get().entries, fileId)) {
       set({ openFileId: fileId, error: null, externalConflict: null });
-      window.api.store.set("lastOpenedFileId", fileId);
+      void window.api.store.set("lastOpenedFileId", fileId);
     } else {
       set({ error: null });
     }
@@ -436,7 +436,7 @@ export const useStore = create<State>((set, get) => ({
       dirtyById: openFileId ? removeKey(dirtyById, openFileId) : dirtyById,
       error: null,
     });
-    window.api.store.set("lastOpenedFileId", null);
+    void window.api.store.set("lastOpenedFileId", null);
   },
 
   registerSession: (session) => set({ activeSession: session }),

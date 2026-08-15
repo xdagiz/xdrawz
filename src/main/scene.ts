@@ -10,7 +10,7 @@ export const assertSceneJson = (content: string) => {
     throw new Error("Scene must be a JSON object");
   }
 
-  const scene = parsed as Record<string, unknown>;
+  const scene = parsed;
   if ("elements" in scene && !Array.isArray(scene.elements)) {
     throw new Error("Scene.elements must be an array when present");
   }

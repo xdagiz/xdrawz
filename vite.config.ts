@@ -35,9 +35,11 @@ export default defineConfig({
   },
 
   lint: {
-    plugins: ["typescript", "react", "unicorn"],
+    plugins: ["typescript", "react", "unicorn", "oxc"],
     categories: {
-      correctness: "off",
+      correctness: "error",
+      suspicious: "error",
+      perf: "error",
     },
     env: {
       builtin: true,
@@ -56,10 +58,12 @@ export default defineConfig({
       WorkletGlobalScope: "readonly",
     },
     options: {
-      typeAware: false,
-      typeCheck: false,
+      typeAware: true,
+      typeCheck: true,
     },
+    jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: {
+      "vite-plus/prefer-vite-plus-imports": "error",
       "constructor-super": "error",
       "for-direction": "error",
       "getter-return": "error",
@@ -171,6 +175,12 @@ export default defineConfig({
       "react/no-unescaped-entities": "error",
       "react/no-unknown-property": "error",
       "no-empty-function": ["error", { allow: ["arrowFunctions"] }],
+      "react/react-in-jsx-scope": "off",
+      "no-underscore-dangle": "off",
+      "typescript/no-unsafe-type-assertion": "error",
+      "no-await-in-loop": "off",
+      "typescript/await-thenable": "error",
+      "react/iframe-missing-sandbox": "error",
     },
     overrides: [
       {
@@ -213,6 +223,12 @@ export default defineConfig({
               allowConstantExport: true,
             },
           ],
+        },
+      },
+      {
+        files: ["**/*.test.ts", "**/*.test.tsx"],
+        rules: {
+          "typescript/no-unsafe-type-assertion": "off",
         },
       },
     ],

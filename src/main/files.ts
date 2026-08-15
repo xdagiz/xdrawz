@@ -100,7 +100,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
   };
 
   await walk(root);
-  return out.sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }));
+  return out.toSorted((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }));
 };
 
 const assertInsideRoot = (root: string, candidate: string) => {

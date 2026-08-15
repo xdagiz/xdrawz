@@ -179,7 +179,10 @@ export const createDrawingsWatcher = (
       const stats = await statFn(currentRoot);
       if (!stats.isDirectory()) await stopInternal("not-directory");
     } catch (err) {
-      const code = (err as { code?: string })?.code;
+      const code =
+        typeof err === "object" && err !== null && "code" in err && typeof err.code === "string"
+          ? err.code
+          : undefined;
       if (code === "ENOENT") await stopInternal("missing");
     }
   };

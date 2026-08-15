@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 
 import type { WindowCloseRequest } from "@shared/ipc";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
   quit: vi.fn(),
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
   app: { quit: mocks.quit },
-  BrowserWindow: class {},
+  BrowserWindow: {},
   dialog: { showMessageBox: mocks.showMessageBox },
 }));
 
@@ -38,7 +38,7 @@ class FakeWindow extends EventEmitter {
   destroyed = false;
   readonly webContents = Object.assign(new EventEmitter(), {
     isDestroyed: () => this.destroyed,
-    isCrashed: () => false as boolean,
+    isCrashed: (): boolean => false,
     send: vi.fn(),
   });
 

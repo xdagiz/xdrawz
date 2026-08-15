@@ -122,7 +122,7 @@ function withWatchIgnore<TArgs extends unknown[], TRet>(
     const w = ensureWatcher();
     return mutator(...args, {
       beforeMutate: (paths) => w.ignorePaths(paths),
-    } as FsMutationHooks);
+    });
   };
 }
 
@@ -178,7 +178,7 @@ function wireNavigationPolicy(win: BrowserWindow) {
 }
 
 function createMainWindow() {
-  const mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
@@ -192,21 +192,21 @@ function createMainWindow() {
     },
   });
 
-  showWhenReady(mainWindow);
-  installCloseGuard(mainWindow);
-  wireNavigationPolicy(mainWindow);
+  showWhenReady(win);
+  installCloseGuard(win);
+  wireNavigationPolicy(win);
 
-  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) =>
+  win.webContents.on("preload-error", (_event, preloadPath, error) =>
     log.error("Preload failed:", preloadPath, error),
   );
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    void mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+    void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {
-    void mainWindow.loadURL(APP_INDEX_URL);
+    void win.loadURL(APP_INDEX_URL);
   }
 
-  return mainWindow;
+  return win;
 }
 
 function createGreetingWindow() {
@@ -231,17 +231,17 @@ function createGreetingWindow() {
   wireNavigationPolicy(greetingWindow);
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    greetingWindow.loadURL(
+    void greetingWindow.loadURL(
       process.env["ELECTRON_RENDERER_URL"].replace(/\/$/, "") + "/greeting.html",
     );
   } else {
-    greetingWindow.loadURL(APP_GREETING_URL);
+    void greetingWindow.loadURL(APP_GREETING_URL);
   }
 
   return greetingWindow;
 }
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.xdrawz");
   initLogger();
   installAppProtocolHandler();
@@ -352,7 +352,7 @@ app.whenReady().then(async () => {
       return;
     }
 
-    getDrawings().then((i) => {
+    void getDrawings().then((i) => {
       if (i.configured && i.path) {
         const w = ensureWatcher();
         void w.start(i.path);

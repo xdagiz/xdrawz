@@ -49,7 +49,6 @@ overrides:
   undici@<6.28.0: ^6.28.0
   undici@>=7.0.0 <7.29.0: ^7.29.0
   vite: npm:@voidzero-dev/vite-plus-core@0.2.8
-  vitest: 4.1.10
 
 importers:
 
@@ -149,9 +148,6 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.2.8(@types/node@22.20.0)(@voidzero-dev/vite-plus-core@0.2.8(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0))(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0)
-      vitest:
-        specifier: 4.1.10
-        version: 4.1.10(@types/node@22.20.0)(@vitest/browser-preview@4.1.10)(@voidzero-dev/vite-plus-core@0.2.8(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0))
       zustand:
         specifier: ^5.0.12
         version: 5.0.14(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))

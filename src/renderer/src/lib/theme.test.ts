@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   THEME_STORAGE_KEY,
@@ -121,11 +121,16 @@ describe("writeStoredTheme", () => {
   });
 
   it("swallows storage errors", () => {
-    const setItem = () => {
-      throw new Error("QuotaExceededError");
-    };
-
-    expect(() => writeStoredTheme({ setItem }, "dark")).not.toThrow();
+    expect(() =>
+      writeStoredTheme(
+        {
+          setItem: () => {
+            throw new Error("QuotaExceededError");
+          },
+        },
+        "dark",
+      ),
+    ).not.toThrow();
   });
 });
 

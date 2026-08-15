@@ -1,5 +1,5 @@
 import { Toast as ToastPrimitive } from "@base-ui/react/toast";
-import type { ToastManager, ToastManagerAddOptions } from "@base-ui/react/toast";
+import type { ToastManager } from "@base-ui/react/toast";
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "./button";
 
 const toastManager = ToastPrimitive.createToastManager();
-const pendingToasts: ToastManagerAddOptions<any>[] = [];
+const pendingToasts: Parameters<ToastManager["add"]>[0][] = [];
 let toastListeners = 0;
 
 const subscribe: ToastManager[" subscribe"] = (listener) => {

@@ -53,7 +53,10 @@ export const SettingsPage = () => {
           <span className="pl-2">Theme</span>
           <RadioGroup
             value={theme}
-            onValueChange={(value) => void handleThemeChange(value as ThemePreference)}
+            onValueChange={(value) => {
+              const option = THEME_OPTIONS.find((o) => o.value === value);
+              if (option) void handleThemeChange(option.value);
+            }}
             className="mx-auto w-full max-w-md grid-cols-3 gap-4"
           >
             {THEME_OPTIONS.map((option) => (

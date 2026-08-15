@@ -1,7 +1,10 @@
 import { Excalidraw, restoreAppState, restoreElements } from "@excalidraw/excalidraw";
 
 import "@excalidraw/excalidraw/index.css";
-import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type {
+  ExcalidrawElement,
+  OrderedExcalidrawElement,
+} from "@excalidraw/excalidraw/element/types";
 import type {
   AppState,
   BinaryFiles,
@@ -27,8 +30,8 @@ import {
 } from "./ui/empty";
 
 type SceneData = {
-  elements?: unknown[];
-  appState?: Record<string, unknown>;
+  elements?: ExcalidrawElement[];
+  appState?: Partial<AppState> | null;
   files?: ExcalidrawInitialDataState["files"];
 };
 
@@ -41,23 +44,10 @@ const loadScene = async (fileId: string): Promise<LoadedScene> => {
   const content = await window.api.files.read(fileId);
   const parsed: SceneData = JSON.parse(content);
   const rawElements = Array.isArray(parsed.elements) ? parsed.elements : [];
-  const rawAppState = parsed.appState ?? null;
   const files = parsed.files ?? undefined;
 
-  // collaborators must be a Map for restore (JSON.parse yields a plain object)
-  const appStateForRestore =
-    rawAppState && typeof rawAppState === "object"
-      ? ({ ...rawAppState } as Record<string, unknown>)
-      : rawAppState;
-  if (appStateForRestore && appStateForRestore.collaborators) {
-    const c = appStateForRestore.collaborators;
-    if (typeof c === "object" && !(c instanceof Map)) {
-      appStateForRestore.collaborators = new Map(Object.entries(c as Record<string, unknown>));
-    }
-  }
-
-  const appState = restoreAppState(appStateForRestore as Partial<AppState> | null, null);
-  const elements = restoreElements(rawElements as ExcalidrawInitialDataState["elements"], null, {
+  const appState = restoreAppState(parsed.appState ?? null, null);
+  const elements = restoreElements(rawElements, null, {
     repairBindings: true,
   });
 
