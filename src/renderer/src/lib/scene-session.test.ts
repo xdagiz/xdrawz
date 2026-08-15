@@ -228,16 +228,67 @@ describe("createSceneSession", () => {
   });
 
   it("saveNow persists the latest scene immediately", async () => {
-    const { session, dirty, save } = makeSession();
+    const { session, dirty, save } = makeSession({
+      initialBaseline: sceneSignature([el("a")], appState(), emptyFiles),
+    });
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
     expect(dirty).toHaveBeenCalledWith("f1", true);
 
-    await session.saveNow();
+    const saved = await session.saveNow();
 
+    expect(saved).toBe(true);
     expect(save).toHaveBeenCalledTimes(1);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
+  });
+
+  it("saveNow refuses to write when no scene was ever loaded from disk", async () => {
+    const { session, dirty, save } = makeSession();
+
+    // A placeholder scene (e.g. the empty canvas Excalidraw mounts when a load
+    // fails) can reach onChange without a disk baseline ever being established.
+    session.onChange([el("a")], appState(), emptyFiles);
+
+    const saved = await session.saveNow();
+
+    expect(saved).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+    expect(dirty).not.toHaveBeenCalled();
+  });
+
+  it("saveNow reports a failed persistence as false", async () => {
+    const save = vi.fn().mockResolvedValue(false);
+    const { session } = makeSession({
+      save,
+      initialBaseline: sceneSignature([el("a")], appState(), emptyFiles),
+    });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+    const saved = await session.saveNow();
+
+    expect(saved).toBe(false);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("resetBaseline lets a later load re-establish the baseline without a spurious save", async () => {
+    const diskBaseline = sceneSignature([el("a")], appState("#ffffff"), emptyFiles);
+    const { session, dirty, save } = makeSession();
+
+    // Failed load: a placeholder scene captures the baseline (no disk baseline
+    // exists yet), then the editor clears it so the next successful load takes
+    // over instead of being ignored.
+    session.onChange([el("x")], appState("#000000"), emptyFiles);
+    expect(save).not.toHaveBeenCalled();
+
+    session.resetBaseline();
+    session.setInitialBaseline(diskBaseline);
+    session.onChange([el("a")], appState("#ffffff"), emptyFiles);
+
+    expect(dirty).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("flush with force persists user changes during confirm", async () => {
@@ -272,7 +323,8 @@ describe("createSceneSession", () => {
 
   it("saveNow before any scene has loaded is a no-op", async () => {
     const { session, dirty, save } = makeSession();
-    await session.saveNow();
+    const saved = await session.saveNow();
+    expect(saved).toBe(false);
     expect(save).not.toHaveBeenCalled();
     expect(dirty).not.toHaveBeenCalled();
   });

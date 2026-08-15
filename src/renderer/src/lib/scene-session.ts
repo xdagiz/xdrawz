@@ -22,15 +22,16 @@ export type SceneSessionControls = {
     appState: AppState,
     files: BinaryFiles,
   ) => void;
-  saveNow: () => Promise<void>;
+  saveNow: () => Promise<boolean>;
   flush: (opts?: FlushOpts) => Promise<void>;
   getSerializedContent: () => string | null;
+  setInitialBaseline: (signature: string | null) => void;
+  resetBaseline: () => void;
   ensureCleanOrConfirm: (
     reason: UnsavedReason,
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
   ) => Promise<boolean>;
   isDirty: () => boolean;
-  setInitialBaseline: (signature: string | null) => void;
   dispose: () => void;
 };
 
@@ -68,6 +69,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   let blocked = false;
   let dirty = false;
   let saveFailures = 0;
+  let lastSaveOk = false;
 
   const setDirty = (next: boolean) => {
     if (dirty === next) return;
@@ -86,6 +88,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
 
     try {
       const ok = await save(fileId, json);
+      lastSaveOk = ok;
       if (ok) {
         saveFailures = 0;
         if (revision === latestRevision) {
@@ -138,11 +141,13 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   };
 
   const saveNow = async () => {
-    if (disposed || blocked || !latestScene) return;
+    if (disposed || blocked || !latestScene || diskBaseline === null) return false;
 
     const [elements, appState, files] = latestScene;
     debounced(elements, appState, files, latestRevision);
+
     await debounced.flush({ force: true });
+    return lastSaveOk;
   };
 
   const getSerializedContent = (): string | null => {
@@ -252,6 +257,9 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     setInitialBaseline: (signature: string | null) => {
       if (disposed || baseline !== null) return;
       diskBaseline = signature;
+    },
+    resetBaseline: () => {
+      baseline = null;
     },
     dispose,
   };

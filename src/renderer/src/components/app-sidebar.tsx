@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Field, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Sidebar,
@@ -24,8 +25,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { toAppError, type AppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
+
+import { toast } from "./ui/toast";
 
 const AppSidebar = () => {
   const navigate = useNavigate();
@@ -40,15 +44,17 @@ const AppSidebar = () => {
   const isSettingsRoute = pathname === "/settings";
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<AppError | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
 
     try {
-      await deleteFile(deleteTarget.id);
+      const ok = await deleteFile(deleteTarget.id);
+      if (ok) toast.add({ title: `Deleted ${deleteTarget.name}`, type: "success" });
     } catch (error) {
-      console.error("delete failed:", error);
+      toast.add({ title: toAppError(error, "delete").message, type: "error" });
     } finally {
       setDeleteTarget(null);
     }
@@ -69,6 +75,7 @@ const AppSidebar = () => {
 
       switch (id) {
         case "rename":
+          setRenameError(null);
           setRenamingId(fileId);
           break;
         case "delete": {
@@ -85,11 +92,18 @@ const AppSidebar = () => {
   const handleRename = useCallback(
     async (fileId: string, newName: string) => {
       try {
-        await renameFile(fileId, newName);
-      } catch (error) {
-        console.error("Rename failed:", error);
-      } finally {
+        const ok = await renameFile(fileId, newName);
+        if (!ok) {
+          setRenameError(null);
+          setRenamingId(null);
+          return;
+        }
+
+        toast.add({ title: "Drawing renamed", type: "success" });
+        setRenameError(null);
         setRenamingId(null);
+      } catch (error) {
+        setRenameError(toAppError(error, "rename", false));
       }
     },
     [renameFile],
@@ -120,8 +134,12 @@ const AppSidebar = () => {
                     {renamingId === file.id ? (
                       <RenameInput
                         initial={stripExcalidraw(file.name)}
+                        error={renameError}
                         onCommit={(v) => handleRename(file.id, v)}
-                        onCancel={() => setRenamingId(null)}
+                        onCancel={() => {
+                          setRenameError(null);
+                          setRenamingId(null);
+                        }}
                       />
                     ) : (
                       <SidebarMenuButton
@@ -190,21 +208,30 @@ const AppSidebar = () => {
 
 const RenameInput = ({
   initial,
+  error,
   onCommit,
   onCancel,
 }: {
   initial: string;
+  error: AppError | null;
   onCommit: (value: string) => void;
   onCancel: () => void;
 }) => {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
+  const lastCommitted = useRef<string | null>(null);
 
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
   }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    finished.current = false;
+    ref.current?.focus();
+  }, [error]);
 
   const finish = useCallback(
     (action: "commit" | "cancel") => {
@@ -212,8 +239,12 @@ const RenameInput = ({
       finished.current = true;
       if (action === "commit") {
         const trimmed = value.trim();
-        if (trimmed) onCommit(trimmed);
-        else onCancel();
+        if (trimmed) {
+          lastCommitted.current = trimmed;
+          onCommit(trimmed);
+        } else {
+          onCancel();
+        }
       } else {
         onCancel();
       }
@@ -222,23 +253,30 @@ const RenameInput = ({
   );
 
   return (
-    <Input
-      ref={ref}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          finish("commit");
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          finish("cancel");
-        }
-      }}
-      onBlur={() => finish("commit")}
-      className="h-8 text-xs"
-    />
+    <Field data-invalid={error ? "true" : undefined} className="gap-1">
+      <Input
+        ref={ref}
+        value={value}
+        aria-invalid={error ? true : undefined}
+        onChange={(e) => setValue(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish("commit");
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            finish("cancel");
+          }
+        }}
+        onBlur={() => {
+          if (error && value.trim() === lastCommitted.current) finish("cancel");
+          else finish("commit");
+        }}
+        className="h-8 text-xs"
+      />
+      <FieldError errors={error ? [{ message: error.message }] : undefined} className="text-xs" />
+    </Field>
   );
 };
 

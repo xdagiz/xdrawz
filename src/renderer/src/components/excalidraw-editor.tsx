@@ -7,11 +7,24 @@ import type {
   BinaryFiles,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTheme } from "@/hooks/use-theme";
+import { toAppError, type AppError } from "@/lib/app-error";
 import { createSceneSession, sceneSignature, type SceneSessionControls } from "@/lib/scene-session";
 import { useStore } from "@/lib/store";
+
+import { ErrorBoundary } from "./error-boundary";
+import { Button } from "./ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "./ui/empty";
 
 type SceneData = {
   elements?: unknown[];
@@ -25,38 +38,33 @@ type LoadedScene = {
 };
 
 const loadScene = async (fileId: string): Promise<LoadedScene> => {
-  try {
-    const content = await window.api.files.read(fileId);
-    const parsed: SceneData = JSON.parse(content);
-    const rawElements = Array.isArray(parsed.elements) ? parsed.elements : [];
-    const rawAppState = parsed.appState ?? null;
-    const files = parsed.files ?? undefined;
+  const content = await window.api.files.read(fileId);
+  const parsed: SceneData = JSON.parse(content);
+  const rawElements = Array.isArray(parsed.elements) ? parsed.elements : [];
+  const rawAppState = parsed.appState ?? null;
+  const files = parsed.files ?? undefined;
 
-    // collaborators must be a Map for restore (JSON.parse yields a plain object)
-    const appStateForRestore =
-      rawAppState && typeof rawAppState === "object"
-        ? ({ ...rawAppState } as Record<string, unknown>)
-        : rawAppState;
-    if (appStateForRestore && appStateForRestore.collaborators) {
-      const c = appStateForRestore.collaborators;
-      if (typeof c === "object" && !(c instanceof Map)) {
-        appStateForRestore.collaborators = new Map(Object.entries(c as Record<string, unknown>));
-      }
+  // collaborators must be a Map for restore (JSON.parse yields a plain object)
+  const appStateForRestore =
+    rawAppState && typeof rawAppState === "object"
+      ? ({ ...rawAppState } as Record<string, unknown>)
+      : rawAppState;
+  if (appStateForRestore && appStateForRestore.collaborators) {
+    const c = appStateForRestore.collaborators;
+    if (typeof c === "object" && !(c instanceof Map)) {
+      appStateForRestore.collaborators = new Map(Object.entries(c as Record<string, unknown>));
     }
-
-    const appState = restoreAppState(appStateForRestore as Partial<AppState> | null, null);
-    const elements = restoreElements(rawElements as ExcalidrawInitialDataState["elements"], null, {
-      repairBindings: true,
-    });
-
-    return {
-      scene: { elements, appState, files },
-      baseline: sceneSignature(elements, appState, files),
-    };
-  } catch (error) {
-    console.error("Failed to load excalidraw scene:", error);
-    return { scene: null, baseline: null };
   }
+
+  const appState = restoreAppState(appStateForRestore as Partial<AppState> | null, null);
+  const elements = restoreElements(rawElements as ExcalidrawInitialDataState["elements"], null, {
+    repairBindings: true,
+  });
+
+  return {
+    scene: { elements, appState, files },
+    baseline: sceneSignature(elements, appState, files),
+  };
 };
 
 type Props = {
@@ -71,12 +79,21 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const unregisterSession = useStore((s) => s.unregisterSession);
 
   const sessionRef = useRef<SceneSessionControls | null>(null);
+  const [loadError, setLoadError] = useState<AppError | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const initialData = useMemo(() => {
     return async () => {
-      const loaded = await loadScene(fileId);
-      sessionRef.current?.setInitialBaseline(loaded.baseline);
-      return loaded.scene;
+      try {
+        const loaded = await loadScene(fileId);
+        sessionRef.current?.setInitialBaseline(loaded.baseline);
+        return loaded.scene;
+      } catch (error) {
+        console.error("Failed to load excalidraw scene:", error);
+        sessionRef.current?.resetBaseline();
+        setLoadError(toAppError(error, "read"));
+        return null;
+      }
     };
   }, [fileId]);
 
@@ -132,19 +149,53 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     [],
   );
 
+  if (loadError) {
+    return (
+      <>
+        <Empty className="bg-background h-full border-0">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <TriangleAlertIcon className="text-destructive" />
+            </EmptyMedia>
+            <EmptyTitle>{loadError.title}</EmptyTitle>
+            <EmptyDescription>{loadError.message}</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent className="flex-row justify-center">
+            <Button
+              onClick={() => {
+                setLoadError(null);
+                setLoadAttempt((attempt) => attempt + 1);
+              }}
+            >
+              <RefreshCwIcon />
+              Retry
+            </Button>
+          </EmptyContent>
+        </Empty>
+      </>
+    );
+  }
+
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden">
-      <Excalidraw
-        theme={theme}
-        initialData={initialData}
-        onChange={handleChange}
-        UIOptions={{
-          canvasActions: {
-            loadScene: false,
-            saveToActiveFile: false,
-          },
-        }}
-      />
+      <ErrorBoundary
+        title="The drawing editor stopped working"
+        description="Try again. Your saved drawing is still available from the sidebar."
+        resetKeys={[loadAttempt]}
+      >
+        <Excalidraw
+          key={loadAttempt}
+          theme={theme}
+          initialData={initialData}
+          onChange={handleChange}
+          UIOptions={{
+            canvasActions: {
+              loadScene: false,
+              saveToActiveFile: false,
+            },
+          }}
+        />
+      </ErrorBoundary>
     </div>
   );
 };

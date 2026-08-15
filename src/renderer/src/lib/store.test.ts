@@ -2,8 +2,10 @@ import type { DrawingsSnapshot, FileEntry, FilesChangedEvent } from "@shared/ipc
 import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+import type { SceneSessionControls } from "@/lib/scene-session";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
+import { toAppError } from "./app-error";
 import { useStore } from "./store";
 
 const mockEntries: FileEntry[] = [
@@ -200,7 +202,7 @@ describe("lastOpenedFileId", () => {
       useStore.setState({
         entries: mockEntries,
         openFileId: "file-1",
-        error: "some previous error",
+        error: toAppError(new Error("some previous error"), "save"),
       });
 
       await useStore.getState().setOpenFileId("non-existent-id");
@@ -476,6 +478,168 @@ describe("saveFile recovery", () => {
   });
 });
 
+describe("renameFile/deleteFile cancellation", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", {
+      api: {
+        store: { set: vi.fn(), get: vi.fn() },
+        dialog: {
+          unsavedChanges: vi.fn(),
+          fileRecover: vi.fn(),
+          fileChanged: vi.fn(),
+        },
+        files: {
+          rename: vi.fn(),
+          delete: vi.fn(),
+          write: vi.fn(),
+          writeRecover: vi.fn(),
+          list: vi.fn().mockResolvedValue(mockEntries),
+        },
+      },
+    });
+    resetStore();
+    useStore.setState({
+      entries: mockEntries,
+      openFileId: "file-1",
+      dirtyById: { "file-1": true },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const registerSession = (allowed: boolean) => {
+    useStore.getState().registerSession({
+      ensureCleanOrConfirm: async () => allowed,
+      getSerializedContent: () => "{}",
+      saveNow: async () => {},
+    } as unknown as SceneSessionControls);
+  };
+
+  it("renameFile returns false without renaming when the unsaved-changes prompt is cancelled", async () => {
+    registerSession(false);
+
+    const ok = await useStore.getState().renameFile("file-1", "renamed");
+
+    expect(ok).toBe(false);
+    expect(window.api.files.rename).not.toHaveBeenCalled();
+  });
+
+  it("deleteFile returns false without deleting when the unsaved-changes prompt is cancelled", async () => {
+    registerSession(false);
+
+    const ok = await useStore.getState().deleteFile("file-1");
+
+    expect(ok).toBe(false);
+    expect(window.api.files.delete).not.toHaveBeenCalled();
+  });
+
+  it("renameFile returns true and updates the open id on success", async () => {
+    registerSession(true);
+    vi.mocked(window.api.files.rename).mockResolvedValue({
+      id: "renamed.excalidraw",
+      name: "renamed.excalidraw",
+      kind: "file",
+      parentId: null,
+      modifiedAt: 400,
+      size: 100,
+    });
+    vi.mocked(window.api.files.list).mockResolvedValue([
+      { ...mockEntries[0]!, id: "renamed.excalidraw", name: "renamed.excalidraw" },
+      mockEntries[1]!,
+      mockEntries[2]!,
+    ]);
+
+    const ok = await useStore.getState().renameFile("file-1", "renamed");
+
+    expect(ok).toBe(true);
+    expect(useStore.getState().openFileId).toBe("renamed.excalidraw");
+  });
+
+  it("deleteFile returns true on success", async () => {
+    const ok = await useStore.getState().deleteFile("file-2");
+
+    expect(ok).toBe(true);
+    expect(window.api.files.delete).toHaveBeenCalledWith("file-2");
+  });
+});
+
+describe("retryRecover", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", {
+      api: {
+        store: { set: vi.fn(), get: vi.fn() },
+        dialog: {
+          unsavedChanges: vi.fn(),
+          fileRecover: vi.fn(),
+          fileChanged: vi.fn(),
+        },
+        files: {
+          write: vi.fn(),
+          writeRecover: vi.fn(),
+          list: vi.fn().mockResolvedValue(mockEntries),
+        },
+      },
+    });
+    resetStore();
+    useStore.setState({
+      entries: mockEntries,
+      openFileId: "file-1",
+      dirtyById: { "file-1": true },
+      externalConflict: { type: "missing", fileId: "file-1" },
+      error: toAppError(new Error("recovery boom"), "recover"),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const registerSessionWithContent = (content: string | null) => {
+    useStore.getState().registerSession({
+      ensureCleanOrConfirm: async () => true,
+      getSerializedContent: () => content,
+      saveNow: async () => {},
+    } as unknown as SceneSessionControls);
+  };
+
+  it("retries writeRecover without re-opening the recovery dialog", async () => {
+    registerSessionWithContent('{"recovered":true}');
+    vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
+
+    const ok = await useStore.getState().retryRecover();
+
+    expect(ok).toBe(true);
+    expect(window.api.files.writeRecover).toHaveBeenCalledWith("file-1", '{"recovered":true}');
+    expect(window.api.dialog.fileRecover).not.toHaveBeenCalled();
+    expect(useStore.getState().externalConflict).toBeNull();
+    expect(useStore.getState().error).toBeNull();
+    expect(useStore.getState().dirtyById["file-1"]).toBeUndefined();
+  });
+
+  it("keeps the error when writeRecover fails again", async () => {
+    registerSessionWithContent("{}");
+    vi.mocked(window.api.files.writeRecover).mockRejectedValue(new Error("still boom"));
+
+    const ok = await useStore.getState().retryRecover();
+
+    expect(ok).toBe(false);
+    expect(useStore.getState().externalConflict).toEqual({ type: "missing", fileId: "file-1" });
+    expect(useStore.getState().error?.operation).toBe("recover");
+  });
+
+  it("returns false without writing when there is no content to recover", async () => {
+    registerSessionWithContent(null);
+
+    const ok = await useStore.getState().retryRecover();
+
+    expect(ok).toBe(false);
+    expect(window.api.files.writeRecover).not.toHaveBeenCalled();
+    expect(useStore.getState().error?.retryable).toBe(false);
+  });
+});
+
 describe("settings theme sync", () => {
   beforeEach(() => {
     vi.stubGlobal("window", {
@@ -530,14 +694,14 @@ describe("settings theme sync", () => {
 
   it("updateSettings does not write the mirror when the IPC call fails", async () => {
     vi.mocked(window.api.settings.update).mockRejectedValue(new Error("settings boom"));
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await useStore.getState().updateSettings({ theme: "dark" });
+    await expect(useStore.getState().updateSettings({ theme: "dark" })).rejects.toThrow(
+      "settings boom",
+    );
 
     expect(window.api.settings.update).toHaveBeenCalledWith({ theme: "dark" });
     expect(window.localStorage.setItem).not.toHaveBeenCalled();
     expect(useStore.getState().settings).toEqual(DEFAULT_SETTINGS);
-    errorSpy.mockRestore();
   });
 
   it("initSettings reconciles the store and mirror from IPC", async () => {

@@ -7,10 +7,13 @@ import type {
   FilesChangedEvent,
   SettingsUpdate,
   UnsavedReason,
+  WatcherErrorEvent,
 } from "@shared/ipc";
 import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { create } from "zustand";
 
+import { toast } from "@/components/ui/toast";
+import { toAppError, type AppError } from "@/lib/app-error";
 import type { SceneSessionControls } from "@/lib/scene-session";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
@@ -41,24 +44,47 @@ let fileChangedDialogInflight: Promise<"reload" | "overwrite" | "cancel"> | null
 let fileRecoverDialogInflight: Promise<"recover" | "discard" | "cancel"> | null = null;
 let fileRecoverContent: string | undefined;
 
+const performRecover = async (fileId: string, body: string) => {
+  try {
+    await window.api.files.writeRecover(fileId, body);
+    const entries = await window.api.files.list();
+    useStore.setState({
+      error: null,
+      externalConflict: null,
+      entries,
+      dirtyById: removeKey(useStore.getState().dirtyById, fileId),
+    });
+    return true;
+  } catch (err) {
+    useStore.setState({ error: toAppError(err, "recover") });
+    return false;
+  }
+};
+
 type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
   openFileId: string | null;
   dirtyById: Record<string, true>;
-  error: string | null;
+  error: AppError | null;
   activeSession: SceneSessionControls | null;
   filesRevision: number;
   externalConflict: ExternalConflict;
+  watcherDown: string | null;
   editorEpoch: number;
   settings: AppSettings;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
+  reportWatcherError: (event: WatcherErrorEvent) => void;
+  clearWatcherError: () => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
-  renameFile: (id: string, newName: string) => Promise<void>;
-  deleteFile: (id: string) => Promise<void>;
+  renameFile: (id: string, newName: string) => Promise<boolean>;
+  deleteFile: (id: string) => Promise<boolean>;
   saveFile: (id: string, content: string) => Promise<boolean>;
+  retryRecover: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
+  clearError: () => void;
+  reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
   clearExternalConflict: () => void;
   reloadOpenFileFromDisk: () => void;
   discardMissingOpenFile: () => void;
@@ -68,7 +94,7 @@ type State = {
   unregisterSession: (session: SceneSessionControls) => void;
   ensureCleanOrConfirm: (reason?: UnsavedReason) => Promise<boolean>;
   initSettings: () => Promise<void>;
-  updateSettings: (updated: SettingsUpdate) => Promise<void>;
+  updateSettings: (updated: SettingsUpdate) => Promise<boolean>;
 };
 
 export const useStore = create<State>((set, get) => ({
@@ -80,6 +106,7 @@ export const useStore = create<State>((set, get) => ({
   activeSession: null,
   filesRevision: 0,
   externalConflict: null,
+  watcherDown: null,
   editorEpoch: 0,
   settings:
     typeof window !== "undefined"
@@ -95,6 +122,7 @@ export const useStore = create<State>((set, get) => ({
         : null,
       dirtyById: {},
       error: null,
+      watcherDown: null,
       filesRevision: state.filesRevision,
       externalConflict: null,
     })),
@@ -159,6 +187,7 @@ export const useStore = create<State>((set, get) => ({
       filesRevision: event.revision,
       externalConflict,
       dirtyById: nextDirty,
+      watcherDown: null,
     });
   },
 
@@ -183,7 +212,7 @@ export const useStore = create<State>((set, get) => ({
   renameFile: async (id, newName) => {
     if (get().openFileId === id) {
       const ok = await get().ensureCleanOrConfirm("switch");
-      if (!ok) return;
+      if (!ok) return false;
     }
 
     const entry = await window.api.files.rename(id, newName);
@@ -202,12 +231,13 @@ export const useStore = create<State>((set, get) => ({
       dirtyById: nextDirty,
       error: null,
     });
+    return true;
   },
 
   deleteFile: async (id) => {
     if (get().openFileId === id) {
       const ok = await get().ensureCleanOrConfirm("switch");
-      if (!ok) return;
+      if (!ok) return false;
     }
 
     await window.api.files.delete(id);
@@ -223,6 +253,8 @@ export const useStore = create<State>((set, get) => ({
       dirtyById: nextDirty,
       error: null,
     });
+
+    return true;
   },
 
   saveFile: async (id, content) => {
@@ -258,7 +290,7 @@ export const useStore = create<State>((set, get) => ({
         return choice !== "cancel";
       }
 
-      set({ error: message });
+      set({ error: toAppError(error, "save") });
       return false;
     }
   },
@@ -280,6 +312,14 @@ export const useStore = create<State>((set, get) => ({
       return { dirtyById: next };
     });
   },
+
+  clearError: () => set({ error: null }),
+
+  reportError: (error, operation) => set({ error: toAppError(error, operation) }),
+
+  reportWatcherError: (event) => set({ watcherDown: event.message }),
+
+  clearWatcherError: () => set({ watcherDown: null }),
 
   clearExternalConflict: () => set({ externalConflict: null }),
 
@@ -343,25 +383,12 @@ export const useStore = create<State>((set, get) => ({
         fileRecoverContent = undefined;
 
         if (!body) {
-          set({ error: "Nothing to recover" });
+          set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
           return "cancel";
         }
 
-        try {
-          await window.api.files.writeRecover(expectedFileId, body);
-          const entries = await window.api.files.list();
-          set({
-            error: null,
-            externalConflict: null,
-            entries,
-            dirtyById: removeKey(get().dirtyById, expectedFileId),
-          });
-          return "recover" as const;
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : "Recovery failed";
-          set({ error: errMsg });
-          return "cancel";
-        }
+        const ok = await performRecover(expectedFileId, body);
+        return ok ? ("recover" as const) : ("cancel" as const);
       })().finally(() => {
         fileRecoverDialogInflight = null;
         fileRecoverContent = undefined;
@@ -369,6 +396,21 @@ export const useStore = create<State>((set, get) => ({
     }
 
     return fileRecoverDialogInflight;
+  },
+
+  retryRecover: async () => {
+    const state = get();
+    const conflict = state.externalConflict;
+    const fileId = conflict?.type === "missing" ? conflict.fileId : (state.openFileId ?? null);
+    if (!fileId) return false;
+
+    const body = fileRecoverContent ?? state.activeSession?.getSerializedContent() ?? null;
+    if (!body) {
+      set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
+      return false;
+    }
+
+    return performRecover(fileId, body);
   },
 
   reloadOpenFileFromDisk: () => {
@@ -419,16 +461,18 @@ export const useStore = create<State>((set, get) => ({
       set({ settings });
     } catch (error) {
       console.error("failed to load settings:", error);
+      toast.add({
+        title: "Couldn’t load settings",
+        description: "Your saved preferences couldn’t be loaded.",
+        type: "warning",
+      });
     }
   },
 
   updateSettings: async (updated) => {
-    try {
-      const settings = await window.api.settings.update(updated);
-      writeStoredTheme(window.localStorage, settings.theme);
-      set({ settings });
-    } catch (error) {
-      console.error("failed to update settings:", error);
-    }
+    const settings = await window.api.settings.update(updated);
+    writeStoredTheme(window.localStorage, settings.theme);
+    set({ settings });
+    return true;
   },
 }));

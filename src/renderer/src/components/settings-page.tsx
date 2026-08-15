@@ -3,10 +3,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useEffect } from "react";
 
+import { toAppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
 
 import { Field, FieldContent, FieldLabel, FieldTitle } from "./ui/field";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
+import { toast } from "./ui/toast";
 
 type ThemeOption = {
   value: ThemePreference;
@@ -24,6 +26,14 @@ export const SettingsPage = () => {
   const theme = useStore((s) => s.settings.theme);
   const updateSettings = useStore((s) => s.updateSettings);
   const navigate = useNavigate();
+
+  const handleThemeChange = async (value: ThemePreference) => {
+    try {
+      await updateSettings({ theme: value });
+    } catch (error) {
+      toast.add({ title: toAppError(error, "settings", false).message, type: "error" });
+    }
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -43,7 +53,7 @@ export const SettingsPage = () => {
           <span className="pl-2">Theme</span>
           <RadioGroup
             value={theme}
-            onValueChange={(value) => void updateSettings({ theme: value as ThemePreference })}
+            onValueChange={(value) => void handleThemeChange(value as ThemePreference)}
             className="mx-auto w-full max-w-md grid-cols-3 gap-4"
           >
             {THEME_OPTIONS.map((option) => (
