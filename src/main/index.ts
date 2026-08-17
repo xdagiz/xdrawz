@@ -6,7 +6,15 @@ import type { FilesChangedEvent } from "@shared/ipc";
 import { app, shell, nativeTheme, BrowserWindow, Menu } from "electron";
 
 import icon from "../../resources/icon.png?asset";
-import { destroyWindow, installCloseGuard } from "./close-guard";
+import {
+  destroyWindow,
+  installCloseGuard,
+  isQuittingNow,
+  isWindowReady,
+  cancelQuit,
+  markWindowReady,
+  requestQuitViaRenderer,
+} from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
 import {
   deleteEntry,
@@ -17,7 +25,14 @@ import {
   writeSceneFileRecover,
   type FsMutationHooks,
 } from "./files";
-import { registerIpcHandlers } from "./ipc";
+import {
+  APP_GREETING_URL,
+  APP_INDEX_URL,
+  installAppProtocolHandler,
+  isTrustedRendererUrl,
+  registerAppScheme,
+  registerIpcHandlers,
+} from "./ipc";
 import { initLogger, log } from "./logger";
 import {
   applyTheme,
@@ -31,6 +46,8 @@ import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 
 let mainWindow: BrowserWindow | null = null;
 let watcher: DrawingsWatcher | null = null;
+
+registerAppScheme();
 
 function broadcastFilesChanged(event: FilesChangedEvent) {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -105,6 +122,32 @@ function showWhenReady(win: BrowserWindow) {
   win.webContents.once("did-finish-load", show);
 }
 
+const isSafeExternalUrl = (value: string): string | null => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:"
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+function wireNavigationPolicy(win: BrowserWindow) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    const external = isSafeExternalUrl(url);
+    if (external) void shell.openExternal(external);
+    return { action: "deny" };
+  });
+
+  win.webContents.on("will-navigate", (event, url) => {
+    if (isTrustedRendererUrl(url)) return;
+    event.preventDefault();
+    const external = isSafeExternalUrl(url);
+    if (external) void shell.openExternal(external);
+  });
+}
+
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -114,26 +157,24 @@ function createMainWindow() {
     ...(process.platform === "linux" ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
-      sandbox: false,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 
   showWhenReady(mainWindow);
   installCloseGuard(mainWindow);
+  wireNavigationPolicy(mainWindow);
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) =>
     log.error("Preload failed:", preloadPath, error),
   );
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
-
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {
-    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    mainWindow.loadURL(APP_INDEX_URL);
   }
 
   return mainWindow;
@@ -151,25 +192,21 @@ function createGreetingWindow() {
     ...(process.platform === "linux" ? { type: "splash" } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
-      sandbox: false,
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  greetingWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
-
   showWhenReady(greetingWindow);
+  wireNavigationPolicy(greetingWindow);
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     greetingWindow.loadURL(
       process.env["ELECTRON_RENDERER_URL"].replace(/\/$/, "") + "/greeting.html",
     );
   } else {
-    greetingWindow.loadFile(join(__dirname, "../renderer/greeting.html"));
+    greetingWindow.loadURL(APP_GREETING_URL);
   }
 
   return greetingWindow;
@@ -178,6 +215,7 @@ function createGreetingWindow() {
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.xdrawz");
   initLogger();
+  installAppProtocolHandler();
 
   applyTheme();
   nativeTheme.on("updated", applyWindowBgColor);
@@ -239,6 +277,8 @@ app.whenReady().then(async () => {
     deleteEntry: deleteEntryWatched,
     writeSceneFileRecover: writeSceneFileRecoverWatched,
     destroyWindow,
+    markWindowReady,
+    cancelQuit,
     getSettings,
     updateSettings: setSettings,
     pickDrawings: async (parentWindow) => {
@@ -291,8 +331,20 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on("before-quit", () => {
-  void watcher?.stop();
+app.on("before-quit", (event) => {
+  if (
+    isQuittingNow() ||
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isCrashed() ||
+    !isWindowReady(mainWindow)
+  ) {
+    void watcher?.stop();
+    return;
+  }
+
+  event.preventDefault();
+  requestQuitViaRenderer(mainWindow);
 });
 
 app.on("window-all-closed", () => {

@@ -48,6 +48,8 @@ export interface NativeApi {
   };
   window: {
     onWillClose: (cb: () => void) => () => void;
+    ready: () => void;
     close: () => Promise<void>;
+    cancelQuit?: () => void;
   };
 }

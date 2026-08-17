@@ -1,3 +1,6 @@
+import { join, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
+
 import {
   CONTEXT_MENU_SHOW,
   DIALOG_FILE_CHANGED,
@@ -18,7 +21,9 @@ import {
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
+  WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
+  WINDOW_READY,
 } from "@shared/channels";
 import type {
   AppSettings,
@@ -33,9 +38,68 @@ import type {
   UnsavedChoice,
   UnsavedReason,
 } from "@shared/ipc";
-import { BrowserWindow, dialog, ipcMain, Menu } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
 import { store } from "./store";
+
+export const APP_ORIGIN = "app://renderer";
+export const APP_HOST = "renderer";
+export const APP_INDEX_URL = `${APP_ORIGIN}/index.html`;
+export const APP_GREETING_URL = `${APP_ORIGIN}/greeting.html`;
+
+export const registerAppScheme = () => {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: "app",
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+        stream: true,
+      },
+    },
+  ]);
+};
+
+const rendererDir = join(import.meta.dirname, "../renderer");
+
+const pageFor = (pathname: string) => {
+  const relative = decodeURIComponent(pathname).replace(/^\/+/, "");
+  const withIndex = relative === "" || relative.endsWith("/") ? `${relative}index.html` : relative;
+  const filePath = resolve(rendererDir, withIndex);
+  if (filePath !== rendererDir && !filePath.startsWith(rendererDir + sep)) return null;
+  return filePath;
+};
+
+export const installAppProtocolHandler = (): void => {
+  protocol.handle("app", async (request) => {
+    let url: URL;
+    try {
+      url = new URL(request.url);
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+
+    if (url.host !== APP_HOST) return new Response("Not found", { status: 404 });
+
+    let filePath: string | null;
+    try {
+      filePath = pageFor(url.pathname);
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+
+    if (filePath === null) return new Response("Forbidden", { status: 403 });
+
+    try {
+      const response = await net.fetch(pathToFileURL(filePath).toString());
+      return response.ok ? response : new Response("Not found", { status: 404 });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  });
+};
 
 type Deps = {
   getDrawings: () => Promise<DrawingInfo>;
@@ -48,6 +112,8 @@ type Deps = {
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
   deleteEntry: (id: string) => Promise<void>;
   destroyWindow: (win: BrowserWindow) => void;
+  markWindowReady: (win: BrowserWindow) => void;
+  cancelQuit: (win: BrowserWindow) => void;
   getSettings: () => AppSettings;
   updateSettings: (update: SettingsUpdate) => AppSettings;
 };
@@ -56,6 +122,22 @@ const windowFromEvent = (event: Electron.IpcMainInvokeEvent): BrowserWindow | nu
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return null;
   return win;
+};
+
+export const isTrustedRendererUrl = (urlString: string): boolean => {
+  try {
+    if (!app.isPackaged) {
+      const rendererUrl = process.env["ELECTRON_RENDERER_URL"];
+      if (rendererUrl) {
+        return new URL(urlString).origin === new URL(rendererUrl).origin;
+      }
+    }
+
+    const url = new URL(urlString);
+    return url.protocol === "app:" && url.host === APP_HOST;
+  } catch {
+    return false;
+  }
 };
 
 export const normalizeContextMenuPos = (
@@ -127,7 +209,7 @@ export const registerIpcHandlers = (deps: Deps): void => {
 
       menu.popup({
         window: win,
-        ...(position ?? {}),
+        ...position,
         callback: () => {
           if (!resolved) resolve(null);
         },
@@ -142,6 +224,16 @@ export const registerIpcHandlers = (deps: Deps): void => {
     const win = windowFromEvent(event);
     if (!win) return;
     deps.destroyWindow(win);
+  });
+
+  ipcMain.on(WINDOW_READY, (event) => {
+    const win = windowFromEvent(event);
+    if (win) deps.markWindowReady(win);
+  });
+
+  ipcMain.on(WINDOW_CANCEL_QUIT, (event) => {
+    const win = windowFromEvent(event);
+    if (win) deps.cancelQuit(win);
   });
 
   ipcMain.handle(DIALOG_UNSAVED_CHANGES, (event, reason: UnsavedReason = "quit") => {
