@@ -107,18 +107,14 @@ const App = () => {
     void (async () => {
       if (externalConflict.type === "changed") {
         const choice = await resolveChangedConflict();
-        if (choice === "cancel") {
-          conflictPromptRef.current = null;
-          return;
-        }
+        if (choice === "cancel") return;
 
         if (choice === "overwrite") await useStore.getState().activeSession?.saveNow();
         return;
       }
 
       if (externalConflict.type === "missing") {
-        const choice = await resolveMissingConflict();
-        if (choice === "cancel") conflictPromptRef.current = null;
+        await resolveMissingConflict();
       }
     })();
   }, [externalConflict, resolveChangedConflict, resolveMissingConflict]);

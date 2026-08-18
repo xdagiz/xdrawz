@@ -46,6 +46,7 @@ const resetStore = () => {
     filesRevision: 0,
     externalConflict: null,
     editorEpoch: 0,
+    dismissedConflictKey: null,
   });
 };
 
@@ -340,6 +341,23 @@ describe("applyEntries + conflicts", () => {
     });
   });
 
+  it("reloads a clean open file when disk mtime increases", () => {
+    useStore.setState({
+      entries: mockEntries,
+      openFileId: "file-1",
+      dirtyById: {},
+      filesRevision: 0,
+      editorEpoch: 0,
+    });
+
+    const bumped = mockEntries.map((e) => (e.id === "file-1" ? { ...e, modifiedAt: 999 } : e));
+    useStore.getState().applyEntries(event({ revision: 1, entries: bumped }));
+
+    expect(useStore.getState().externalConflict).toBeNull();
+    expect(useStore.getState().openFileId).toBe("file-1");
+    expect(useStore.getState().editorEpoch).toBe(1);
+  });
+
   it("keeps changed conflict sticky across subsequent events", () => {
     useStore.setState({
       entries: mockEntries,
@@ -424,12 +442,60 @@ describe("saveFile recovery", () => {
     vi.unstubAllGlobals();
   });
 
-  it("offers recover on File not found even without a pre-set conflict", async () => {
+  it("records the write mtime so a later listing of our own save is not a conflict", async () => {
+    vi.mocked(window.api.files.write).mockResolvedValue(undefined);
+
+    const ok = await useStore.getState().saveFile("file-1", "{}");
+    expect(ok).toBe(true);
+
+    const savedAt = useStore.getState().entries.find((e) => e.id === "file-1")!.modifiedAt;
+    expect(savedAt).toBeGreaterThanOrEqual(100);
+
+    useStore.setState({ dirtyById: { "file-1": true } });
+    const listed = mockEntries.map((e) => (e.id === "file-1" ? { ...e, modifiedAt: savedAt } : e));
+    useStore.getState().applyEntries({
+      entries: listed,
+      revision: 1,
+      root: "/drawings",
+      info: baseInfo,
+    });
+
+    expect(useStore.getState().externalConflict).toBeNull();
+
+    const later = mockEntries.map((e) =>
+      e.id === "file-1" ? { ...e, modifiedAt: savedAt + 1000 } : e,
+    );
+    useStore.getState().applyEntries({
+      entries: later,
+      revision: 2,
+      root: "/drawings",
+      info: baseInfo,
+    });
+
+    expect(useStore.getState().externalConflict).toEqual({
+      type: "changed",
+      fileId: "file-1",
+      diskModifiedAt: savedAt + 1000,
+    });
+  });
+
+  it("sets a missing conflict on File not found without prompting during autosave", async () => {
+    vi.mocked(window.api.files.write).mockRejectedValue(new Error(FILE_NOT_FOUND_MESSAGE));
+
+    const ok = await useStore.getState().saveFile("file-1", "{}");
+
+    expect(ok).toBe(false);
+    expect(window.api.dialog.fileRecover).not.toHaveBeenCalled();
+    expect(window.api.files.writeRecover).not.toHaveBeenCalled();
+    expect(useStore.getState().externalConflict).toEqual({ type: "missing", fileId: "file-1" });
+  });
+
+  it("recovers on File not found when the save is explicit", async () => {
     vi.mocked(window.api.files.write).mockRejectedValue(new Error(FILE_NOT_FOUND_MESSAGE));
     vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("recover");
     vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
 
-    const ok = await useStore.getState().saveFile("file-1", "{}");
+    const ok = await useStore.getState().saveFile("file-1", "{}", "explicit");
 
     expect(ok).toBe(true);
     expect(window.api.dialog.fileRecover).toHaveBeenCalled();
@@ -445,7 +511,7 @@ describe("saveFile recovery", () => {
     vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("recover");
     vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
 
-    const ok = await useStore.getState().saveFile("file-1", "{}");
+    const ok = await useStore.getState().saveFile("file-1", "{}", "explicit");
 
     expect(ok).toBe(true);
     expect(window.api.dialog.fileRecover).toHaveBeenCalled();
@@ -458,7 +524,7 @@ describe("saveFile recovery", () => {
     vi.mocked(window.api.files.write).mockRejectedValue(new Error(FILE_NOT_FOUND_MESSAGE));
     vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("discard");
 
-    const ok = await useStore.getState().saveFile("file-1", "{}");
+    const ok = await useStore.getState().saveFile("file-1", "{}", "explicit");
 
     expect(ok).toBe(true);
     expect(useStore.getState().openFileId).toBeNull();
@@ -466,19 +532,47 @@ describe("saveFile recovery", () => {
     expect(window.api.store.set).toHaveBeenCalledWith("lastOpenedFileId", null);
   });
 
-  it("prompts on changed conflict before writing", async () => {
+  it("does not prompt on a known changed conflict during autosave", async () => {
+    useStore.setState({
+      externalConflict: { type: "changed", fileId: "file-1", diskModifiedAt: 999 },
+    });
+
+    const ok = await useStore.getState().saveFile("file-1", "{}");
+
+    expect(ok).toBe(false);
+    expect(window.api.dialog.fileChanged).not.toHaveBeenCalled();
+    expect(window.api.files.write).not.toHaveBeenCalled();
+  });
+
+  it("prompts on changed conflict before an explicit write", async () => {
     useStore.setState({
       externalConflict: { type: "changed", fileId: "file-1", diskModifiedAt: 999 },
     });
     vi.mocked(window.api.dialog.fileChanged).mockResolvedValue("overwrite");
     vi.mocked(window.api.files.write).mockResolvedValue(undefined);
 
-    const ok = await useStore.getState().saveFile("file-1", "{}");
+    const ok = await useStore.getState().saveFile("file-1", "{}", "explicit");
 
     expect(ok).toBe(true);
     expect(window.api.dialog.fileChanged).toHaveBeenCalled();
     expect(window.api.files.write).toHaveBeenCalledWith("file-1", "{}");
     expect(useStore.getState().externalConflict).toBeNull();
+  });
+
+  it("does not re-prompt a dismissed changed conflict until mtime changes", async () => {
+    useStore.setState({
+      externalConflict: { type: "changed", fileId: "file-1", diskModifiedAt: 999 },
+    });
+    vi.mocked(window.api.dialog.fileChanged).mockResolvedValue("cancel");
+
+    expect(await useStore.getState().resolveChangedConflict()).toBe("cancel");
+    expect(window.api.dialog.fileChanged).toHaveBeenCalledTimes(1);
+
+    expect(await useStore.getState().resolveChangedConflict()).toBe("cancel");
+    expect(window.api.dialog.fileChanged).toHaveBeenCalledTimes(1);
+
+    expect(await useStore.getState().resolveChangedConflict({ force: true })).toBe("cancel");
+    expect(window.api.dialog.fileChanged).toHaveBeenCalledTimes(2);
   });
 
   it("resolveMissingConflict recovers with provided content", async () => {
@@ -495,14 +589,27 @@ describe("saveFile recovery", () => {
     expect(useStore.getState().externalConflict).toBeNull();
   });
 
-  it("skips normal write when missing conflict is already known", async () => {
+  it("skips autosave write when missing conflict is already known", async () => {
+    useStore.setState({
+      externalConflict: { type: "missing", fileId: "file-1" },
+    });
+
+    const ok = await useStore.getState().saveFile("file-1", "{}");
+
+    expect(ok).toBe(false);
+    expect(window.api.files.write).not.toHaveBeenCalled();
+    expect(window.api.files.writeRecover).not.toHaveBeenCalled();
+    expect(window.api.dialog.fileRecover).not.toHaveBeenCalled();
+  });
+
+  it("recovers through an explicit save when missing conflict is already known", async () => {
     useStore.setState({
       externalConflict: { type: "missing", fileId: "file-1" },
     });
     vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("recover");
     vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
 
-    const ok = await useStore.getState().saveFile("file-1", "{}");
+    const ok = await useStore.getState().saveFile("file-1", "{}", "explicit");
 
     expect(ok).toBe(true);
     expect(window.api.files.write).not.toHaveBeenCalled();

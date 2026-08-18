@@ -45,9 +45,8 @@ describe("createSceneSession", () => {
     vi.useRealTimers();
   });
 
-  it("establishes baseline on the first post-load onChange no matter when it lands", async () => {
+  it("establishes baseline on the first post-load onChange", () => {
     const { session, dirty, save } = makeSession();
-    await vi.advanceTimersByTimeAsync(150);
 
     session.onChange([el("a")], appState(), emptyFiles);
 
@@ -78,7 +77,7 @@ describe("createSceneSession", () => {
 
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
 
-    expect(save).toHaveBeenCalledWith("f1", expect.any(String));
+    expect(save).toHaveBeenCalledWith("f1", expect.any(String), "auto");
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
@@ -161,7 +160,7 @@ describe("createSceneSession", () => {
 
     expect(dirty).toHaveBeenCalledWith("f1", true);
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save).toHaveBeenCalledWith("f1", expect.any(String));
+    expect(save).toHaveBeenCalledWith("f1", expect.any(String), "auto");
   });
 
   it("does not write when the first commit matches the disk baseline", async () => {
@@ -411,7 +410,7 @@ describe("createSceneSession", () => {
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
 
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save).toHaveBeenLastCalledWith("f1", expect.stringContaining('"vbg":"#000000"'));
+    expect(save).toHaveBeenLastCalledWith("f1", expect.stringContaining('"vbg":"#000000"'), "auto");
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 

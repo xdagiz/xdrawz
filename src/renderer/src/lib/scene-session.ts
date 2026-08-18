@@ -36,9 +36,11 @@ export type SceneSessionControls = {
   dispose: () => void;
 };
 
+type SaveOrigin = "auto" | "explicit";
+
 type SceneSessionDeps = {
   fileId: string;
-  save: (id: string, content: string) => Promise<boolean>;
+  save: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
   initialBaseline?: string | null;
 };
@@ -83,12 +85,13 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     appState: AppState,
     files: BinaryFiles,
     revision: number,
+    origin: SaveOrigin = "auto",
   ) => {
     const json = serializeAsJSON(elements, appState, files, "local");
     savesInFlight += 1;
 
     try {
-      const ok = await save(fileId, json);
+      const ok = await save(fileId, json, origin);
       lastSaveOk = ok;
       if (ok) {
         saveFailures = 0;
@@ -118,9 +121,10 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
       appState: AppState,
       files: BinaryFiles,
       revision: number,
+      origin: SaveOrigin = "auto",
     ) => {
       if (blocked || disposed) return;
-      await persistScene(elements, appState, files, revision);
+      await persistScene(elements, appState, files, revision, origin);
     },
     AUTOSAVE_MS,
   );
@@ -135,6 +139,13 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     if (temporarilyUnblocked) blocked = false;
 
     try {
+      if (force && latestScene) {
+        debounced.cancel();
+        const [elements, appState, files] = latestScene;
+        debounced(elements, appState, files, latestRevision, "explicit");
+        await debounced.flush({ force: true });
+        return;
+      }
       await debounced.flush({ force });
     } finally {
       if (temporarilyUnblocked) blocked = true;
@@ -145,8 +156,8 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     if (disposed || blocked || !latestScene || diskBaseline === null) return false;
 
     const [elements, appState, files] = latestScene;
-    debounced(elements, appState, files, latestRevision);
-
+    debounced.cancel();
+    debounced(elements, appState, files, latestRevision, "explicit");
     await debounced.flush({ force: true });
     return lastSaveOk;
   };

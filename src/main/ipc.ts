@@ -163,19 +163,34 @@ export const normalizeContextMenuPos = (
   };
 };
 
+function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId" {
+  if (key !== "lastOpenedFileId") {
+    throw new Error("Store key is not allowed");
+  }
+}
+
 export const registerIpcHandlers = (deps: Deps) => {
   ipcMain.handle(DRAWINGS_GET, async () => deps.getDrawings());
   ipcMain.handle(DRAWINGS_LOAD, async () => deps.loadDrawings());
 
   ipcMain.handle(STORE_GET, (_event, key: StoreKey) => {
+    assertRendererStoreKey(key);
     const value = store.get(key);
     if (value === undefined || value === null) return null;
     return typeof value === "string" ? value : JSON.stringify(value);
   });
 
-  ipcMain.handle(STORE_SET, (_event, key: StoreKey, value: string | null) => store.set(key, value));
-  ipcMain.handle(STORE_DELETE, (_event, key: StoreKey) => store.delete(key));
-  ipcMain.handle(STORE_CLEAR, () => store.clear());
+  ipcMain.handle(STORE_SET, (_event, key: StoreKey, value: string | null) => {
+    assertRendererStoreKey(key);
+    store.set(key, value);
+  });
+  ipcMain.handle(STORE_DELETE, (_event, key: StoreKey) => {
+    assertRendererStoreKey(key);
+    store.delete(key);
+  });
+  ipcMain.handle(STORE_CLEAR, () => {
+    throw new Error("Store clear is not allowed");
+  });
 
   ipcMain.handle(FILES_LIST, async () => deps.listEntries());
 

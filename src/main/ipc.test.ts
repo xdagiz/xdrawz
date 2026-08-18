@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   isPackaged: false,
   netFetch: vi.fn(),
   protocolHandle: vi.fn(),
+  store: {
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+    clear: vi.fn(),
+  },
 }));
 
 vi.mock("electron", () => ({
@@ -23,7 +29,7 @@ vi.mock("electron", () => ({
   },
 }));
 
-vi.mock("./store", () => ({ store: {} }));
+vi.mock("./store", () => ({ store: mocks.store }));
 
 import {
   CONTEXT_MENU_SHOW,
@@ -47,6 +53,8 @@ import {
   STORE_SET,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
+  WINDOW_DIRTY_STATE,
+  WINDOW_FLUSH_STARTED,
   WINDOW_READY,
 } from "@shared/channels";
 
@@ -210,6 +218,10 @@ const eventFor = () => ({ sender: {} }) as Electron.IpcMainInvokeEvent;
 describe("registerIpcHandlers wiring", () => {
   beforeEach(() => {
     mocks.fromWebContents.mockReset().mockReturnValue({ isDestroyed: () => false });
+    mocks.store.get.mockReset();
+    mocks.store.set.mockReset();
+    mocks.store.delete.mockReset();
+    mocks.store.clear.mockReset();
     for (const fn of Object.values(deps)) fn.mockReset();
 
     handlers.clear();
@@ -251,7 +263,12 @@ describe("registerIpcHandlers wiring", () => {
   });
 
   it("registers every send-style channel via ipcMain.on", () => {
-    const sendChannels = [WINDOW_READY, WINDOW_CANCEL_QUIT];
+    const sendChannels = [
+      WINDOW_READY,
+      WINDOW_CANCEL_QUIT,
+      WINDOW_DIRTY_STATE,
+      WINDOW_FLUSH_STARTED,
+    ];
     for (const channel of sendChannels) {
       expect(listeners.has(channel), channel).toBe(true);
     }
@@ -265,6 +282,38 @@ describe("registerIpcHandlers wiring", () => {
   it("forwards the cancel-quit request id to cancelQuit", () => {
     listeners.get(WINDOW_CANCEL_QUIT)!(eventFor(), 6);
     expect(deps.cancelQuit).toHaveBeenCalledWith(expect.any(Object), 6);
+  });
+
+  it("forwards dirty-state and flush-started messages to the deps", () => {
+    listeners.get(WINDOW_DIRTY_STATE)!(eventFor(), 7, true);
+    expect(deps.onDirtyState).toHaveBeenCalledWith(expect.any(Object), 7, true);
+
+    listeners.get(WINDOW_FLUSH_STARTED)!(eventFor(), 9);
+    expect(deps.onFlushStarted).toHaveBeenCalledWith(expect.any(Object), 9);
+  });
+
+  it("allows lastOpenedFileId store access and rejects other keys", () => {
+    mocks.store.get.mockReturnValue("file-1");
+    expect(handlers.get(STORE_GET)!(eventFor(), "lastOpenedFileId")).toBe("file-1");
+    expect(mocks.store.get).toHaveBeenCalledWith("lastOpenedFileId");
+
+    void handlers.get(STORE_SET)!(eventFor(), "lastOpenedFileId", "file-2");
+    expect(mocks.store.set).toHaveBeenCalledWith("lastOpenedFileId", "file-2");
+
+    void handlers.get(STORE_DELETE)!(eventFor(), "lastOpenedFileId");
+    expect(mocks.store.delete).toHaveBeenCalledWith("lastOpenedFileId");
+
+    expect(() => handlers.get(STORE_GET)!(eventFor(), "drawingsPath")).toThrow(
+      "Store key is not allowed",
+    );
+    expect(() => handlers.get(STORE_SET)!(eventFor(), "theme", "dark")).toThrow(
+      "Store key is not allowed",
+    );
+    expect(() => handlers.get(STORE_DELETE)!(eventFor(), "zoomLevel")).toThrow(
+      "Store key is not allowed",
+    );
+    expect(() => handlers.get(STORE_CLEAR)!(eventFor())).toThrow("Store clear is not allowed");
+    expect(mocks.store.clear).not.toHaveBeenCalled();
   });
 
   it("forwards invoke messages to the dep and returns the result", async () => {
@@ -305,6 +354,10 @@ describe("registerIpcHandlers wiring", () => {
 describe("registerIpcHandlers error propagation", () => {
   beforeEach(() => {
     mocks.fromWebContents.mockReset().mockReturnValue({ isDestroyed: () => false });
+    mocks.store.get.mockReset();
+    mocks.store.set.mockReset();
+    mocks.store.delete.mockReset();
+    mocks.store.clear.mockReset();
     for (const fn of Object.values(deps)) fn.mockReset();
 
     handlers.clear();

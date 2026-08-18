@@ -1,14 +1,14 @@
 import "./assets/main.css";
+import { cleanErrorMessage } from "@shared/errors";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster } from "./components/ui/toast";
-import { useStore } from "./lib/store";
-import { cleanErrorMessage } from "@shared/errors";
-import { toAppError } from "./lib/app-error";
 import { toast } from "./components/ui/toast";
+import { toAppError } from "./lib/app-error";
+import { useStore } from "./lib/store";
 import { router } from "./router";
 
 const DEDUP_WINDOW_MS = 1000;

@@ -22,18 +22,6 @@ vi.mock("./logger", () => ({
 
 import { WINDOW_CLOSE_CANCELLED, WINDOW_WILL_CLOSE } from "@shared/channels";
 
-import {
-  cancelQuit,
-  destroyWindow,
-  installCloseGuard,
-  isQuittingNow,
-  markWindowReady,
-  onDirtyState,
-  onFlushStarted,
-  requestQuitViaRenderer,
-  showUnsavedChangesDialog,
-} from "./close-guard";
-
 class FakeWindow extends EventEmitter {
   destroyed = false;
   readonly webContents = Object.assign(new EventEmitter(), {
@@ -68,7 +56,11 @@ const sentRequestId = (win: FakeWindow, callIndex: number): number => {
 };
 
 describe("close guard", () => {
-  beforeEach(() => {
+  let closeGuard: typeof import("./close-guard");
+
+  beforeEach(async () => {
+    vi.resetModules();
+    closeGuard = await import("./close-guard");
     mocks.quit.mockReset();
     mocks.warn.mockReset();
     mocks.error.mockReset();
@@ -82,8 +74,8 @@ describe("close guard", () => {
   const setupWindow = () => {
     const win = new FakeWindow();
     const browserWindow = win as unknown as Electron.BrowserWindow;
-    installCloseGuard(browserWindow);
-    markWindowReady(browserWindow);
+    closeGuard.installCloseGuard(browserWindow);
+    closeGuard.markWindowReady(browserWindow);
     return { win, browserWindow };
   };
 
@@ -96,26 +88,29 @@ describe("close guard", () => {
 
     expect(event.preventDefault).toHaveBeenCalledTimes(2);
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    const firstId = sentRequestId(win, 0);
     expect(win.webContents.send).toHaveBeenCalledWith(WINDOW_WILL_CLOSE, {
-      requestId: 1,
+      requestId: firstId,
       kind: "check",
     });
 
-    cancelQuit(browserWindow, 2);
+    closeGuard.cancelQuit(browserWindow, firstId + 999);
     win.emit("close", closeEvent());
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
 
-    cancelQuit(browserWindow, 1);
+    closeGuard.cancelQuit(browserWindow, firstId);
     win.emit("close", closeEvent());
+    const secondId = sentRequestId(win, 1);
+    expect(secondId).not.toBe(firstId);
     expect(win.webContents.send).toHaveBeenLastCalledWith(WINDOW_WILL_CLOSE, {
-      requestId: 2,
+      requestId: secondId,
       kind: "check",
     });
 
-    destroyWindow(browserWindow, 1);
+    closeGuard.destroyWindow(browserWindow, firstId);
     expect(win.destroyed).toBe(false);
 
-    destroyWindow(browserWindow, 2);
+    closeGuard.destroyWindow(browserWindow, secondId);
     expect(win.destroyed).toBe(true);
   });
 
@@ -123,7 +118,7 @@ describe("close guard", () => {
     const { win, browserWindow } = setupWindow();
 
     win.emit("close", closeEvent());
-    onDirtyState(browserWindow, sentRequestId(win, 0), false);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), false);
 
     expect(win.destroyed).toBe(true);
     expect(mocks.showMessageBox).not.toHaveBeenCalled();
@@ -134,7 +129,7 @@ describe("close guard", () => {
     mocks.showMessageBox.mockResolvedValue({ response: 2 });
 
     win.emit("close", closeEvent());
-    onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
@@ -156,7 +151,7 @@ describe("close guard", () => {
 
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
-    onDirtyState(browserWindow, requestId, true);
+    closeGuard.onDirtyState(browserWindow, requestId, true);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
@@ -165,10 +160,10 @@ describe("close guard", () => {
       kind: "flush",
     });
 
-    onFlushStarted(browserWindow, requestId);
+    closeGuard.onFlushStarted(browserWindow, requestId);
     expect(win.destroyed).toBe(false);
 
-    destroyWindow(browserWindow, requestId);
+    closeGuard.destroyWindow(browserWindow, requestId);
     expect(win.destroyed).toBe(true);
   });
 
@@ -177,7 +172,7 @@ describe("close guard", () => {
     mocks.showMessageBox.mockResolvedValue({ response: 1 });
 
     win.emit("close", closeEvent());
-    onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
     await flushAsync();
 
     expect(win.destroyed).toBe(true);
@@ -207,7 +202,7 @@ describe("close guard", () => {
     );
 
     win.emit("close", closeEvent());
-    onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
     await flushTicks();
 
     win.emit("close", closeEvent());
@@ -232,16 +227,16 @@ describe("close guard", () => {
 
     win.emit("close", closeEvent());
     const first = sentRequestId(win, 0);
-    onDirtyState(browserWindow, first, true);
+    closeGuard.onDirtyState(browserWindow, first, true);
     await flushAsync();
 
-    onDirtyState(browserWindow, first, false);
+    closeGuard.onDirtyState(browserWindow, first, false);
     expect(win.destroyed).toBe(false);
 
     win.emit("close", closeEvent());
     const second = sentRequestId(win, 1);
     expect(second).not.toBe(first);
-    onDirtyState(browserWindow, second, false);
+    closeGuard.onDirtyState(browserWindow, second, false);
     expect(win.destroyed).toBe(true);
   });
 
@@ -252,7 +247,7 @@ describe("close guard", () => {
 
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
-    onDirtyState(browserWindow, requestId, true);
+    closeGuard.onDirtyState(browserWindow, requestId, true);
     await flushTicks();
 
     expect(win.webContents.send).toHaveBeenLastCalledWith(WINDOW_WILL_CLOSE, {
@@ -275,11 +270,10 @@ describe("close guard", () => {
 
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
-    onDirtyState(browserWindow, requestId, true);
+    closeGuard.onDirtyState(browserWindow, requestId, true);
     await flushTicks();
-    onFlushStarted(browserWindow, requestId);
+    closeGuard.onFlushStarted(browserWindow, requestId);
 
-    // The ack must replace the 2s silence timer, not stack on top of it.
     vi.advanceTimersByTime(2000);
     expect(win.destroyed).toBe(false);
 
@@ -298,10 +292,10 @@ describe("close guard", () => {
 
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
-    onDirtyState(browserWindow, requestId, true);
+    closeGuard.onDirtyState(browserWindow, requestId, true);
     await flushTicks();
 
-    onFlushStarted(browserWindow, requestId + 1);
+    closeGuard.onFlushStarted(browserWindow, requestId + 1);
 
     vi.advanceTimersByTime(2001);
     expect(win.destroyed).toBe(true);
@@ -332,7 +326,7 @@ describe("close guard", () => {
   it("does not intercept close before the renderer marks itself ready", () => {
     const win = new FakeWindow();
     const browserWindow = win as unknown as Electron.BrowserWindow;
-    installCloseGuard(browserWindow);
+    closeGuard.installCloseGuard(browserWindow);
 
     const event = closeEvent();
     win.emit("close", event);
@@ -345,8 +339,8 @@ describe("close guard", () => {
   it("does not intercept close when the renderer is already crashed", () => {
     const win = new FakeWindow();
     const browserWindow = win as unknown as Electron.BrowserWindow;
-    installCloseGuard(browserWindow);
-    markWindowReady(browserWindow);
+    closeGuard.installCloseGuard(browserWindow);
+    closeGuard.markWindowReady(browserWindow);
     win.webContents.isCrashed = () => true;
 
     const event = closeEvent();
@@ -360,18 +354,18 @@ describe("close guard", () => {
     const { win, browserWindow } = setupWindow();
     mocks.showMessageBox.mockResolvedValue({ response: 2 });
 
-    requestQuitViaRenderer(browserWindow);
-    onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.requestQuitViaRenderer(browserWindow);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
     expect(mocks.quit).not.toHaveBeenCalled();
-    expect(isQuittingNow()).toBe(false);
+    expect(closeGuard.isQuittingNow()).toBe(false);
     expect(win.webContents.send).toHaveBeenLastCalledWith(WINDOW_CLOSE_CANCELLED);
 
     win.emit("close", closeEvent());
     const second = sentRequestId(win, 1);
-    destroyWindow(browserWindow, second);
+    closeGuard.destroyWindow(browserWindow, second);
     expect(win.destroyed).toBe(true);
     expect(mocks.quit).not.toHaveBeenCalled();
   });
@@ -381,7 +375,7 @@ describe("close guard", () => {
     mocks.showMessageBox.mockRejectedValue(new Error("dialog exploded"));
 
     win.emit("close", closeEvent());
-    onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
@@ -390,10 +384,8 @@ describe("close guard", () => {
       expect.any(Error),
     );
 
-    // The failed dialog must still resume the renderer's paused autosave.
     expect(win.webContents.send).toHaveBeenLastCalledWith(WINDOW_CLOSE_CANCELLED);
 
-    // The failed dialog must not swallow later close attempts.
     win.emit("close", closeEvent());
     expect(win.webContents.send).toHaveBeenCalledTimes(3);
   });
@@ -402,37 +394,36 @@ describe("close guard", () => {
     const { win, browserWindow } = setupWindow();
     mocks.showMessageBox.mockRejectedValue(new Error("dialog exploded"));
 
-    requestQuitViaRenderer(browserWindow);
-    onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.requestQuitViaRenderer(browserWindow);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
-    expect(isQuittingNow()).toBe(false);
+    expect(closeGuard.isQuittingNow()).toBe(false);
 
-    // The quit state was reset: a fresh close attempt starts a new flow.
     win.emit("close", closeEvent());
     expect(win.webContents.send).toHaveBeenCalledTimes(3);
   });
   it("quits the app when a pending quit resolves clean", () => {
     const { win, browserWindow } = setupWindow();
 
-    requestQuitViaRenderer(browserWindow);
+    closeGuard.requestQuitViaRenderer(browserWindow);
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
-    expect(isQuittingNow()).toBe(false);
+    expect(closeGuard.isQuittingNow()).toBe(false);
 
-    onDirtyState(browserWindow, sentRequestId(win, 0), false);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), false);
 
     expect(win.destroyed).toBe(true);
     expect(mocks.quit).toHaveBeenCalledTimes(1);
-    expect(isQuittingNow()).toBe(true);
+    expect(closeGuard.isQuittingNow()).toBe(true);
   });
 
   it("discarding during a pending quit still quits the app", async () => {
     const { win, browserWindow } = setupWindow();
     mocks.showMessageBox.mockResolvedValue({ response: 1 });
 
-    requestQuitViaRenderer(browserWindow);
-    onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.requestQuitViaRenderer(browserWindow);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
     await flushAsync();
 
     expect(win.destroyed).toBe(true);
@@ -441,7 +432,7 @@ describe("close guard", () => {
 
   it("maps unsaved-changes dialog responses and reason-specific text", async () => {
     mocks.showMessageBox.mockResolvedValue({ response: 0 });
-    expect(await showUnsavedChangesDialog(null, "switch")).toBe("save");
+    expect(await closeGuard.showUnsavedChangesDialog(null, "switch")).toBe("save");
     expect(mocks.showMessageBox).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: "warning",
@@ -453,10 +444,10 @@ describe("close guard", () => {
     );
 
     mocks.showMessageBox.mockResolvedValue({ response: 1 });
-    expect(await showUnsavedChangesDialog(null)).toBe("discard");
+    expect(await closeGuard.showUnsavedChangesDialog(null)).toBe("discard");
 
     mocks.showMessageBox.mockResolvedValue({ response: 2 });
-    expect(await showUnsavedChangesDialog(null, "quit")).toBe("cancel");
+    expect(await closeGuard.showUnsavedChangesDialog(null, "quit")).toBe("cancel");
     expect(mocks.showMessageBox).toHaveBeenLastCalledWith(
       expect.objectContaining({ detail: expect.stringContaining("quitting") }),
     );
@@ -465,7 +456,7 @@ describe("close guard", () => {
   it("attaches the unsaved-changes dialog to the window when one is available", async () => {
     const { win, browserWindow } = setupWindow();
     mocks.showMessageBox.mockResolvedValue({ response: 2 });
-    await showUnsavedChangesDialog(browserWindow, "switch");
+    await closeGuard.showUnsavedChangesDialog(browserWindow, "switch");
     expect(mocks.showMessageBox).toHaveBeenCalledWith(win, expect.any(Object));
   });
 });
