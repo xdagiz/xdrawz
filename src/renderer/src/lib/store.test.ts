@@ -369,7 +369,7 @@ describe("applyEntries + conflicts", () => {
     const bumped = mockEntries.map((e) => (e.id === "file-1" ? { ...e, modifiedAt: 999 } : e));
     useStore.getState().applyEntries(event({ revision: 1, entries: bumped }));
 
-    // Same mtimes again (entries already updated) — conflict must stick.
+    // Same mtimes again (entries already updated) - conflict must stick.
     useStore.getState().applyEntries(event({ revision: 2, entries: bumped }));
 
     expect(useStore.getState().externalConflict).toEqual({

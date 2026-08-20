@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ErrorBoundary as ReactErrorBoundary, type FallbackProps } from "react-error-boundary";
 
 import { toAppError, type AppError } from "@/lib/app-error";
+import { reportRendererError } from "@/lib/report-error";
 
 import { Button } from "./ui/button";
 import {
@@ -34,7 +35,7 @@ export const ErrorBoundary = ({
   onReset,
 }: ErrorBoundaryProps) => {
   const handleError = (error: unknown) => {
-    console.error("render error:", error);
+    reportRendererError(error, "unexpected", { fatal: true });
     onError?.(toBoundaryError(error));
   };
 

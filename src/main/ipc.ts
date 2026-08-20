@@ -26,20 +26,16 @@ import {
   WINDOW_DIRTY_STATE,
   WINDOW_FLUSH_STARTED,
   WINDOW_READY,
+  WINDOW_REPORT_FATAL,
 } from "@shared/channels";
-import type {
-  AppSettings,
-  ContextMenuRequest,
-  DrawingInfo,
-  DrawingsSnapshot,
-  FileEntry,
-  SettingsUpdate,
-  StoreKey,
-  UnsavedReason,
-} from "@shared/ipc";
+import { errorWithCode, isSerializedAppError } from "@shared/errors";
+import type { ErrorOperation } from "@shared/errors";
+import type { AppSettings, DrawingInfo, DrawingsSnapshot, FileEntry } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
 import { showUnsavedChangesDialog } from "./close-guard";
+import { shouldQuitAfterFatal, withIpcResult } from "./errors";
+import { log } from "./logger";
 import { store } from "./store";
 
 export const APP_ORIGIN = "app://renderer";
@@ -117,10 +113,12 @@ type Deps = {
   onDirtyState: (win: BrowserWindow, requestId: number, dirty: boolean) => void;
   onFlushStarted: (win: BrowserWindow, requestId: number) => void;
   getSettings: () => AppSettings;
-  updateSettings: (update: SettingsUpdate) => AppSettings;
+  updateSettings: (update: AppSettings) => AppSettings;
 };
 
-const windowFromEvent = (event: Electron.IpcMainInvokeEvent): BrowserWindow | null => {
+const windowFromEvent = (
+  event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent,
+): BrowserWindow | null => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return null;
   return win;
@@ -169,62 +167,150 @@ function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId"
   }
 }
 
-export const registerIpcHandlers = (deps: Deps) => {
-  ipcMain.handle(DRAWINGS_GET, async () => deps.getDrawings());
-  ipcMain.handle(DRAWINGS_LOAD, async () => deps.loadDrawings());
+const requireString = (value: unknown, field: string) => {
+  if (typeof value !== "string" || value.length === 0) {
+    throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
+  }
+  return value;
+};
 
-  ipcMain.handle(STORE_GET, (_event, key: StoreKey) => {
+const requireInteger = (value: unknown, field: string) => {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    throw errorWithCode(`${field} must be a finite integer`, "INVALID");
+  }
+  return value;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const handle = (
+  channel: string,
+  operation: ErrorOperation,
+  listener: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+) => {
+  ipcMain.handle(channel, (event, ...args) =>
+    withIpcResult(operation, () => listener(event, ...args)),
+  );
+};
+
+const on = (
+  channel: string,
+  listener: (event: Electron.IpcMainEvent, ...args: unknown[]) => void,
+) => {
+  ipcMain.on(channel, (event, ...args) => {
+    try {
+      listener(event, ...args);
+    } catch (error) {
+      console.error(`[ipcMain.on] ${channel} listener error:`, error);
+    }
+  });
+};
+
+export const registerIpcHandlers = (deps: Deps) => {
+  handle(DRAWINGS_GET, "load", () => deps.getDrawings());
+  handle(DRAWINGS_LOAD, "load", () => deps.loadDrawings());
+
+  handle(STORE_GET, "unexpected", (_event, ...args) => {
+    const key = args[0];
     assertRendererStoreKey(key);
     const value = store.get(key);
     if (value === undefined || value === null) return null;
     return typeof value === "string" ? value : JSON.stringify(value);
   });
 
-  ipcMain.handle(STORE_SET, (_event, key: StoreKey, value: string | null) => {
+  handle(STORE_SET, "unexpected", (_event, ...args) => {
+    const key = args[0];
+    const value = args[1];
     assertRendererStoreKey(key);
-    store.set(key, value);
+    let normalized: string | null = null;
+    if (value === null) normalized = null;
+    else if (typeof value === "string") normalized = value;
+    else normalized = null;
+    store.set(key, normalized);
   });
-  ipcMain.handle(STORE_DELETE, (_event, key: StoreKey) => {
+
+  handle(STORE_DELETE, "unexpected", (_event, ...args) => {
+    const key = args[0];
     assertRendererStoreKey(key);
     store.delete(key);
   });
-  ipcMain.handle(STORE_CLEAR, () => {
+
+  handle(STORE_CLEAR, "unexpected", () => {
     throw new Error("Store clear is not allowed");
   });
 
-  ipcMain.handle(FILES_LIST, async () => deps.listEntries());
+  handle(FILES_LIST, "read", () => deps.listEntries());
 
-  ipcMain.handle(FILES_READ, async (_event, id: string) => deps.readSceneFile(id));
-  ipcMain.handle(FILES_RENAME, async (_event, id: string, newName: string) =>
-    deps.renameEntry(id, newName),
-  );
+  handle(FILES_READ, "read", (_event, ...args) => {
+    const id = requireString(args[0], "id");
+    return deps.readSceneFile(id);
+  });
 
-  ipcMain.handle(FILES_WRITE, async (_event, id: string, content: string) =>
-    deps.writeSceneFile(id, content),
-  );
-  ipcMain.handle(FILES_DELETE, async (_event, id: string) => deps.deleteEntry(id));
+  handle(FILES_RENAME, "rename", (_event, ...args) => {
+    const id = requireString(args[0], "id");
+    const newName = requireString(args[1], "newName");
+    return deps.renameEntry(id, newName);
+  });
 
-  ipcMain.handle(DRAWINGS_PICK, async (event) => deps.pickDrawings(windowFromEvent(event)));
+  handle(FILES_WRITE, "save", (_event, ...args) => {
+    const id = requireString(args[0], "id");
+    const content = requireString(args[1], "content");
+    return deps.writeSceneFile(id, content);
+  });
 
-  ipcMain.handle(CONTEXT_MENU_SHOW, async (event, request: ContextMenuRequest) => {
+  handle(FILES_DELETE, "delete", (_event, ...args) => {
+    const id = requireString(args[0], "id");
+    return deps.deleteEntry(id);
+  });
+
+  handle(DRAWINGS_PICK, "load", (event) => deps.pickDrawings(windowFromEvent(event)));
+
+  handle(CONTEXT_MENU_SHOW, "unexpected", async (event, ...args) => {
     const win = windowFromEvent(event);
     if (!win) return null;
+    const request = args[0];
+    if (!isRecord(request)) {
+      throw errorWithCode("Context menu request must be an object", "INVALID");
+    }
+    const itemsRaw = request.items;
+    const xRaw = request.x;
+    const yRaw = request.y;
+    if (!Array.isArray(itemsRaw)) {
+      throw errorWithCode("Context menu items must be an array", "INVALID");
+    }
+    if (typeof xRaw !== "number" || typeof yRaw !== "number") {
+      throw errorWithCode("Context menu position must be numbers", "INVALID");
+    }
 
     return new Promise<string | null>((resolveSelection) => {
       let resolved = false;
 
-      const template = request.items.map((item) => ({
-        label: item.label,
-        enabled: true,
-        click: () => {
-          resolved = true;
-          resolveSelection(item.id);
-        },
-      }));
+      const template = itemsRaw.map((item) => {
+        const record = isRecord(item) ? item : null;
+        const rawId = record ? record.id : "";
+        const id =
+          typeof rawId === "string" ? rawId : typeof rawId === "number" ? String(rawId) : "";
+        const rawLabel = record ? record.label : "";
+        const label = typeof rawLabel === "string" ? rawLabel : "";
+        return {
+          label,
+          enabled: true,
+          click: () => {
+            resolved = true;
+            resolveSelection(id);
+          },
+        };
+      });
 
       const menu = Menu.buildFromTemplate(template);
       const zoomFactor = win.webContents.getZoomFactor();
-      const position = normalizeContextMenuPos(request.x, request.y, zoomFactor);
+      const position = normalizeContextMenuPos(xRaw, yRaw, zoomFactor);
 
       menu.popup({
         window: win,
@@ -236,61 +322,63 @@ export const registerIpcHandlers = (deps: Deps) => {
     });
   });
 
-  ipcMain.handle(SETTINGS_GET, () => deps.getSettings());
-  ipcMain.handle(SETTINGS_SET, (_event, update: SettingsUpdate) => deps.updateSettings(update));
+  handle(SETTINGS_GET, "settings", () => deps.getSettings());
 
-  ipcMain.handle(WINDOW_CLOSE, (event, requestId: number) => {
+  handle(SETTINGS_SET, "settings", (_event, ...args) => {
+    const update = args[0];
+    if (!isRecord(update)) {
+      throw errorWithCode("Settings update must be an object", "INVALID");
+    }
+    const themeRaw = update.theme;
+    if (themeRaw !== "light" && themeRaw !== "dark" && themeRaw !== "system") {
+      throw errorWithCode("Invalid theme", "INVALID");
+    }
+    return deps.updateSettings({ theme: themeRaw });
+  });
+
+  handle(WINDOW_CLOSE, "unexpected", (event, ...args) => {
     const win = windowFromEvent(event);
     if (!win) return;
+    const requestId = requireInteger(args[0], "requestId");
     deps.destroyWindow(win, requestId);
   });
 
-  ipcMain.on(WINDOW_READY, (event) => {
-    try {
-      const win = windowFromEvent(event);
-      if (win) deps.markWindowReady(win);
-    } catch (error) {
-      console.error("[ipcMain.on] WINDOW_READY listener error:", error);
-    }
-  });
-
-  ipcMain.on(WINDOW_CANCEL_QUIT, (event, requestId: number) => {
-    try {
-      const win = windowFromEvent(event);
-      if (win) deps.cancelQuit(win, requestId);
-    } catch (error) {
-      console.error("[ipcMain.on] WINDOW_CANCEL_QUIT listener error:", error);
-    }
-  });
-
-  ipcMain.on(WINDOW_DIRTY_STATE, (event, requestId: number, dirty: boolean) => {
-    try {
-      const win = windowFromEvent(event);
-      if (win) deps.onDirtyState(win, requestId, dirty);
-    } catch (error) {
-      console.error("[ipcMain.on] WINDOW_DIRTY_STATE listener error:", error);
-    }
-  });
-
-  ipcMain.on(WINDOW_FLUSH_STARTED, (event, requestId: number) => {
-    try {
-      const win = windowFromEvent(event);
-      if (win) deps.onFlushStarted(win, requestId);
-    } catch (error) {
-      console.error("[ipcMain.on] WINDOW_FLUSH_STARTED listener error:", error);
-    }
-  });
-
-  ipcMain.handle(DIALOG_UNSAVED_CHANGES, async (event, reason: UnsavedReason = "quit") =>
-    showUnsavedChangesDialog(windowFromEvent(event), reason),
-  );
-
-  ipcMain.handle(FILES_WRITE_RECOVER, async (_event, id: string, content: string) =>
-    deps.writeSceneFileRecover(id, content),
-  );
-
-  ipcMain.handle(DIALOG_FILE_RECOVER, async (event, fileName: string) => {
+  on(WINDOW_READY, (event) => {
     const win = windowFromEvent(event);
+    if (win) deps.markWindowReady(win);
+  });
+
+  on(WINDOW_CANCEL_QUIT, (event, ...args) => {
+    const win = windowFromEvent(event);
+    if (win) deps.cancelQuit(win, requireInteger(args[0], "requestId"));
+  });
+
+  on(WINDOW_DIRTY_STATE, (event, ...args) => {
+    const win = windowFromEvent(event);
+    if (win) deps.onDirtyState(win, requireInteger(args[0], "requestId"), Boolean(args[1]));
+  });
+
+  on(WINDOW_FLUSH_STARTED, (event, ...args) => {
+    const win = windowFromEvent(event);
+    if (win) deps.onFlushStarted(win, requireInteger(args[0], "requestId"));
+  });
+
+  handle(DIALOG_UNSAVED_CHANGES, "unexpected", (event, ...args) => {
+    const reason = args[0];
+    const normalized = reason === "switch" ? "switch" : "quit";
+    return showUnsavedChangesDialog(windowFromEvent(event), normalized);
+  });
+
+  handle(FILES_WRITE_RECOVER, "recover", (_event, ...args) => {
+    const id = requireString(args[0], "id");
+    const content = requireString(args[1], "content");
+    return deps.writeSceneFileRecover(id, content);
+  });
+
+  handle(DIALOG_FILE_RECOVER, "unexpected", async (event, ...args) => {
+    const win = windowFromEvent(event);
+    const rawName = args[0];
+    const fileName = typeof rawName === "string" ? rawName : "";
     const options: Electron.MessageBoxOptions = {
       type: "warning",
       buttons: ["Recover file", "Discard changes", "Cancel"],
@@ -308,8 +396,10 @@ export const registerIpcHandlers = (deps: Deps) => {
     return "cancel";
   });
 
-  ipcMain.handle(DIALOG_FILE_CHANGED, async (event, fileName: string) => {
+  handle(DIALOG_FILE_CHANGED, "unexpected", async (event, ...args) => {
     const win = windowFromEvent(event);
+    const rawName = args[0];
+    const fileName = typeof rawName === "string" ? rawName : "";
     const options: Electron.MessageBoxOptions = {
       type: "warning",
       buttons: ["Reload from disk", "Keep my changes", "Cancel"],
@@ -327,5 +417,31 @@ export const registerIpcHandlers = (deps: Deps) => {
     if (response === 0) return "reload";
     if (response === 1) return "overwrite";
     return "cancel";
+  });
+
+  handle(WINDOW_REPORT_FATAL, "unexpected", (_event, ...args) => {
+    const payload = args[0];
+    if (!isSerializedAppError(payload)) {
+      throw errorWithCode("Invalid fatal payload", "INVALID");
+    }
+    const message = typeof payload.message === "string" ? payload.message : "Unknown fatal";
+    log.error("[renderer:fatal]", payload);
+
+    const shouldQuit = shouldQuitAfterFatal(Date.now());
+
+    if (shouldQuit) {
+      void dialog
+        .showMessageBox({
+          type: "error",
+          buttons: ["Quit", "Continue"],
+          defaultId: 0,
+          cancelId: 1,
+          message: "xdrawz encountered a fatal error",
+          detail: message,
+        })
+        .then(({ response }) => {
+          if (response === 0) app.quit();
+        });
+    }
   });
 };

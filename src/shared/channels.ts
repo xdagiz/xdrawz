@@ -17,6 +17,7 @@ export const WINDOW_CANCEL_QUIT = "window:cancel-quit";
 export const WINDOW_CLOSE = "window:close";
 export const WINDOW_DIRTY_STATE = "window:dirty-state";
 export const WINDOW_FLUSH_STARTED = "window:flush-started";
+export const WINDOW_REPORT_FATAL = "window:report-fatal";
 export const DIALOG_UNSAVED_CHANGES = "dialog:unsaved-changes";
 export const DIALOG_FILE_RECOVER = "dialog:file-recover";
 export const DIALOG_FILE_CHANGED = "dialog:file-changed";

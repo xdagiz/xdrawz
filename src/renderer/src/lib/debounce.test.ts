@@ -140,7 +140,7 @@ describe("debounceAsync", () => {
       // Wait half the delay so ~50ms remain
       await tick(50);
       debounced.pause();
-      await tick(200); // way past original deadline — should NOT fire
+      await tick(200); // way past original deadline - should NOT fire
       expect(fn.mock.calls).toHaveLength(0);
 
       debounced.resume();
@@ -171,11 +171,11 @@ describe("debounceAsync", () => {
     it("pause then resume without timer having started (idle) arms a fresh timer", async () => {
       debounced.pause();
       debounced.resume();
-      // No call was ever made — nothing should happen
+      // No call was ever made - nothing should happen
       await tick(150);
       expect(fn.mock.calls).toHaveLength(0);
 
-      // Now make a call — should use normal wait
+      // Now make a call - should use normal wait
       debounced();
       await tick(150);
       expect(fn.mock.calls).toHaveLength(1);
@@ -184,7 +184,7 @@ describe("debounceAsync", () => {
     it("pause during pending flush: soft flush does not write", async () => {
       debounced();
       debounced.pause();
-      await debounced.flush(); // soft flush — no-op while paused
+      await debounced.flush(); // soft flush - no-op while paused
       expect(fn.mock.calls).toHaveLength(0);
     });
 
@@ -265,7 +265,7 @@ describe("debounceAsync", () => {
     it("force flush after new call while paused writes only once", async () => {
       debounced();
       debounced.pause();
-      debounced(); // second call while paused — updates lastArgs
+      debounced(); // second call while paused - updates lastArgs
       await debounced.flush({ force: true });
       expect(fn.mock.calls).toHaveLength(1);
     });

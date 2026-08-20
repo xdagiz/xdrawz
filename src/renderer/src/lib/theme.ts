@@ -33,7 +33,7 @@ export const writeStoredTheme = (storage: Pick<Storage, "setItem">, theme: Theme
   try {
     storage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
-    /* boot cache must never break settings — silent */
+    /* boot cache must never break settings - silent */
   }
 };
 

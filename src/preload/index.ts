@@ -26,71 +26,102 @@ import {
   WINDOW_DIRTY_STATE,
   WINDOW_FLUSH_STARTED,
   WINDOW_READY,
+  WINDOW_REPORT_FATAL,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
+import { fromSerialized, isSerializedAppError } from "@shared/errors";
 import type { FilesChangedEvent, WatcherErrorEvent, WindowCloseRequest } from "@shared/ipc";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
 
+type InvokeReturn = ReturnType<typeof ipcRenderer.invoke>;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const isResult = (
+  value: unknown,
+): value is { ok: true; value: unknown } | { ok: false; error: unknown } => {
+  if (!isRecord(value)) return false;
+  if (!("ok" in value)) return false;
+
+  const ok = value.ok;
+  if (typeof ok !== "boolean") return false;
+  if (ok) return "value" in value;
+
+  return "error" in value;
+};
+
+const unwrap = async (promise: InvokeReturn): InvokeReturn => {
+  const result = await promise;
+  if (isResult(result)) {
+    if (!result.ok) {
+      const error = result.error;
+      if (isSerializedAppError(error)) throw fromSerialized(error);
+      if (error instanceof Error) throw error;
+      throw new Error("Unknown error");
+    }
+
+    return result.value;
+  }
+
+  return result;
+};
+
+const invoke = (channel: string, ...args: unknown[]): InvokeReturn =>
+  unwrap(ipcRenderer.invoke(channel, ...args));
+
 const api: NativeApi = {
   drawings: {
-    get: () => ipcRenderer.invoke(DRAWINGS_GET),
-    load: () => ipcRenderer.invoke(DRAWINGS_LOAD),
-    pick: () => ipcRenderer.invoke(DRAWINGS_PICK),
+    get: () => invoke(DRAWINGS_GET),
+    load: () => invoke(DRAWINGS_LOAD),
+    pick: () => invoke(DRAWINGS_PICK),
   },
   files: {
-    list: () => ipcRenderer.invoke(FILES_LIST),
-    read: (id) => ipcRenderer.invoke(FILES_READ, id),
-    write: (id, content) => ipcRenderer.invoke(FILES_WRITE, id, content),
-    writeRecover: (id, content) => ipcRenderer.invoke(FILES_WRITE_RECOVER, id, content),
-    rename: (id, newName) => ipcRenderer.invoke(FILES_RENAME, id, newName),
-    delete: (id) => ipcRenderer.invoke(FILES_DELETE, id),
+    list: () => invoke(FILES_LIST),
+    read: (id) => invoke(FILES_READ, id),
+    write: (id, content) => invoke(FILES_WRITE, id, content),
+    writeRecover: (id, content) => invoke(FILES_WRITE_RECOVER, id, content),
+    rename: (id, newName) => invoke(FILES_RENAME, id, newName),
+    delete: (id) => invoke(FILES_DELETE, id),
     onChanged: (cb) => {
-      const listener = (_event: Electron.IpcRendererEvent, payload: FilesChangedEvent) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: FilesChangedEvent) =>
         cb(payload);
-      };
       ipcRenderer.on(FILES_CHANGED, listener);
-      return () => {
-        ipcRenderer.removeListener(FILES_CHANGED, listener);
-      };
+      return () => ipcRenderer.removeListener(FILES_CHANGED, listener);
     },
     onWatcherError: (cb) => {
-      const listener = (_event: Electron.IpcRendererEvent, payload: WatcherErrorEvent) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: WatcherErrorEvent) =>
         cb(payload);
-      };
       ipcRenderer.on(WATCHER_ERROR, listener);
-      return () => {
-        ipcRenderer.removeListener(WATCHER_ERROR, listener);
-      };
+      return () => ipcRenderer.removeListener(WATCHER_ERROR, listener);
     },
   },
   store: {
-    get: (key) => ipcRenderer.invoke(STORE_GET, key),
-    set: (key, value) => ipcRenderer.invoke(STORE_SET, key, value),
-    delete: (key) => ipcRenderer.invoke(STORE_DELETE, key),
-    clear: () => ipcRenderer.invoke(STORE_CLEAR),
+    get: (key) => invoke(STORE_GET, key),
+    set: (key, value) => invoke(STORE_SET, key, value),
+    delete: (key) => invoke(STORE_DELETE, key),
+    clear: () => invoke(STORE_CLEAR),
   },
   settings: {
-    get: () => ipcRenderer.invoke(SETTINGS_GET),
-    update: (updates) => ipcRenderer.invoke(SETTINGS_SET, updates),
+    get: () => invoke(SETTINGS_GET),
+    update: (updates) => invoke(SETTINGS_SET, updates),
   },
   contextMenu: {
-    show: (items, x, y) => ipcRenderer.invoke(CONTEXT_MENU_SHOW, { items, x, y }),
+    show: (items, x, y) => invoke(CONTEXT_MENU_SHOW, { items, x, y }),
   },
   dialog: {
-    unsavedChanges: (reason) => ipcRenderer.invoke(DIALOG_UNSAVED_CHANGES, reason),
-    fileRecover: (fileName) => ipcRenderer.invoke(DIALOG_FILE_RECOVER, fileName),
-    fileChanged: (fileName) => ipcRenderer.invoke(DIALOG_FILE_CHANGED, fileName),
+    unsavedChanges: (reason) => invoke(DIALOG_UNSAVED_CHANGES, reason),
+    fileRecover: (fileName) => invoke(DIALOG_FILE_RECOVER, fileName),
+    fileChanged: (fileName) => invoke(DIALOG_FILE_CHANGED, fileName),
   },
   window: {
     onWillClose: (cb) => {
       const listener = (_event: Electron.IpcRendererEvent, request: WindowCloseRequest) =>
         cb(request);
       ipcRenderer.on(WINDOW_WILL_CLOSE, listener);
-      return () => {
-        ipcRenderer.removeListener(WINDOW_WILL_CLOSE, listener);
-      };
+      return () => ipcRenderer.removeListener(WINDOW_WILL_CLOSE, listener);
     },
     onCloseCancelled: (cb) => {
       const listener = () => cb();
@@ -100,11 +131,11 @@ const api: NativeApi = {
       };
     },
     ready: () => ipcRenderer.send(WINDOW_READY),
-    close: (requestId: number) => ipcRenderer.invoke(WINDOW_CLOSE, requestId),
-    cancelQuit: (requestId: number) => ipcRenderer.send(WINDOW_CANCEL_QUIT, requestId),
-    reportDirtyState: (requestId: number, dirty: boolean) =>
-      ipcRenderer.send(WINDOW_DIRTY_STATE, requestId, dirty),
-    flushStarted: (requestId: number) => ipcRenderer.send(WINDOW_FLUSH_STARTED, requestId),
+    close: (requestId) => invoke(WINDOW_CLOSE, requestId),
+    cancelQuit: (requestId) => ipcRenderer.send(WINDOW_CANCEL_QUIT, requestId),
+    reportDirtyState: (requestId, dirty) => ipcRenderer.send(WINDOW_DIRTY_STATE, requestId, dirty),
+    flushStarted: (requestId) => ipcRenderer.send(WINDOW_FLUSH_STARTED, requestId),
+    reportFatal: (payload) => invoke(WINDOW_REPORT_FATAL, payload),
   },
 };
 
@@ -115,6 +146,5 @@ if (process.contextIsolated) {
     console.error(error);
   }
 } else {
-  // @ts-expect-error fallback when contextIsolation is disabled
-  window.api = api;
+  Object.assign(globalThis, { api });
 }

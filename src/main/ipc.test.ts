@@ -292,34 +292,59 @@ describe("registerIpcHandlers wiring", () => {
     expect(deps.onFlushStarted).toHaveBeenCalledWith(expect.any(Object), 9);
   });
 
-  it("allows lastOpenedFileId store access and rejects other keys", () => {
+  it("allows lastOpenedFileId store access and rejects other keys", async () => {
     mocks.store.get.mockReturnValue("file-1");
-    expect(handlers.get(STORE_GET)!(eventFor(), "lastOpenedFileId")).toBe("file-1");
+    await expect(handlers.get(STORE_GET)!(eventFor(), "lastOpenedFileId")).resolves.toEqual({
+      ok: true,
+      value: "file-1",
+    });
     expect(mocks.store.get).toHaveBeenCalledWith("lastOpenedFileId");
 
-    void handlers.get(STORE_SET)!(eventFor(), "lastOpenedFileId", "file-2");
+    await expect(
+      handlers.get(STORE_SET)!(eventFor(), "lastOpenedFileId", "file-2"),
+    ).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
     expect(mocks.store.set).toHaveBeenCalledWith("lastOpenedFileId", "file-2");
 
-    void handlers.get(STORE_DELETE)!(eventFor(), "lastOpenedFileId");
+    await expect(handlers.get(STORE_DELETE)!(eventFor(), "lastOpenedFileId")).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
     expect(mocks.store.delete).toHaveBeenCalledWith("lastOpenedFileId");
 
-    expect(() => handlers.get(STORE_GET)!(eventFor(), "drawingsPath")).toThrow(
-      "Store key is not allowed",
+    await expect(handlers.get(STORE_GET)!(eventFor(), "drawingsPath")).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ message: "Store key is not allowed" }),
+      }),
     );
-    expect(() => handlers.get(STORE_SET)!(eventFor(), "theme", "dark")).toThrow(
-      "Store key is not allowed",
+    await expect(handlers.get(STORE_SET)!(eventFor(), "theme", "dark")).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ message: "Store key is not allowed" }),
+      }),
     );
-    expect(() => handlers.get(STORE_DELETE)!(eventFor(), "zoomLevel")).toThrow(
-      "Store key is not allowed",
+    await expect(handlers.get(STORE_DELETE)!(eventFor(), "zoomLevel")).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ message: "Store key is not allowed" }),
+      }),
     );
-    expect(() => handlers.get(STORE_CLEAR)!(eventFor())).toThrow("Store clear is not allowed");
+    await expect(handlers.get(STORE_CLEAR)!(eventFor())).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ message: "Store clear is not allowed" }),
+      }),
+    );
     expect(mocks.store.clear).not.toHaveBeenCalled();
   });
 
   it("forwards invoke messages to the dep and returns the result", async () => {
     const handler = handlers.get(DRAWINGS_GET)!;
     deps.getDrawings.mockResolvedValue("drawings");
-    await expect(handler(eventFor())).resolves.toBe("drawings");
+    await expect(handler(eventFor())).resolves.toEqual({ ok: true, value: "drawings" });
     expect(deps.getDrawings).toHaveBeenCalledTimes(1);
   });
 
@@ -335,7 +360,7 @@ describe("registerIpcHandlers wiring", () => {
     expect(deps.markWindowReady).toHaveBeenCalledTimes(1);
 
     const cancelQuit = listeners.get(WINDOW_CANCEL_QUIT)!;
-    cancelQuit(eventFor());
+    cancelQuit(eventFor(), 5);
     expect(deps.cancelQuit).toHaveBeenCalledTimes(1);
   });
 
@@ -374,8 +399,11 @@ describe("registerIpcHandlers error propagation", () => {
     const handler = handlers.get(FILES_READ)!;
     deps.readSceneFile.mockRejectedValue(new Error("Scene content is not valid JSON"));
 
-    await expect(handler(eventFor(), "broken.excalidraw")).rejects.toThrow(
-      "Scene content is not valid JSON",
+    await expect(handler(eventFor(), "broken.excalidraw")).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ message: "Scene content is not valid JSON" }),
+      }),
     );
   });
 
@@ -383,15 +411,20 @@ describe("registerIpcHandlers error propagation", () => {
     const handler = handlers.get(FILES_WRITE)!;
     deps.writeSceneFile.mockRejectedValue(new Error("disk on fire"));
 
-    await expect(handler(eventFor(), "a.excalidraw", "{}")).rejects.toThrow("disk on fire");
+    await expect(handler(eventFor(), "a.excalidraw", "{}")).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ message: "disk on fire" }),
+      }),
+    );
   });
 
   it("propagates successful results unchanged", async () => {
     const handler = handlers.get(DRAWINGS_LOAD)!;
     deps.loadDrawings.mockResolvedValue({ info: { configured: true }, entries: [] });
     await expect(handler(eventFor())).resolves.toEqual({
-      info: { configured: true },
-      entries: [],
+      ok: true,
+      value: { info: { configured: true }, entries: [] },
     });
   });
 
