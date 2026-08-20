@@ -1,5 +1,4 @@
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { CircleAlertIcon, InfoIcon, XIcon } from "lucide-react";
 import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
@@ -7,15 +6,14 @@ import { useStore } from "@/lib/store";
 
 import { AppSidebar } from "./components/app-sidebar";
 import { EditorView } from "./components/editor-view";
+import { ErrorBoundary } from "./components/error-boundary";
 import { ThemeProvider } from "./components/theme-provider";
-import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
 import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
 import { toast } from "./components/ui/toast";
 
 const App = () => {
   const error = useStore((s) => s.error);
-  const clearError = useStore((s) => s.clearError);
   const reportError = useStore((s) => s.reportError);
   const externalConflict = useStore((s) => s.externalConflict);
   const loadSnapshot = useStore((s) => s.loadSnapshot);
@@ -28,14 +26,17 @@ const App = () => {
   const entries = useStore((s) => s.entries);
   const watcherDown = useStore((s) => s.watcherDown);
   const reportWatcherError = useStore((s) => s.reportWatcherError);
-  const clearWatcherError = useStore((s) => s.clearWatcherError);
+  const openFileId = useStore((s) => s.openFileId);
+  const editorEpoch = useStore((s) => s.editorEpoch);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const conflictPromptRef = useRef<string | null>(null);
-  const [folderMissingDismissed, setFolderMissingDismissed] = useState(false);
   const [pickingFolder, setPickingFolder] = useState(false);
 
   const folderMissing = drawings?.missing === true && entries.length === 0;
+  const lastToastRef = useRef<string | null>(null);
+  const lastWatcherRef = useRef<{ key: string; at: number } | null>(null);
+  const lastFolderMissingRef = useRef<number | null>(null);
 
   const pickFolder = useCallback(async () => {
     setPickingFolder(true);
@@ -54,16 +55,61 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!folderMissing) setFolderMissingDismissed(false);
-  }, [folderMissing]);
-
-  useEffect(() => {
     void initSettings();
   }, [initSettings]);
 
   useEffect(() => {
     return window.api.files.onWatcherError((event) => reportWatcherError(event));
   }, [reportWatcherError]);
+
+  useEffect(() => {
+    if (!error) return;
+    const key = error.id;
+
+    if (lastToastRef.current === key) return;
+
+    lastToastRef.current = key;
+    toast.add({
+      title: error.title,
+      description: error.detail,
+      type: "error",
+    });
+  }, [error]);
+
+  useEffect(() => {
+    if (!watcherDown) return;
+    const now = Date.now();
+    const key = watcherDown;
+
+    if (
+      lastWatcherRef.current &&
+      lastWatcherRef.current.key === key &&
+      now - lastWatcherRef.current.at < 1000
+    ) {
+      return;
+    }
+
+    lastWatcherRef.current = { key, at: now };
+    toast.add({
+      title: "Changes on disk may not appear",
+      description: watcherDown,
+      type: "warning",
+    });
+  }, [watcherDown]);
+
+  useEffect(() => {
+    if (!folderMissing) return;
+    const now = Date.now();
+
+    if (lastFolderMissingRef.current && now - lastFolderMissingRef.current < 1000) return;
+    lastFolderMissingRef.current = now;
+
+    toast.add({
+      title: "Drawings folder is unavailable",
+      description: "The folder holding your drawings can’t be found. Choose the folder again.",
+      type: "error",
+    });
+  }, [folderMissing]);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,87 +179,23 @@ const App = () => {
       >
         <AppSidebar />
         <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
-          {!error && (
-            <div className="flex flex-col gap-2 px-3 pt-3">
-              {folderMissing && !folderMissingDismissed && (
-                <Alert variant="destructive" className="shadow-sm">
-                  <CircleAlertIcon />
-                  <AlertTitle>Drawings folder is unavailable</AlertTitle>
-                  <AlertDescription>
-                    The folder holding your drawings can’t be found. Your files are safe — choose
-                    the folder again to keep working.
-                  </AlertDescription>
-                  <div className="col-start-2 mt-2 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pickingFolder}
-                      onClick={() => void pickFolder()}
-                    >
-                      {pickingFolder ? "Choosing…" : "Choose folder"}
-                    </Button>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="Dismiss"
-                      onClick={() => setFolderMissingDismissed(true)}
-                    >
-                      <XIcon />
-                    </Button>
-                  </div>
-                </Alert>
-              )}
-              {watcherDown && (
-                <Alert variant="default" className="shadow-sm">
-                  <InfoIcon />
-                  <AlertTitle>Changes on disk may not appear</AlertTitle>
-                  <AlertDescription>
-                    xdrawz couldn’t keep watching the drawings folder. Choose the folder again to
-                    resume, or wait — it may recover on its own.
-                  </AlertDescription>
-                  <div className="col-start-2 mt-2 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={pickingFolder}
-                      onClick={() => void pickFolder()}
-                    >
-                      {pickingFolder ? "Choosing…" : "Choose folder"}
-                    </Button>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="Dismiss"
-                      onClick={clearWatcherError}
-                    >
-                      <XIcon />
-                    </Button>
-                  </div>
-                </Alert>
-              )}
-            </div>
-          )}
-          {error && (
-            <div className="px-3 pt-3">
-              <Alert variant="destructive" className="shadow-sm">
-                <CircleAlertIcon />
-                <AlertTitle>{error.title}</AlertTitle>
-                <AlertDescription>{error.message}</AlertDescription>
-                <div className="col-start-2 mt-2 flex flex-wrap items-center gap-2">
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Dismiss error"
-                    onClick={clearError}
-                  >
-                    <XIcon />
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <ErrorBoundary resetKeys={[openFileId, editorEpoch]}>
+              <EditorView />
+            </ErrorBoundary>
+            {folderMissing && (
+              <div className="bg-background/80 absolute inset-0 flex items-center justify-center p-6">
+                <div className="bg-card flex flex-col items-center gap-3 rounded-lg border p-6 shadow-sm">
+                  <p className="text-sm font-medium">Drawings folder is unavailable</p>
+                  <p className="text-muted-foreground max-w-xs text-center text-sm">
+                    Choose the folder again to keep working.
+                  </p>
+                  <Button size="sm" disabled={pickingFolder} onClick={() => void pickFolder()}>
+                    {pickingFolder ? "Choosing..." : "Choose folder"}
                   </Button>
                 </div>
-              </Alert>
-            </div>
-          )}
-          <div className="relative min-h-0 flex-1 overflow-hidden">
-            <EditorView />
+              </div>
+            )}
             {pathname === "/settings" && (
               <div className="bg-sidebar absolute inset-0 z-10 overflow-y-auto">
                 <Outlet />

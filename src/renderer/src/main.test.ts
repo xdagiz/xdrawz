@@ -10,6 +10,7 @@ const hoisted = vi.hoisted(() => ({
   addEventListener: vi.fn(),
   getElementById: vi.fn(() => ({})),
   localStorageGetItem: vi.fn(() => null),
+  toastAdd: vi.fn(),
   api: {
     window: {
       onWillClose: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock("./router", () => ({ RouterProvider: () => null, router: {} }));
 vi.mock("./components/error-boundary", () => ({
   ErrorBoundary: ({ children }: { children?: ReactNode }) => children,
 }));
-vi.mock("./components/ui/toast", () => ({ Toaster: () => null, toast: { add: vi.fn() } }));
+vi.mock("./components/ui/toast", () => ({ Toaster: () => null, toast: { add: hoisted.toastAdd } }));
 
 let onWillClose: (request: WindowCloseRequest) => void;
 let onCloseCancelled: () => void;
@@ -137,7 +138,7 @@ describe("window close flow (renderer)", () => {
 
     await vi.waitFor(() => expect(hoisted.api.window.cancelQuit).toHaveBeenCalledWith(9));
     expect(hoisted.api.window.close).not.toHaveBeenCalled();
-    expect(useStore.getState().error).not.toBeNull();
+    expect(hoisted.toastAdd).toHaveBeenCalled();
   });
 
   it("resumes autosave when the close flow is cancelled", () => {

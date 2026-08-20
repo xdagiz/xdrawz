@@ -48,7 +48,7 @@ export function Greeting() {
           <p className="text-muted-foreground max-w-xs text-sm leading-relaxed">
             xdrawz stores drawings as local{" "}
             <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">.excalidraw</code>{" "}
-            files. Pick a folder once — we&rsquo;ll use it every time you open the app.
+            files. Pick a folder once - xdrawz will use it as your drawings library.
           </p>
         </div>
 

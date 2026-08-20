@@ -3,6 +3,7 @@ import { Dirent, Stats } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { errorWithCode } from "@shared/errors";
 import { FILE_NOT_FOUND_MESSAGE, MAX_FILE_CONTENT_BYTES, type FileEntry } from "@shared/ipc";
 
 import { getDrawings } from "./drawings";
@@ -130,7 +131,7 @@ const requireDrawingsRoot = async (): Promise<string> => {
 const assertContentSize = (content: string) => {
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > MAX_FILE_CONTENT_BYTES) {
-    throw new Error(`Content exceeds ${MAX_FILE_CONTENT_BYTES} bytes`);
+    throw errorWithCode(`Content exceeds ${MAX_FILE_CONTENT_BYTES} bytes`, "TOO_LARGE");
   }
 };
 
@@ -144,9 +145,8 @@ const atomicWriteFile = async (absPath: string, data: string, hooks?: FsMutation
     await writeFile(tmp, data, "utf8");
     await rename(tmp, absPath);
   } catch (error) {
-    await unlink(tmp).catch(() => {
-      /* ignore cleanup errors */
-    });
+    await unlink(tmp).catch(() => {});
+
     throw error;
   }
 };
@@ -160,7 +160,8 @@ export const readSceneFile = async (id: string) => {
 
   const stats = await stat(absPath);
   if (stats.isDirectory()) throw new Error("Cannot read a directory as a scene");
-  if (stats.size > MAX_FILE_CONTENT_BYTES) throw new Error("File is too large to load");
+  if (stats.size > MAX_FILE_CONTENT_BYTES)
+    throw errorWithCode("File is too large to load", "TOO_LARGE");
 
   const content = await readFile(absPath, "utf8");
   assertSceneJson(content);
@@ -185,7 +186,7 @@ export const writeSceneFile = async (id: string, content: string, hooks?: FsMuta
   }
 
   const existing = await stat(absPath).catch(() => null);
-  if (!existing) throw new Error(FILE_NOT_FOUND_MESSAGE);
+  if (!existing) throw errorWithCode(FILE_NOT_FOUND_MESSAGE, "NOT_FOUND");
   if (existing.isDirectory()) throw new Error("Cannot write over a directory");
 
   await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);

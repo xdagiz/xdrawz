@@ -10,7 +10,7 @@ import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
 import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
-import { app, shell, nativeTheme, BrowserWindow, Menu } from "electron";
+import { app, dialog, shell, nativeTheme, BrowserWindow, Menu } from "electron";
 
 import icon from "../../assets/icon.png?asset";
 import {
@@ -25,6 +25,7 @@ import {
   requestQuitViaRenderer,
 } from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
+import { shouldQuitAfterFatal } from "./errors";
 import {
   deleteEntry,
   listEntries,
@@ -52,6 +53,41 @@ import {
 } from "./settings";
 import { getLastOpenedFileId, getZoomLevel, setZoomLevel } from "./store";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
+
+process.on("uncaughtException", (error) => {
+  log.error("[main:uncaughtException]", error);
+  dialog.showErrorBox("xdrawz crashed", error instanceof Error ? error.message : String(error));
+  app.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  log.error("[main:unhandledRejection]", reason);
+  dialog.showErrorBox("xdrawz error", reason instanceof Error ? reason.message : String(reason));
+  app.exit(1);
+});
+
+app.on("render-process-gone", (_event, _contents, details) => {
+  log.error("[render-process-gone]", details);
+  const shouldQuit = shouldQuitAfterFatal(Date.now());
+  if (shouldQuit) {
+    void dialog
+      .showMessageBox({
+        type: "error",
+        buttons: ["Quit", "Continue"],
+        defaultId: 0,
+        cancelId: 1,
+        message: "xdrawz renderer crashed",
+        detail: `${details.reason} (${details.exitCode})`,
+      })
+      .then(({ response }) => {
+        if (response === 0) app.quit();
+      });
+  }
+});
+
+app.on("child-process-gone", (_event, details) => {
+  log.error("[child-process-gone]", details);
+});
 
 let mainWindow: BrowserWindow | null = null;
 let watcher: DrawingsWatcher | null = null;
@@ -200,6 +236,14 @@ function createMainWindow() {
     log.error("Preload failed:", preloadPath, error),
   );
 
+  win.webContents.on("unresponsive", () => {
+    log.warn("[webContents] unresponsive", win.id);
+  });
+
+  win.on("unresponsive", () => {
+    log.warn("[window] unresponsive", win.id);
+  });
+
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {
@@ -229,6 +273,14 @@ function createGreetingWindow() {
 
   showWhenReady(greetingWindow);
   wireNavigationPolicy(greetingWindow);
+
+  greetingWindow.webContents.on("preload-error", (_event, preloadPath, error) =>
+    log.error("Preload failed:", preloadPath, error),
+  );
+
+  greetingWindow.webContents.on("unresponsive", () => {
+    log.warn("[webContents] unresponsive", greetingWindow.id);
+  });
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     void greetingWindow.loadURL(

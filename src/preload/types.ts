@@ -1,3 +1,4 @@
+import type { SerializedAppError } from "@shared/errors";
 import type {
   AppSettings,
   ContextMenuItem,
@@ -57,5 +58,6 @@ export interface NativeApi {
     cancelQuit: (requestId: number) => void;
     reportDirtyState: (requestId: number, dirty: boolean) => void;
     flushStarted: (requestId: number) => void;
+    reportFatal: (payload: SerializedAppError) => Promise<void>;
   };
 }

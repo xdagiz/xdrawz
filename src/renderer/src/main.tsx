@@ -1,48 +1,17 @@
 import "./assets/main.css";
-import { cleanErrorMessage } from "@shared/errors";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { installRendererErrorHandlers } from "@/lib/report-error";
+
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster } from "./components/ui/toast";
-import { toast } from "./components/ui/toast";
-import { toAppError } from "./lib/app-error";
+import { reportRendererError } from "./lib/report-error";
 import { useStore } from "./lib/store";
 import { router } from "./router";
 
-const DEDUP_WINDOW_MS = 1000;
-let lastUnexpected: { message: string; at: number } | null = null;
-
-const reportUnexpected = (error: unknown): void => {
-  const message = cleanErrorMessage(error);
-  const now = Date.now();
-
-  if (
-    lastUnexpected &&
-    lastUnexpected.message === message &&
-    now - lastUnexpected.at < DEDUP_WINDOW_MS
-  ) {
-    return;
-  }
-  lastUnexpected = { message, at: now };
-
-  console.error("unexpected error:", error);
-  const appError = toAppError(error, "unexpected");
-  toast.add({
-    title: appError.title,
-    description: appError.detail,
-    type: "error",
-  });
-};
-
-window.addEventListener("unhandledrejection", (event) => {
-  reportUnexpected(event.reason);
-});
-
-window.addEventListener("error", (event) => {
-  if (event.error) reportUnexpected(event.error);
-});
+installRendererErrorHandlers();
 
 window.api.window.onWillClose((request) => {
   if (request.kind === "check") {
@@ -59,8 +28,7 @@ window.api.window.onWillClose((request) => {
     try {
       if (session) await session.flush({ force: true });
     } catch (error) {
-      console.error("failed to flush scene while closing:", error);
-      useStore.getState().reportError(error, "save");
+      reportRendererError(error, "save");
       window.api.window.cancelQuit(request.requestId);
       return;
     }
