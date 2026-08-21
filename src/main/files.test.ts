@@ -50,8 +50,20 @@ describe("files", () => {
       "Path escapes drawings root",
     );
     await expect(writeSceneFile("..%2fsecret.excalidraw", SCENE)).rejects.toThrow(
-      "Path escapes drawings root",
+      FILE_NOT_FOUND_MESSAGE,
     );
+  });
+
+  it("treats ids as literal file names", async () => {
+    await writeFile(path.join(ctx.root, "100%.excalidraw"), SCENE);
+    await expect(readSceneFile("100%.excalidraw")).resolves.toBe(SCENE);
+
+    await writeFile(path.join(ctx.root, "a%20b.excalidraw"), SCENE);
+    await expect(readSceneFile("a%20b.excalidraw")).resolves.toBe(SCENE);
+    await expect(readSceneFile("a b.excalidraw")).rejects.toThrow();
+
+    await writeSceneFile("100%.excalidraw", SCENE);
+    await expect(readSceneFile("100%.excalidraw")).resolves.toBe(SCENE);
   });
 
   it("reads and writes existing scene files", async () => {

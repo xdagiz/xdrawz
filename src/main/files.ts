@@ -42,13 +42,7 @@ const entryFromAbs = async (
 
 const resolveInsideRoot = async (id: string) => {
   const root = await requireDrawingsRoot();
-  let decodedId: string;
-  try {
-    decodedId = decodeURIComponent(id);
-  } catch {
-    throw new Error("Path escapes drawings root");
-  }
-  const absPath = path.resolve(root, ...decodedId.split("/"));
+  const absPath = path.resolve(root, ...id.split("/"));
   assertInsideRoot(root, absPath);
   return { root, absPath };
 };
