@@ -15,7 +15,6 @@ import {
   FILES_WRITE_RECOVER,
   SETTINGS_GET,
   SETTINGS_SET,
-  STORE_CLEAR,
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
@@ -29,16 +28,13 @@ import {
   WINDOW_REPORT_FATAL,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
-import { fromSerialized, isSerializedAppError } from "@shared/errors";
+import { fromSerialized, isRecord, isSerializedAppError } from "@shared/errors";
 import type { FilesChangedEvent, WatcherErrorEvent, WindowCloseRequest } from "@shared/ipc";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
 
 type InvokeReturn = ReturnType<typeof ipcRenderer.invoke>;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
 
 const isResult = (
   value: unknown,
@@ -102,7 +98,6 @@ const api: NativeApi = {
     get: (key) => invoke(STORE_GET, key),
     set: (key, value) => invoke(STORE_SET, key, value),
     delete: (key) => invoke(STORE_DELETE, key),
-    clear: () => invoke(STORE_CLEAR),
   },
   settings: {
     get: () => invoke(SETTINGS_GET),

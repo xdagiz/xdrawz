@@ -7,11 +7,12 @@ const mocks = vi.hoisted(() => ({
   isPackaged: false,
   netFetch: vi.fn(),
   protocolHandle: vi.fn(),
+  menuPopup: vi.fn(),
+  menuTemplate: null as Array<{ click?: () => void }> | null,
   store: {
     get: vi.fn(),
     set: vi.fn(),
     delete: vi.fn(),
-    clear: vi.fn(),
   },
 }));
 
@@ -19,7 +20,16 @@ vi.mock("electron", () => ({
   BrowserWindow: { fromWebContents: mocks.fromWebContents },
   dialog: {},
   ipcMain: { handle: mocks.handle, on: mocks.on },
-  Menu: {},
+  Menu: {
+    buildFromTemplate: (template: Array<{ click?: () => void }>) => {
+      mocks.menuTemplate = template;
+      return {
+        popup: (options: { callback?: () => void }) => {
+          mocks.menuPopup(options);
+        },
+      };
+    },
+  },
   net: { fetch: mocks.netFetch },
   protocol: { handle: mocks.protocolHandle },
   app: {
@@ -32,9 +42,9 @@ vi.mock("electron", () => ({
 vi.mock("./store", () => ({ store: mocks.store }));
 
 import {
+  CONTEXT_MENU_SHOW,
   DRAWINGS_LOAD,
   FILES_READ,
-  STORE_CLEAR,
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
@@ -175,17 +185,22 @@ const eventFor = () => ({ sender: {} }) as Electron.IpcMainInvokeEvent;
 
 describe("registerIpcHandlers wiring", () => {
   beforeEach(() => {
-    mocks.fromWebContents.mockReset().mockReturnValue({ isDestroyed: () => false });
+    mocks.fromWebContents.mockReset().mockReturnValue({
+      isDestroyed: () => false,
+      once: vi.fn(),
+      webContents: { getZoomFactor: () => 1 },
+    });
     mocks.store.get.mockReset();
     mocks.store.set.mockReset();
     mocks.store.delete.mockReset();
-    mocks.store.clear.mockReset();
     for (const fn of Object.values(deps)) fn.mockReset();
 
     handlers.clear();
     listeners.clear();
     mocks.handle.mockClear();
     mocks.on.mockClear();
+    mocks.menuPopup.mockClear();
+    mocks.menuTemplate = null;
     mocks.handle.mockImplementation((channel, listener) => handlers.set(channel, listener));
     mocks.on.mockImplementation((channel, listener) => listeners.set(channel, listener));
 
@@ -245,13 +260,53 @@ describe("registerIpcHandlers wiring", () => {
         error: expect.objectContaining({ message: "Store key is not allowed" }),
       }),
     );
-    await expect(handlers.get(STORE_CLEAR)!(eventFor())).resolves.toEqual(
-      expect.objectContaining({
-        ok: false,
-        error: expect.objectContaining({ message: "Store clear is not allowed" }),
-      }),
+  });
+
+  it("resolves the context menu with the clicked item id", async () => {
+    const handler = handlers.get(CONTEXT_MENU_SHOW)!;
+    const pending = handler(eventFor(), {
+      items: [
+        { id: "rename", label: "Rename" },
+        { id: "delete", label: "Delete" },
+      ],
+      x: 10,
+      y: 20,
+    });
+
+    expect(mocks.menuPopup).toHaveBeenCalledTimes(1);
+    expect(mocks.menuPopup).toHaveBeenCalledWith(expect.objectContaining({ x: 10, y: 20 }));
+
+    mocks.menuTemplate![1].click?.();
+    await expect(pending).resolves.toEqual({ ok: true, value: "delete" });
+  });
+
+  it("resolves the context menu with null when dismissed without a selection", async () => {
+    const handler = handlers.get(CONTEXT_MENU_SHOW)!;
+    const pending = handler(eventFor(), { items: [{ id: "rename", label: "Rename" }], x: 0, y: 0 });
+
+    const popupOptions = mocks.menuPopup.mock.lastCall?.[0] as
+      | { callback?: () => void }
+      | undefined;
+    popupOptions?.callback?.();
+
+    await expect(pending).resolves.toEqual({ ok: true, value: null });
+  });
+
+  it("rejects malformed context menu requests", async () => {
+    const handler = handlers.get(CONTEXT_MENU_SHOW)!;
+
+    await expect(handler(eventFor(), { items: "nope", x: 0, y: 0 })).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
     );
-    expect(mocks.store.clear).not.toHaveBeenCalled();
+    expect(mocks.menuPopup).not.toHaveBeenCalled();
+
+    const negative = handler(eventFor(), { items: [], x: -5, y: 0 });
+    const popupOptions = mocks.menuPopup.mock.lastCall?.[0] as
+      | { callback?: () => void }
+      | undefined;
+    popupOptions?.callback?.();
+
+    await expect(negative).resolves.toEqual({ ok: true, value: null });
   });
 
   it("skips deps when the sender is not a live BrowserWindow", () => {
@@ -270,7 +325,6 @@ describe("registerIpcHandlers error propagation", () => {
     mocks.store.get.mockReset();
     mocks.store.set.mockReset();
     mocks.store.delete.mockReset();
-    mocks.store.clear.mockReset();
     for (const fn of Object.values(deps)) fn.mockReset();
 
     handlers.clear();

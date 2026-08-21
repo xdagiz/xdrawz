@@ -103,22 +103,40 @@ function broadcastFilesChanged(event: FilesChangedEvent) {
 
 const WATCHER_ERROR_INTERVAL_MS = 10_000;
 let lastWatcherErrorAt = 0;
+let queuedWatcherError: string | null = null;
+let queuedWatcherTimer: NodeJS.Timeout | null = null;
 
-function broadcastWatcherError(error: unknown) {
-  log.error("[watcher]", error);
-
-  const now = Date.now();
-  if (now - lastWatcherErrorAt < WATCHER_ERROR_INTERVAL_MS) return;
-  lastWatcherErrorAt = now;
-
-  const message = error instanceof Error ? error.message : String(error);
-  const event: WatcherErrorEvent = { message };
-
+function sendWatcherError(event: WatcherErrorEvent) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     if (win.webContents.isDestroyed() || win.webContents.isCrashed()) continue;
     win.webContents.send(WATCHER_ERROR, event);
   }
+}
+
+function broadcastWatcherError(error: unknown) {
+  log.error("[watcher]", error);
+
+  const message = error instanceof Error ? error.message : String(error);
+  const now = Date.now();
+  const remaining = WATCHER_ERROR_INTERVAL_MS - (now - lastWatcherErrorAt);
+
+  if (remaining <= 0) {
+    lastWatcherErrorAt = now;
+    sendWatcherError({ message });
+    return;
+  }
+
+  queuedWatcherError = message;
+  if (queuedWatcherTimer) return;
+
+  queuedWatcherTimer = setTimeout(() => {
+    queuedWatcherTimer = null;
+    if (!queuedWatcherError) return;
+    lastWatcherErrorAt = Date.now();
+    sendWatcherError({ message: queuedWatcherError });
+    queuedWatcherError = null;
+  }, remaining);
 }
 
 function createWatcher() {

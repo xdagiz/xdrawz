@@ -17,7 +17,6 @@ import {
   FILES_WRITE_RECOVER,
   SETTINGS_GET,
   SETTINGS_SET,
-  STORE_CLEAR,
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
@@ -28,7 +27,7 @@ import {
   WINDOW_READY,
   WINDOW_REPORT_FATAL,
 } from "@shared/channels";
-import { errorWithCode, isSerializedAppError } from "@shared/errors";
+import { errorWithCode, isRecord, isSerializedAppError } from "@shared/errors";
 import type { ErrorOperation } from "@shared/errors";
 import type { AppSettings, DrawingInfo, DrawingsSnapshot, FileEntry } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
@@ -186,9 +185,6 @@ const requireInteger = (value: unknown, field: string) => {
   return value;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
 const handle = (
   channel: string,
   operation: ErrorOperation,
@@ -241,10 +237,6 @@ export const registerIpcHandlers = (deps: Deps) => {
     store.delete(key);
   });
 
-  handle(STORE_CLEAR, "unexpected", () => {
-    throw new Error("Store clear is not allowed");
-  });
-
   handle(FILES_LIST, "read", () => deps.listEntries());
 
   handle(FILES_READ, "read", (_event, ...args) => {
@@ -290,6 +282,11 @@ export const registerIpcHandlers = (deps: Deps) => {
 
     return new Promise<string | null>((resolveSelection) => {
       let resolved = false;
+      const settle = (value: string | null) => {
+        if (resolved) return;
+        resolved = true;
+        resolveSelection(value);
+      };
 
       const template = itemsRaw.map((item) => {
         const record = isRecord(item) ? item : null;
@@ -301,10 +298,7 @@ export const registerIpcHandlers = (deps: Deps) => {
         return {
           label,
           enabled: true,
-          click: () => {
-            resolved = true;
-            resolveSelection(id);
-          },
+          click: () => settle(id),
         };
       });
 
@@ -312,12 +306,12 @@ export const registerIpcHandlers = (deps: Deps) => {
       const zoomFactor = win.webContents.getZoomFactor();
       const position = normalizeContextMenuPos(xRaw, yRaw, zoomFactor);
 
+      win.once("closed", () => settle(null));
+
       menu.popup({
         window: win,
         ...position,
-        callback: () => {
-          if (!resolved) resolveSelection(null);
-        },
+        callback: () => settle(null),
       });
     });
   });

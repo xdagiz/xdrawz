@@ -36,7 +36,6 @@ export interface NativeApi {
     get: (key: StoreKey) => Promise<string | null>;
     set: (key: StoreKey, value: string | null) => Promise<void>;
     delete: (key: StoreKey) => Promise<void>;
-    clear: () => Promise<void>;
   };
   settings: {
     get: () => Promise<AppSettings>;

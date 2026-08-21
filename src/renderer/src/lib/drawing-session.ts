@@ -2,7 +2,7 @@ import { serializeAsJSON } from "@excalidraw/excalidraw";
 import { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
-import type { UnsavedChoice, UnsavedReason } from "@shared/ipc";
+import type { SaveOrigin, UnsavedChoice, UnsavedReason } from "@shared/ipc";
 
 import { debounceAsync } from "@/lib/debounce";
 
@@ -35,8 +35,6 @@ export type DrawingSessionControls = {
   isDirty: () => boolean;
   dispose: () => void;
 };
-
-type SaveOrigin = "auto" | "explicit";
 
 type DrawingSessionDeps = {
   fileId: string;

@@ -10,7 +10,7 @@ import type {
   UnsavedReason,
   WatcherErrorEvent,
 } from "@shared/ipc";
-import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
+import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE, parentIdOf, type SaveOrigin } from "@shared/ipc";
 import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
@@ -37,11 +37,6 @@ const isFileNotFoundMessage = (message: string) => {
   return message === FILE_NOT_FOUND_MESSAGE || message.includes(FILE_NOT_FOUND_MESSAGE);
 };
 
-const parentIdOf = (id: string) => {
-  const idx = id.lastIndexOf("/");
-  return idx === -1 ? null : id.slice(0, idx);
-};
-
 const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.id): FileEntry[] => {
   const withoutOld = entries.filter((e) => e.id !== removeId);
   let low = 0;
@@ -58,8 +53,6 @@ const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.i
   next.splice(low, 0, entry);
   return next;
 };
-
-export type SaveOrigin = "auto" | "explicit";
 
 const runChangedDialog = createSingleFlight<"reload" | "overwrite" | "cancel">();
 const runRecoverDialog = createSingleFlight<"recover" | "discard" | "cancel">();

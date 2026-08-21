@@ -4,7 +4,12 @@ import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "n
 import path from "node:path";
 
 import { errorWithCode } from "@shared/errors";
-import { FILE_NOT_FOUND_MESSAGE, MAX_FILE_CONTENT_BYTES, type FileEntry } from "@shared/ipc";
+import {
+  FILE_NOT_FOUND_MESSAGE,
+  MAX_FILE_CONTENT_BYTES,
+  parentIdOf,
+  type FileEntry,
+} from "@shared/ipc";
 
 import { assertDrawingJson } from "./drawing-json";
 import { getDrawings } from "./drawings";
@@ -14,11 +19,6 @@ export type FsMutationHooks = {
 };
 
 const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
-
-const parentIdOf = (id: string) => {
-  const idx = id.lastIndexOf("/");
-  return idx === -1 ? null : id.slice(0, idx);
-};
 
 const toRelativeId = (root: string, absPath: string) =>
   path.relative(root, absPath).split(path.sep).filter(Boolean).join("/");

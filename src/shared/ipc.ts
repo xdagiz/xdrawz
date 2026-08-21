@@ -1,3 +1,14 @@
+export const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
+export const FILE_NOT_FOUND_MESSAGE = "File not found";
+
+export type ThemePreference = "light" | "dark" | "system";
+export type ResolvedTheme = Exclude<ThemePreference, "system">;
+
+export const THEME_PREFERENCES: readonly ThemePreference[] = ["light", "dark", "system"];
+export const DEFAULT_THEME: ThemePreference = "system";
+
+export type SaveOrigin = "auto" | "explicit";
+
 export type DrawingInfo = {
   path: string | null;
   displayName: string | null;
@@ -9,12 +20,6 @@ export type Prefs = {
   lastOpenedFileId: string | null;
 };
 
-export type DrawingsSnapshot = {
-  info: DrawingInfo;
-  entries: FileEntry[];
-  prefs: Prefs;
-};
-
 export type FileEntry = {
   id: string;
   name: string;
@@ -22,6 +27,17 @@ export type FileEntry = {
   parentId: string | null;
   modifiedAt: number;
   size: number;
+};
+
+export const parentIdOf = (id: string): string | null => {
+  const idx = id.lastIndexOf("/");
+  return idx === -1 ? null : id.slice(0, idx);
+};
+
+export type DrawingsSnapshot = {
+  info: DrawingInfo;
+  entries: FileEntry[];
+  prefs: Prefs;
 };
 
 export type ContextMenuItem = {
@@ -35,8 +51,6 @@ export type ContextMenuRequest = {
   y: number;
 };
 
-export const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
-
 export type UnsavedReason = "quit" | "switch";
 export type UnsavedChoice = "save" | "discard" | "cancel";
 export type FileRecoverChoice = "recover" | "discard" | "cancel";
@@ -46,14 +60,14 @@ export type WindowCloseRequest = {
   kind: "check" | "flush";
 };
 
-export const FILE_NOT_FOUND_MESSAGE = "File not found";
-
 export type StoreType = {
   drawingsPath?: string;
   lastOpenedFileId?: string | null;
   theme?: ThemePreference;
   zoomLevel?: number;
 };
+
+export type StoreKey = keyof StoreType;
 
 export type FilesChangedEvent = {
   entries: FileEntry[];
@@ -71,19 +85,12 @@ export type ExternalConflict =
   | { type: "changed"; fileId: string; diskModifiedAt: number }
   | null;
 
-export type StoreKey = keyof StoreType;
-
-export type ThemePreference = "light" | "dark" | "system";
-
-export const THEME_PREFERENCES: readonly ThemePreference[] = ["light", "dark", "system"];
-
 export type AppSettings = {
   theme: ThemePreference;
 };
 
 export type SettingsUpdate = Partial<Pick<AppSettings, "theme">>;
 
-export const DEFAULT_THEME: ThemePreference = "system";
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME,
 };
