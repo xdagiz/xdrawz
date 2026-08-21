@@ -10,7 +10,14 @@ import type {
   UnsavedReason,
   WatcherErrorEvent,
 } from "@shared/ipc";
-import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE, parentIdOf, type SaveOrigin } from "@shared/ipc";
+import {
+  DEFAULT_SETTINGS,
+  FILE_NOT_FOUND_MESSAGE,
+  isAncestorId,
+  parentIdOf,
+  type FileDeleteMode,
+  type SaveOrigin,
+} from "@shared/ipc";
 import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
@@ -60,6 +67,23 @@ let pendingRecoverContent: string | undefined;
 
 const savedAfterDisk = (diskModifiedAt: number, savedAt: number) =>
   Math.max(diskModifiedAt + 1, savedAt);
+
+const remapId = (id: string, oldRoot: string, newRoot: string): string => {
+  if (id === oldRoot) return newRoot;
+  if (isAncestorId(oldRoot, id)) return `${newRoot}${id.slice(oldRoot.length)}`;
+  return id;
+};
+
+const remapNullableId = (
+  id: string | null | undefined,
+  oldRoot: string,
+  newRoot: string,
+): string | null => (id ? remapId(id, oldRoot, newRoot) : null);
+
+const isInsideSubtree = (root: string, id: string | null | undefined): id is string => {
+  if (!id) return false;
+  return id === root || isAncestorId(root, id);
+};
 
 const entryAfterWrite = (id: string, content: string, entries: FileEntry[]): FileEntry => {
   const existing = entries.find((e) => e.id === id);
@@ -118,6 +142,8 @@ type State = {
   reportWatcherError: (event: WatcherErrorEvent) => void;
   clearWatcherError: () => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
+  renameEntry: (id: string, newName: string) => Promise<boolean>;
+  deleteEntry: (id: string, mode: FileDeleteMode) => Promise<boolean>;
   renameFile: (id: string, newName: string) => Promise<boolean>;
   deleteFile: (id: string) => Promise<boolean>;
   saveFile: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
@@ -263,50 +289,90 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
-    renameFile: async (id, newName) => {
-      if (get().openFileId === id) {
+    renameEntry: async (id, newName) => {
+      const openId = get().openFileId;
+      if (isInsideSubtree(id, openId) && get().dirtyById[openId]) {
         const ok = await get().ensureCleanOrConfirm("switch");
         if (!ok) return false;
       }
 
       const entry = await window.api.files.rename(id, newName);
       const { openFileId, dirtyById, entries } = get();
-      const nextEntries = upsertSorted(entries, entry, id);
 
-      const nextDirty = { ...dirtyById };
-      if (id !== entry.id && nextDirty[id]) {
-        delete nextDirty[id];
-        nextDirty[entry.id] = true;
+      const nextEntries = entries.map((e): FileEntry => {
+        if (e.id === id) return entry;
+
+        const nextId = remapId(e.id, id, entry.id);
+        const nextParentId = remapNullableId(e.parentId, id, entry.id);
+        if (nextId === e.id && nextParentId === e.parentId) return e;
+        return {
+          id: nextId,
+          name: e.name,
+          kind: e.kind,
+          parentId: nextParentId,
+          modifiedAt: e.modifiedAt,
+          size: e.size,
+        };
+      });
+
+      const nextOpen = remapNullableId(openFileId, id, entry.id);
+      const nextDirty: Record<string, true> = {};
+      for (const key of Object.keys(dirtyById)) {
+        const mapped = remapId(key, id, entry.id);
+        if (mapped) nextDirty[mapped] = true;
       }
 
       set({
         entries: nextEntries,
-        openFileId: openFileId === id ? entry.id : openFileId,
+        openFileId: nextOpen,
         dirtyById: nextDirty,
         error: null,
       });
+      if (nextOpen !== openFileId) {
+        void window.api.store.set("lastOpenedFileId", nextOpen);
+      }
       return true;
     },
 
-    deleteFile: async (id) => {
-      if (get().openFileId === id) {
-        const ok = await get().ensureCleanOrConfirm("switch");
-        if (!ok) return false;
+    renameFile: (id, newName) => get().renameEntry(id, newName),
+    deleteFile: (id) => get().deleteEntry(id, "trash"),
+
+    deleteEntry: async (id, mode) => {
+      const { openFileId, dirtyById } = get();
+
+      if (
+        isInsideSubtree(id, openFileId) &&
+        Object.prototype.hasOwnProperty.call(dirtyById, openFileId)
+      ) {
+        toast.add({
+          title: "Couldn’t delete",
+          description: "The folder contains the open drawing with unsaved changes. Close it first.",
+          type: "error",
+        });
+        return false;
       }
 
-      await window.api.files.delete(id);
-      const { openFileId, dirtyById, entries } = get();
-      const nextEntries = entries.filter((e) => e.id !== id);
+      await window.api.files.delete(id, mode);
 
-      const nextDirty = { ...dirtyById };
-      delete nextDirty[id];
+      const { entries } = get();
+      const nextEntries = entries.filter((e) => !isInsideSubtree(id, e.id));
+
+      const nextDirty: Record<string, true> = {};
+      for (const key of Object.keys(dirtyById)) {
+        if (!isInsideSubtree(id, key)) nextDirty[key] = true;
+      }
+
+      const openedRemoved = isInsideSubtree(id, openFileId);
 
       set({
         entries: nextEntries,
-        openFileId: openFileId === id ? null : openFileId,
+        openFileId: openedRemoved ? null : openFileId,
         dirtyById: nextDirty,
         error: null,
       });
+      if (openedRemoved) {
+        void window.api.store.set("lastOpenedFileId", null);
+      }
 
       return true;
     },

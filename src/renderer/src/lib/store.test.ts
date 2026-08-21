@@ -422,7 +422,7 @@ describe("saveFile recovery", () => {
   });
 });
 
-describe("renameFile/deleteFile cancellation", () => {
+describe("renameEntry/deleteEntry cancellation", () => {
   beforeEach(() => {
     vi.stubGlobal("window", {
       api: {
@@ -456,14 +456,14 @@ describe("renameFile/deleteFile cancellation", () => {
   it("returns false without renaming or deleting when the unsaved prompt is cancelled", async () => {
     registerSession(false);
 
-    expect(await useStore.getState().renameFile("file-1", "renamed")).toBe(false);
+    expect(await useStore.getState().renameEntry("file-1", "renamed")).toBe(false);
     expect(window.api.files.rename).not.toHaveBeenCalled();
 
-    expect(await useStore.getState().deleteFile("file-1")).toBe(false);
+    expect(await useStore.getState().deleteEntry("file-1", "trash")).toBe(false);
     expect(window.api.files.delete).not.toHaveBeenCalled();
   });
 
-  it("renameFile returns true and updates the open id on success", async () => {
+  it("renameEntry returns true and updates the open id on success", async () => {
     registerSession(true);
     vi.mocked(window.api.files.rename).mockResolvedValue({
       id: "renamed.excalidraw",
@@ -479,7 +479,7 @@ describe("renameFile/deleteFile cancellation", () => {
       mockEntries[2],
     ]);
 
-    const ok = await useStore.getState().renameFile("file-1", "renamed");
+    const ok = await useStore.getState().renameEntry("file-1", "renamed");
 
     expect(ok).toBe(true);
     expect(useStore.getState().openFileId).toBe("renamed.excalidraw");
@@ -489,11 +489,77 @@ describe("renameFile/deleteFile cancellation", () => {
     expect(ids).not.toContain("file-1");
   });
 
-  it("deleteFile returns true on success", async () => {
-    const ok = await useStore.getState().deleteFile("file-2");
+  it("renameEntry applies the returned entry so the new name reaches the sidebar", async () => {
+    registerSession(true);
+    vi.mocked(window.api.files.rename).mockResolvedValue({
+      id: "renamed.excalidraw",
+      name: "renamed.excalidraw",
+      kind: "file",
+      parentId: null,
+      modifiedAt: 400,
+      size: 100,
+    });
+
+    const ok = await useStore.getState().renameEntry("file-1", "renamed");
 
     expect(ok).toBe(true);
-    expect(window.api.files.delete).toHaveBeenCalledWith("file-2");
+    const renamed = useStore.getState().entries.find((e) => e.id === "renamed.excalidraw");
+    expect(renamed?.name).toBe("renamed.excalidraw");
+    expect(renamed?.modifiedAt).toBe(400);
+  });
+
+  it("renameEntry renames the folder entry itself while remapping descendants", async () => {
+    registerSession(true);
+    useStore.setState({
+      entries: [
+        {
+          id: "folder",
+          name: "folder",
+          kind: "directory",
+          parentId: null,
+          modifiedAt: 10,
+          size: 0,
+        },
+        {
+          id: "folder/old.excalidraw",
+          name: "old.excalidraw",
+          kind: "file",
+          parentId: "folder",
+          modifiedAt: 20,
+          size: 5,
+        },
+      ],
+    });
+    vi.mocked(window.api.files.rename).mockResolvedValue({
+      id: "renamed",
+      name: "renamed",
+      kind: "directory",
+      parentId: null,
+      modifiedAt: 30,
+      size: 0,
+    });
+
+    const ok = await useStore.getState().renameEntry("folder", "renamed");
+
+    expect(ok).toBe(true);
+    expect(useStore.getState().entries).toEqual([
+      { id: "renamed", name: "renamed", kind: "directory", parentId: null, modifiedAt: 30, size: 0 },
+      {
+        id: "renamed/old.excalidraw",
+        name: "old.excalidraw",
+        kind: "file",
+        parentId: "renamed",
+        modifiedAt: 20,
+        size: 5,
+      },
+    ]);
+  });
+
+  it("deleteEntry returns true on success", async () => {
+    const ok = await useStore.getState().deleteEntry("file-2", "trash");
+
+    expect(ok).toBe(true);
+    expect(window.api.files.delete).toHaveBeenCalledWith("file-2", "trash");
     expect(window.api.files.list).not.toHaveBeenCalled();
     expect(useStore.getState().entries.some((e) => e.id === "file-2")).toBe(false);
   });
