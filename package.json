@@ -24,6 +24,8 @@
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
+    "@headless-tree/core": "^1.7.0",
+    "@headless-tree/react": "^1.7.0",
     "@tanstack/react-hotkeys": "0.10.0",
     "chokidar": "^5.0.0",
     "electron-log": "^5.4.4",

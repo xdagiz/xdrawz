@@ -1,6 +1,6 @@
 import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { SettingsIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AlertDialog,
@@ -26,8 +26,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/components/ui/tree";
+import { useExpandedFolders } from "@/hooks/use-expanded-folders";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
+import { ancestorIdsOf, buildEntriesById, buildSortedChildIndex } from "@/lib/tree";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { toast } from "./ui/toast";
@@ -39,11 +42,75 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const setOpenFileId = useStore((s) => s.setOpenFileId);
   const renameFile = useStore((s) => s.renameFile);
   const deleteFile = useStore((s) => s.deleteFile);
-  const files = entries.filter((entry) => entry.kind === "file");
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<AppError | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+
+  const entriesById = useMemo(() => buildEntriesById(entries), [entries]);
+  const childIndex = useMemo(() => buildSortedChildIndex(entries), [entries]);
+  const { expandedIds, expandIds, setExpandedItems } = useExpandedFolders();
+  const expandedItems = useMemo(() => Array.from(expandedIds), [expandedIds]);
+  const selectedItems = useMemo(() => (openFileId ? [openFileId] : []), [openFileId]);
+
+  const openDrawing = useCallback(
+    async (fileId: string) => {
+      if (fileId !== useStore.getState().openFileId) {
+        await setOpenFileId(fileId);
+        if (useStore.getState().openFileId !== fileId) return;
+      }
+    },
+    [setOpenFileId],
+  );
+
+  const handlePrimaryAction = useCallback(
+    (item: FileTreeItem) => {
+      const entry = item.getItemData();
+      if (entry && entry.kind === "file") {
+        void openDrawing(entry.id);
+      }
+    },
+    [openDrawing],
+  );
+
+  const ignoreSelectionChange = useCallback(() => {}, []);
+
+  const tree = useFileTree({
+    childIndex,
+    expandedItems,
+    onExpandedItemsChange: setExpandedItems,
+    selectedItems,
+    onSelectedItemsChange: ignoreSelectionChange,
+    onPrimaryAction: handlePrimaryAction,
+  });
+
+  useEffect(() => {
+    tree.rebuildTree();
+  }, [tree, childIndex]);
+
+  useEffect(() => {
+    if (!openFileId || entries.length === 0) return;
+    expandIds(ancestorIdsOf(openFileId));
+  }, [openFileId, expandIds, entries.length]);
+
+  useEffect(() => {
+    let innerFrame = 0;
+    let outerFrame = 0;
+
+    if (openFileId && entries.length > 0) {
+      outerFrame = requestAnimationFrame(() => {
+        innerFrame = requestAnimationFrame(() => {
+          const item = tree.getItemInstance(openFileId);
+          void item?.scrollTo({ block: "nearest" }).catch(() => {});
+        });
+      });
+    }
+
+    return () => {
+      cancelAnimationFrame(outerFrame);
+      cancelAnimationFrame(innerFrame);
+    };
+  }, [openFileId, tree, entries.length]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
@@ -58,8 +125,16 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     }
   }, [deleteTarget, deleteFile]);
 
+  const startRename = useCallback((fileId: string) => {
+    setRenameError(null);
+    setRenamingId(fileId);
+  }, []);
+
   const handleContextMenu = useCallback(
     async (event: React.MouseEvent, fileId: string) => {
+      const entry = entriesById.get(fileId);
+      if (!entry || entry.kind !== "file") return;
+
       event.preventDefault();
 
       const id = await window.api.contextMenu.show(
@@ -73,18 +148,16 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
       switch (id) {
         case "rename":
-          setRenameError(null);
-          setRenamingId(fileId);
+          startRename(fileId);
           break;
         case "delete": {
-          const entry = entries.find((e) => e.id === fileId);
           const name = entry ? stripExcalidraw(entry.name) : fileId;
           setDeleteTarget({ id: fileId, name });
           break;
         }
       }
     },
-    [entries],
+    [entriesById, startRename],
   );
 
   const handleRename = useCallback(
@@ -107,16 +180,6 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     [renameFile],
   );
 
-  const openDrawing = useCallback(
-    async (fileId: string) => {
-      if (fileId !== useStore.getState().openFileId) {
-        await setOpenFileId(fileId);
-        if (useStore.getState().openFileId !== fileId) return;
-      }
-    },
-    [setOpenFileId],
-  );
-
   return (
     <>
       <Sidebar side="left">
@@ -124,63 +187,72 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
           <SidebarGroup>
             <SidebarGroupLabel>Drawings</SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>
-                {files.map((file) => {
-                  const isDirty = dirtyById[file.id] !== undefined;
+              {entries.length === 0 ? (
+                <p className="text-muted-foreground px-2 py-1.5 text-xs leading-relaxed">
+                  Drawings are .excalidraw files inside your drawings folder. Create folders in your
+                  file manager to organize them.
+                </p>
+              ) : (
+                <TreeContainer tree={tree}>
+                  {tree.getItems().map((item) => {
+                    const entry = item.getItemData();
+                    if (!entry || !entry.name) return null;
 
-                  return (
-                    <SidebarMenuItem key={file.id}>
-                      {renamingId === file.id ? (
-                        <RenameInput
-                          initial={stripExcalidraw(file.name)}
-                          error={renameError}
-                          onCommit={(v) => handleRename(file.id, v)}
-                          onCancel={() => {
-                            setRenameError(null);
-                            setRenamingId(null);
-                          }}
-                        />
-                      ) : (
-                        <SidebarMenuButton
-                          isActive={file.id === openFileId}
-                          tooltip={file.id}
-                          onClick={() => void openDrawing(file.id)}
-                          onContextMenu={(e) => handleContextMenu(e, file.id)}
-                          data-dirty={isDirty ? "true" : undefined}
-                          className={`relative pr-6 ${isDirty ? "dirty-dot" : ""}`}
-                        >
-                          <span className="truncate">{stripExcalidraw(file.name)}</span>
-                          {isDirty && <span className="sr-only">(unsaved changes)</span>}
-                        </SidebarMenuButton>
-                      )}
-                    </SidebarMenuItem>
-                  );
-                })}
+                    const isFolder = entry.kind === "directory";
 
-                {files.length === 0 && (
-                  <p className="text-muted-foreground px-2 py-1.5 text-xs leading-relaxed">
-                    Drawings are .excalidraw files inside your drawings folder.
-                  </p>
-                )}
-              </SidebarMenu>
+                    return (
+                      <Fragment key={item.getKey()}>
+                        {renamingId === entry.id && !isFolder ? (
+                          <div
+                            style={{
+                              paddingLeft: `${item.getItemMeta().level * 16 + 16 + 6 - 11}px`,
+                            }}
+                            className="pr-2"
+                          >
+                            <RenameInput
+                              initial={stripExcalidraw(entry.name)}
+                              error={renameError}
+                              onCommit={(v) => handleRename(entry.id, v)}
+                              onCancel={() => {
+                                setRenameError(null);
+                                setRenamingId(null);
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <TreeRow
+                            item={item}
+                            label={stripExcalidraw(entry.name)}
+                            isActive={entry.id === openFileId}
+                            isDirty={dirtyById[entry.id] !== undefined}
+                            onContextMenu={(e) => handleContextMenu(e, entry.id)}
+                          />
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </TreeContainer>
+              )}
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
 
         <SidebarFooter>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={onOpenSettings}>
-              <SettingsIcon />
-              Settings
-              <KbdGroup className="ml-auto group-data-[collapsible=icon]:hidden">
-                {formatForDisplay("Mod+,")
-                  .split(" ")
-                  .map((token) => (
-                    <Kbd key={token}>{token}</Kbd>
-                  ))}
-              </KbdGroup>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={onOpenSettings}>
+                <SettingsIcon />
+                Settings
+                <KbdGroup className="ml-auto group-data-[collapsible=icon]:hidden">
+                  {formatForDisplay("Mod+,")
+                    .split(" ")
+                    .map((token) => (
+                      <Kbd key={token}>{token}</Kbd>
+                    ))}
+                </KbdGroup>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarFooter>
       </Sidebar>
 
