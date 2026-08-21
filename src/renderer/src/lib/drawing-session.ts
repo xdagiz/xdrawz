@@ -16,6 +16,18 @@ type FlushOpts = {
   force?: boolean;
 };
 
+export type FrameScheduler = (callback: () => void) => () => void;
+
+const requestFrame: FrameScheduler = (callback) => {
+  if (typeof requestAnimationFrame === "function") {
+    const id = requestAnimationFrame(callback);
+    return () => cancelAnimationFrame(id);
+  }
+
+  const id = setTimeout(callback, 0);
+  return () => clearTimeout(id);
+};
+
 export type DrawingSessionControls = {
   onChange: (
     elements: readonly OrderedExcalidrawElement[],
@@ -41,6 +53,7 @@ type DrawingSessionDeps = {
   save: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
   initialBaseline?: string | null;
+  scheduleFrame?: FrameScheduler;
 };
 
 export const drawingSignature = (
@@ -58,7 +71,13 @@ export const drawingSignature = (
   });
 
 export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionControls => {
-  const { fileId, save, onDirtyChange, initialBaseline = null } = deps;
+  const {
+    fileId,
+    save,
+    onDirtyChange,
+    initialBaseline = null,
+    scheduleFrame = requestFrame,
+  } = deps;
 
   let baseline: string | null = null;
   let diskBaseline = initialBaseline;
@@ -71,6 +90,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   let dirty = false;
   let saveFailures = 0;
   let lastSaveOk = false;
+  let cancelScheduledEvaluation: (() => void) | null = null;
 
   const setDirty = (next: boolean) => {
     if (dirty === next) return;
@@ -168,6 +188,8 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
   const flush = async (opts?: FlushOpts) => {
     if (disposed) return;
+    runPendingEvaluation();
+
     const force = opts?.force === true;
     if (!force && blocked) return;
     if (!dirty && !force) return;
@@ -192,6 +214,8 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   const saveNow = async () => {
     if (disposed || blocked || !latestDrawing || diskBaseline === null) return false;
 
+    runPendingEvaluation();
+
     const [elements, appState, files] = latestDrawing;
     debounced.cancel();
     debounced(elements, appState, files, latestRevision, "explicit");
@@ -205,17 +229,17 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     return serializeAsJSON(elements, appState, files, "local");
   };
 
-  const onChange = (
-    elements: readonly OrderedExcalidrawElement[],
-    appState: AppState,
-    files: BinaryFiles,
-  ) => {
-    if (disposed) return;
-    latestDrawing = [elements, appState, files];
+  const evaluateLatest = () => {
+    cancelScheduledEvaluation = null;
+
+    if (disposed || !latestDrawing) return;
+
+    const [elements, appState, files] = latestDrawing;
 
     if (appState.isLoading) return;
 
     const current = signatureFor(elements, appState, files);
+
     if (baseline === null) {
       baseline = current;
       latestSignature = current;
@@ -241,6 +265,35 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
     setDirty(true);
     if (!blocked) debounced(elements, appState, files, latestRevision);
+  };
+
+  const scheduleEvaluation = () => {
+    if (cancelScheduledEvaluation !== null || disposed) return;
+    cancelScheduledEvaluation = scheduleFrame(evaluateLatest);
+  };
+
+  const runPendingEvaluation = () => {
+    if (cancelScheduledEvaluation === null) return;
+    cancelScheduledEvaluation();
+    evaluateLatest();
+  };
+
+  const onChange = (
+    elements: readonly OrderedExcalidrawElement[],
+    appState: AppState,
+    files: BinaryFiles,
+  ) => {
+    if (disposed) return;
+    latestDrawing = [elements, appState, files];
+
+    if (appState.isLoading) return;
+
+    if (baseline === null) {
+      evaluateLatest();
+      return;
+    }
+
+    scheduleEvaluation();
   };
 
   const block = () => {
@@ -272,6 +325,8 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     reason: UnsavedReason,
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
   ) => {
+    runPendingEvaluation();
+
     if (!dirty) {
       await flush({ force: false });
       return true;
@@ -298,6 +353,12 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+
+    if (cancelScheduledEvaluation !== null) {
+      cancelScheduledEvaluation();
+      cancelScheduledEvaluation = null;
+    }
+
     debounced.cancel();
   };
 

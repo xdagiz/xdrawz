@@ -11,10 +11,30 @@ import {
   AUTOSAVE_MS,
   createDrawingSession,
   drawingSignature,
+  type FrameScheduler,
   MAX_SAVE_RETRIES,
 } from "./drawing-session";
 
 const el = (id: string) => ({ id, type: "rectangle" }) as unknown as OrderedExcalidrawElement;
+
+const manualScheduler = () => {
+  let fire: (() => void) | null = null;
+  const scheduleFrame: FrameScheduler = (callback) => {
+    fire = callback;
+    return () => {
+      fire = null;
+    };
+  };
+  return {
+    scheduleFrame,
+    fireFrame: () => {
+      const callback = fire;
+      fire = null;
+      callback?.();
+    },
+    hasPending: () => fire !== null,
+  };
+};
 
 const appState = (
   vbg = "#ffffff",
@@ -29,6 +49,7 @@ const makeSession = (overrides?: {
   save?: (id: string, content: string) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
   initialBaseline?: string | null;
+  scheduleFrame?: FrameScheduler;
 }): { session: Session; dirty: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn> } => {
   const dirty = vi.fn();
   const save = overrides?.save ? vi.fn(overrides.save) : vi.fn().mockResolvedValue(true);
@@ -37,6 +58,7 @@ const makeSession = (overrides?: {
     save,
     onDirtyChange: overrides?.onDirtyChange ?? dirty,
     initialBaseline: overrides?.initialBaseline,
+    scheduleFrame: overrides?.scheduleFrame,
   });
   return { session, dirty, save };
 };
@@ -64,6 +86,7 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(dirty).toHaveBeenCalledWith("f1", true);
 
@@ -78,9 +101,11 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenCalledWith("f1", true);
 
     session.onChange([el("a")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
 
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
@@ -92,9 +117,11 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a")], appState("#ffffff", { gridModeEnabled: true }), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenCalledWith("f1", true);
 
     session.onChange([el("a")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
@@ -103,6 +130,7 @@ describe("createDrawingSession", () => {
     const { session, dirty, save } = makeSession({ initialBaseline: diskBaseline });
 
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(dirty).toHaveBeenCalledWith("f1", true);
     expect(save).toHaveBeenCalledTimes(1);
@@ -114,6 +142,7 @@ describe("createDrawingSession", () => {
     const { session, dirty, save } = makeSession({ initialBaseline: sig });
 
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(dirty).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
@@ -125,6 +154,7 @@ describe("createDrawingSession", () => {
     vi.advanceTimersByTime(150);
     session.setInitialBaseline("disk-version");
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(dirty).toHaveBeenCalledWith("f1", true);
     expect(save).toHaveBeenCalledTimes(1);
@@ -168,6 +198,7 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenCalledWith("f1", true);
 
     const saved = await session.saveNow();
@@ -220,6 +251,7 @@ describe("createDrawingSession", () => {
     session.resetBaseline();
     session.setInitialBaseline(diskBaseline);
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(dirty).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
@@ -243,6 +275,7 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenCalledWith("f1", true);
 
     const allowed = await session.ensureCleanOrConfirm(
@@ -287,6 +320,7 @@ describe("createDrawingSession", () => {
 
     // Reverting while the first write is unresolved must queue the final state.
     session.onChange([el("a")], appState("#000000"), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
     resolveFirstSave(true);
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
 
@@ -301,6 +335,7 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
 
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
     expect(save).toHaveBeenCalledTimes(1);
@@ -317,6 +352,7 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
 
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
 
@@ -328,5 +364,95 @@ describe("createDrawingSession", () => {
 
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
     expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+  });
+
+  describe("deferred signature evaluation", () => {
+    const makeBaselineSession = (frame: ReturnType<typeof manualScheduler>) =>
+      makeSession({
+        initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
+        scheduleFrame: frame.scheduleFrame,
+      });
+
+    it("coalesces a stroke burst into one evaluation and saves the latest state", async () => {
+      const frame = manualScheduler();
+      const { session, dirty, save } = makeBaselineSession(frame);
+
+      session.onChange([el("a")], appState(), emptyFiles);
+
+      for (let i = 0; i < 50; i++) {
+        session.onChange([el("a"), el(`stroke-${i}`)], appState(`#${i}`), emptyFiles);
+      }
+
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * 2);
+      expect(save).not.toHaveBeenCalled();
+      expect(dirty).not.toHaveBeenCalled();
+
+      frame.fireFrame();
+      expect(dirty).toHaveBeenCalledWith("f1", true);
+
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledWith("f1", expect.stringContaining("#49"), "auto");
+    });
+
+    it("skips a pending evaluation whose snapshot turned out to be loading", async () => {
+      const frame = manualScheduler();
+      const { session, dirty, save } = makeBaselineSession(frame);
+
+      session.onChange([el("a")], appState(), emptyFiles);
+      session.onChange([el("a"), el("b")], appState(), emptyFiles);
+      session.onChange([el("a"), el("b")], { ...appState(), isLoading: true }, emptyFiles);
+
+      frame.fireFrame();
+
+      expect(dirty).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it("flush persists unevaluated changes without waiting for the frame", async () => {
+      const frame = manualScheduler();
+      const { session, dirty, save } = makeBaselineSession(frame);
+
+      session.onChange([el("a")], appState(), emptyFiles);
+      session.onChange([el("a"), el("b")], appState(), emptyFiles);
+      expect(frame.hasPending()).toBe(true);
+
+      await session.flush({ force: true });
+
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(dirty).toHaveBeenLastCalledWith("f1", false);
+      expect(frame.hasPending()).toBe(false);
+    });
+
+    it("confirm dialog observes fresh dirty state without a frame", async () => {
+      const frame = manualScheduler();
+      const { session } = makeBaselineSession(frame);
+
+      session.onChange([el("a"), el("b")], appState(), emptyFiles);
+
+      const confirm = vi.fn().mockResolvedValue("cancel");
+      const allowed = await session.ensureCleanOrConfirm("quit", confirm);
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(allowed).toBe(false);
+    });
+
+    it("dispose drops the pending evaluation without saving", async () => {
+      const frame = manualScheduler();
+      const { session, dirty, save } = makeBaselineSession(frame);
+
+      session.onChange([el("a")], appState(), emptyFiles);
+      session.onChange([el("a"), el("b")], appState(), emptyFiles);
+      session.dispose();
+      frame.fireFrame();
+
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+
+      expect(save).not.toHaveBeenCalled();
+      expect(dirty).not.toHaveBeenCalled();
+    });
   });
 });
