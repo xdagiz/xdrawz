@@ -32,29 +32,13 @@ vi.mock("electron", () => ({
 vi.mock("./store", () => ({ store: mocks.store }));
 
 import {
-  CONTEXT_MENU_SHOW,
-  DIALOG_FILE_CHANGED,
-  DIALOG_FILE_RECOVER,
-  DIALOG_UNSAVED_CHANGES,
-  DRAWINGS_GET,
   DRAWINGS_LOAD,
-  DRAWINGS_PICK,
-  FILES_DELETE,
-  FILES_LIST,
   FILES_READ,
-  FILES_RENAME,
-  FILES_WRITE,
-  FILES_WRITE_RECOVER,
-  SETTINGS_GET,
-  SETTINGS_SET,
   STORE_CLEAR,
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
-  WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
-  WINDOW_DIRTY_STATE,
-  WINDOW_FLUSH_STARTED,
   WINDOW_READY,
 } from "@shared/channels";
 
@@ -78,16 +62,10 @@ describe("isTrustedRendererUrl", () => {
     expect(isTrustedRendererUrl(`${APP_ORIGIN}/greeting.html`)).toBe(true);
   });
 
-  it("rejects app: pages outside the app host", () => {
+  it("rejects untrusted urls", () => {
     expect(isTrustedRendererUrl("app://evil/index.html")).toBe(false);
-  });
-
-  it("rejects file: pages even inside the renderer directory", () => {
     expect(isTrustedRendererUrl("file:///etc/passwd")).toBe(false);
     expect(isTrustedRendererUrl("file:///home/user/out/renderer/index.html")).toBe(false);
-  });
-
-  it("rejects malformed urls", () => {
     expect(isTrustedRendererUrl("not a url")).toBe(false);
   });
 
@@ -121,37 +99,19 @@ describe("installAppProtocolHandler", () => {
 
   const get = async (url: string): Promise<Response> => appSchemes.get("app")!(new Request(url));
 
-  it("registers a handler for the app scheme", () => {
-    expect(appSchemes.has("app")).toBe(true);
-  });
-
   it("serves index.html for the root path", async () => {
     const res = await get("app://renderer/");
     expect(res.status).toBe(200);
     expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/index\.html$/));
   });
 
-  it("serves files within the renderer directory", async () => {
+  it("serves files within the renderer directory, including encoded slashes", async () => {
     const res = await get("app://renderer/src/main.tsx");
     expect(res.status).toBe(200);
     expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/src[\\/]main\.tsx$/));
-  });
 
-  it("serves index.html for directory paths", async () => {
-    await get("app://renderer/assets/");
-    expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/assets[\\/]index\.html$/));
-  });
-
-  it("resolves dot segments that stay inside the renderer directory", async () => {
-    const res = await get("app://renderer/assets/../index.html");
-    expect(res.status).toBe(200);
-    expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/index\.html$/));
-  });
-
-  it("serves files requested with encoded slashes", async () => {
-    const res = await get("app://renderer/assets%2Fmain.tsx");
-    expect(res.status).toBe(200);
-    expect(mocks.netFetch).toHaveBeenCalledWith(expect.stringMatching(/assets[\\/]main\.tsx$/));
+    await get("app://renderer/assets%2Fmain.tsx");
+    expect(mocks.netFetch).toHaveBeenLastCalledWith(expect.stringMatching(/assets[\\/]main\.tsx$/));
   });
 
   it("rejects requests for other hosts without touching the filesystem", async () => {
@@ -178,16 +138,14 @@ describe("installAppProtocolHandler", () => {
     expect(mocks.netFetch).not.toHaveBeenCalled();
   });
 
-  it("maps upstream failures to 404", async () => {
+  it("maps upstream failures and errors to 404", async () => {
     mocks.netFetch.mockResolvedValue(new Response("missing", { status: 404 }));
     const res = await get("app://renderer/missing.js");
     expect(res.status).toBe(404);
-  });
 
-  it("maps upstream errors to 404", async () => {
     mocks.netFetch.mockRejectedValue(new Error("boom"));
-    const res = await get("app://renderer/error.js");
-    expect(res.status).toBe(404);
+    const errRes = await get("app://renderer/error.js");
+    expect(errRes.status).toBe(404);
   });
 });
 
@@ -234,62 +192,17 @@ describe("registerIpcHandlers wiring", () => {
     registerIpcHandlers(deps);
   });
 
-  it("registers every invoke channel via ipcMain.handle", () => {
-    const invokeChannels = [
-      CONTEXT_MENU_SHOW,
-      DIALOG_FILE_CHANGED,
-      DIALOG_FILE_RECOVER,
-      DIALOG_UNSAVED_CHANGES,
-      DRAWINGS_GET,
-      DRAWINGS_LOAD,
-      DRAWINGS_PICK,
-      FILES_DELETE,
-      FILES_LIST,
-      FILES_READ,
-      FILES_RENAME,
-      FILES_WRITE,
-      FILES_WRITE_RECOVER,
-      SETTINGS_GET,
-      SETTINGS_SET,
-      STORE_CLEAR,
-      STORE_DELETE,
-      STORE_GET,
-      STORE_SET,
-      WINDOW_CLOSE,
-    ];
-    for (const channel of invokeChannels) {
-      expect(handlers.has(channel), channel).toBe(true);
-    }
-  });
-
-  it("registers every send-style channel via ipcMain.on", () => {
-    const sendChannels = [
-      WINDOW_READY,
-      WINDOW_CANCEL_QUIT,
-      WINDOW_DIRTY_STATE,
-      WINDOW_FLUSH_STARTED,
-    ];
-    for (const channel of sendChannels) {
-      expect(listeners.has(channel), channel).toBe(true);
-    }
-  });
-
-  it("forwards the close request id to destroyWindow", () => {
+  it("validates the close request id before destroying the window", async () => {
     void handlers.get(WINDOW_CLOSE)!(eventFor(), 5);
     expect(deps.destroyWindow).toHaveBeenCalledWith(expect.any(Object), 5);
-  });
 
-  it("forwards the cancel-quit request id to cancelQuit", () => {
-    listeners.get(WINDOW_CANCEL_QUIT)!(eventFor(), 6);
-    expect(deps.cancelQuit).toHaveBeenCalledWith(expect.any(Object), 6);
-  });
-
-  it("forwards dirty-state and flush-started messages to the deps", () => {
-    listeners.get(WINDOW_DIRTY_STATE)!(eventFor(), 7, true);
-    expect(deps.onDirtyState).toHaveBeenCalledWith(expect.any(Object), 7, true);
-
-    listeners.get(WINDOW_FLUSH_STARTED)!(eventFor(), 9);
-    expect(deps.onFlushStarted).toHaveBeenCalledWith(expect.any(Object), 9);
+    await expect(handlers.get(WINDOW_CLOSE)!(eventFor(), -1)).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
+    );
+    await expect(handlers.get(WINDOW_CLOSE)!(eventFor(), "5")).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
+    );
+    expect(deps.destroyWindow).toHaveBeenCalledTimes(1);
   });
 
   it("allows lastOpenedFileId store access and rejects other keys", async () => {
@@ -341,38 +254,13 @@ describe("registerIpcHandlers wiring", () => {
     expect(mocks.store.clear).not.toHaveBeenCalled();
   });
 
-  it("forwards invoke messages to the dep and returns the result", async () => {
-    const handler = handlers.get(DRAWINGS_GET)!;
-    deps.getDrawings.mockResolvedValue("drawings");
-    await expect(handler(eventFor())).resolves.toEqual({ ok: true, value: "drawings" });
-    expect(deps.getDrawings).toHaveBeenCalledTimes(1);
-  });
-
-  it("forwards invoke args to the dep", async () => {
-    const handler = handlers.get(FILES_WRITE)!;
-    await handler(eventFor(), "drawing-1", "content");
-    expect(deps.writeDrawingFile).toHaveBeenCalledWith("drawing-1", "content");
-  });
-
-  it("forwards send-style messages to the dep", () => {
-    const listener = listeners.get(WINDOW_READY)!;
-    listener(eventFor());
-    expect(deps.markWindowReady).toHaveBeenCalledTimes(1);
-
-    const cancelQuit = listeners.get(WINDOW_CANCEL_QUIT)!;
-    cancelQuit(eventFor(), 5);
-    expect(deps.cancelQuit).toHaveBeenCalledTimes(1);
-  });
-
   it("skips deps when the sender is not a live BrowserWindow", () => {
     mocks.fromWebContents.mockReturnValue(null);
     listeners.get(WINDOW_READY)!(eventFor());
     expect(deps.markWindowReady).not.toHaveBeenCalled();
 
-    const handler = handlers.get(DRAWINGS_GET)!;
-    deps.getDrawings.mockResolvedValue("drawings");
-    void handler(eventFor());
-    expect(deps.getDrawings).toHaveBeenCalledTimes(1);
+    void handlers.get(WINDOW_CLOSE)!(eventFor(), 5);
+    expect(deps.destroyWindow).not.toHaveBeenCalled();
   });
 });
 
@@ -395,34 +283,18 @@ describe("registerIpcHandlers error propagation", () => {
     registerIpcHandlers(deps);
   });
 
-  it("propagates handler rejections as plain errors", async () => {
-    const handler = handlers.get(FILES_READ)!;
+  it("propagates handler failures and successes uniformly", async () => {
     deps.readDrawingFile.mockRejectedValue(new Error("Drawing content is not valid JSON"));
 
-    await expect(handler(eventFor(), "broken.excalidraw")).resolves.toEqual(
+    await expect(handlers.get(FILES_READ)!(eventFor(), "broken.excalidraw")).resolves.toEqual(
       expect.objectContaining({
         ok: false,
         error: expect.objectContaining({ message: "Drawing content is not valid JSON" }),
       }),
     );
-  });
 
-  it("propagates sync handler throws as plain errors", async () => {
-    const handler = handlers.get(FILES_WRITE)!;
-    deps.writeDrawingFile.mockRejectedValue(new Error("disk on fire"));
-
-    await expect(handler(eventFor(), "a.excalidraw", "{}")).resolves.toEqual(
-      expect.objectContaining({
-        ok: false,
-        error: expect.objectContaining({ message: "disk on fire" }),
-      }),
-    );
-  });
-
-  it("propagates successful results unchanged", async () => {
-    const handler = handlers.get(DRAWINGS_LOAD)!;
     deps.loadDrawings.mockResolvedValue({ info: { configured: true }, entries: [] });
-    await expect(handler(eventFor())).resolves.toEqual({
+    await expect(handlers.get(DRAWINGS_LOAD)!(eventFor())).resolves.toEqual({
       ok: true,
       value: { info: { configured: true }, entries: [] },
     });

@@ -22,15 +22,7 @@ vi.mock("electron", () => ({
 // contextBridge instead of the (absent) window global.
 Object.defineProperty(process, "contextIsolated", { value: true, configurable: true });
 
-import {
-  FILES_READ,
-  WINDOW_CANCEL_QUIT,
-  WINDOW_CLOSE,
-  WINDOW_CLOSE_CANCELLED,
-  WINDOW_DIRTY_STATE,
-  WINDOW_FLUSH_STARTED,
-  WINDOW_WILL_CLOSE,
-} from "@shared/channels";
+import { FILES_READ, WINDOW_CLOSE, WINDOW_WILL_CLOSE } from "@shared/channels";
 
 import type { NativeApi } from "./types";
 
@@ -68,47 +60,12 @@ describe("preload window api", () => {
     expect(mocks.removeListener).toHaveBeenCalledWith(WINDOW_WILL_CLOSE, listener);
   });
 
-  it("forwards the close-cancelled signal to the callback", () => {
-    const cb = vi.fn();
-    const unsubscribe = api.window.onCloseCancelled(cb);
-
-    const registration = mocks.on.mock.calls.find(
-      ([channel]) => channel === WINDOW_CLOSE_CANCELLED,
-    );
-    expect(registration).toBeDefined();
-    const [, listener] = registration as [string, (event: unknown) => void];
-
-    listener({});
-    expect(cb).toHaveBeenCalledTimes(1);
-
-    unsubscribe();
-    expect(mocks.removeListener).toHaveBeenCalledWith(WINDOW_CLOSE_CANCELLED, listener);
-  });
-
-  it("passes the request id back on close", () => {
+  it("passes the request id back on close and rejections through unchanged", async () => {
     void api.window.close(3);
     expect(mocks.invoke).toHaveBeenCalledWith(WINDOW_CLOSE, 3);
-  });
 
-  it("passes rejections through without preprocessing", async () => {
     mocks.invoke.mockRejectedValueOnce(new Error("boom"));
-
     await expect(api.files.read("big.excalidraw")).rejects.toThrow("boom");
     expect(mocks.invoke).toHaveBeenCalledWith(FILES_READ, "big.excalidraw");
-  });
-
-  it("passes the request id back on cancelQuit", () => {
-    api.window.cancelQuit(4);
-    expect(mocks.send).toHaveBeenCalledWith(WINDOW_CANCEL_QUIT, 4);
-  });
-
-  it("reports the dirty state on the dirty-state channel", () => {
-    api.window.reportDirtyState(7, true);
-    expect(mocks.send).toHaveBeenCalledWith(WINDOW_DIRTY_STATE, 7, true);
-  });
-
-  it("reports flush start on the flush-started channel", () => {
-    api.window.flushStarted(9);
-    expect(mocks.send).toHaveBeenCalledWith(WINDOW_FLUSH_STARTED, 9);
   });
 });

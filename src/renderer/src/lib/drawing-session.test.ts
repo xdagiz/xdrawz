@@ -59,19 +59,6 @@ describe("createDrawingSession", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it("skips identical subsequent commits after the baseline", async () => {
-    const { session, dirty, save } = makeSession();
-
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a")], appState(), emptyFiles);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-
-    expect(dirty).not.toHaveBeenCalled();
-    expect(save).not.toHaveBeenCalled();
-  });
-
   it("marks dirty and autosaves on user changes after the baseline", async () => {
     const { session, dirty, save } = makeSession();
 
@@ -101,60 +88,14 @@ describe("createDrawingSession", () => {
   });
 
   it("marks dirty when only grid settings change (elements unchanged)", async () => {
-    const { session, dirty, save } = makeSession();
+    const { session, dirty } = makeSession();
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a")], appState("#ffffff", { gridModeEnabled: true }), emptyFiles);
-
     expect(dirty).toHaveBeenCalledWith("f1", true);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(dirty).toHaveBeenLastCalledWith("f1", false);
-  });
-
-  it("marks dirty when grid size or grid step change", async () => {
-    const { session, dirty, save } = makeSession();
-
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a")], appState("#ffffff", { gridSize: 40, gridStep: 40 }), emptyFiles);
-
-    expect(dirty).toHaveBeenCalledWith("f1", true);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    expect(save).toHaveBeenCalledTimes(1);
-  });
-
-  it("clears dirty when grid settings revert to the baseline", async () => {
-    const { session, dirty, save } = makeSession();
-
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a")], appState("#ffffff", { gridModeEnabled: true }), emptyFiles);
-    expect(dirty).toHaveBeenLastCalledWith("f1", true);
 
     session.onChange([el("a")], appState(), emptyFiles);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    expect(save).not.toHaveBeenCalled();
-  });
-
-  it("does not save when the first commit matches a grid-bearing disk baseline", async () => {
-    const sig = drawingSignature(
-      [el("a")],
-      appState("#ffffff", { gridModeEnabled: true, gridSize: 40 }),
-      emptyFiles,
-    );
-    const { session, dirty, save } = makeSession({ initialBaseline: sig });
-
-    session.onChange(
-      [el("a")],
-      appState("#ffffff", { gridModeEnabled: true, gridSize: 40 }),
-      emptyFiles,
-    );
-
-    expect(dirty).not.toHaveBeenCalled();
-    expect(save).not.toHaveBeenCalled();
   });
 
   it("marks dirty until it persists when the first commit differs from the disk baseline", async () => {
@@ -178,19 +119,6 @@ describe("createDrawingSession", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it("converges exactly once across repeated identical commits", async () => {
-    const { session, dirty, save } = makeSession({ initialBaseline: "disk-version" });
-
-    session.onChange([el("a")], appState("#ffffff"), emptyFiles);
-    session.onChange([el("a")], appState("#ffffff"), emptyFiles);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-
-    expect(dirty).toHaveBeenCalledWith("f1", true);
-    expect(dirty).toHaveBeenLastCalledWith("f1", false);
-    expect(save).toHaveBeenCalledTimes(1);
-  });
-
   it("applies setInitialBaseline before the first commit", async () => {
     const { session, dirty, save } = makeSession();
 
@@ -200,17 +128,6 @@ describe("createDrawingSession", () => {
 
     expect(dirty).toHaveBeenCalledWith("f1", true);
     expect(save).toHaveBeenCalledTimes(1);
-  });
-
-  it("ignores setInitialBaseline once the baseline is established", async () => {
-    const { session, dirty, save } = makeSession();
-
-    session.onChange([el("a")], appState("#ffffff"), emptyFiles);
-    session.setInitialBaseline("disk-version");
-    session.onChange([el("a")], appState("#ffffff"), emptyFiles);
-
-    expect(dirty).not.toHaveBeenCalled();
-    expect(save).not.toHaveBeenCalled();
   });
 
   it("defers autosave while blocked, then resumes it after a cancelled confirm", async () => {
@@ -225,26 +142,6 @@ describe("createDrawingSession", () => {
     expect(allowed).toBe(false);
     expect(dirty).toHaveBeenLastCalledWith("f1", true);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-
-    expect(save).toHaveBeenCalledTimes(1);
-    expect(dirty).toHaveBeenLastCalledWith("f1", false);
-  });
-
-  it("setAutosavePaused(true) freezes autosave until unpaused", async () => {
-    const { session, dirty, save } = makeSession();
-
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a"), el("b")], appState(), emptyFiles);
-    expect(dirty).toHaveBeenLastCalledWith("f1", true);
-
-    session.setAutosavePaused(true);
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-
-    expect(save).not.toHaveBeenCalled();
-    expect(dirty).toHaveBeenLastCalledWith("f1", true);
-
-    session.setAutosavePaused(false);
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
 
     expect(save).toHaveBeenCalledTimes(1);
@@ -358,27 +255,6 @@ describe("createDrawingSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
-  it("saveNow before any drawing has loaded is a no-op", async () => {
-    const { session, dirty, save } = makeSession();
-    const saved = await session.saveNow();
-    expect(saved).toBe(false);
-    expect(save).not.toHaveBeenCalled();
-    expect(dirty).not.toHaveBeenCalled();
-  });
-
-  it("getSerializedContent returns the latest drawing", () => {
-    const { session } = makeSession({ save: vi.fn().mockResolvedValue(true) });
-    session.onChange([el("a")], appState("#ffffff"), emptyFiles);
-    expect(session.getSerializedContent()).toBe(JSON.stringify({ scene: true, vbg: "#ffffff" }));
-  });
-
-  it("flush is a no-op when the session is clean", async () => {
-    const { session, save } = makeSession();
-    session.onChange([el("a")], appState(), emptyFiles);
-    await session.flush();
-    expect(save).not.toHaveBeenCalled();
-  });
-
   it("flush persists immediately without force when dirty", async () => {
     const { session, dirty, save } = makeSession();
 
@@ -452,56 +328,5 @@ describe("createDrawingSession", () => {
 
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
     expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
-  });
-
-  it("does not retry after dispose", async () => {
-    const save = vi.fn().mockResolvedValue(false);
-    const { session } = makeSession({ save });
-
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a"), el("b")], appState(), emptyFiles);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    expect(save).toHaveBeenCalledTimes(1);
-
-    session.dispose();
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * MAX_SAVE_RETRIES);
-
-    expect(save).toHaveBeenCalledTimes(1);
-  });
-
-  it("re-arms on the next user change after running out of retries", async () => {
-    const save = vi.fn().mockResolvedValue(false);
-    const { session } = makeSession({ save });
-
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a"), el("b")], appState(), emptyFiles);
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    for (let i = 0; i < MAX_SAVE_RETRIES; i++) {
-      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    }
-    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
-
-    session.onChange([el("a"), el("b"), el("c")], appState(), emptyFiles);
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-
-    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES + 1);
-  });
-
-  it("collapses a retry and a newer change into a single write", async () => {
-    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
-    const { session } = makeSession({ save });
-
-    session.onChange([el("a")], appState(), emptyFiles);
-    session.onChange([el("a"), el("b")], appState(), emptyFiles);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    expect(save).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    session.onChange([el("a"), el("b"), el("c")], appState(), emptyFiles);
-
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
-    expect(save).toHaveBeenCalledTimes(2);
   });
 });

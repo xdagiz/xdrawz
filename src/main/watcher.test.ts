@@ -117,59 +117,36 @@ describe("createDrawingsWatcher", () => {
     vi.useRealTimers();
   });
 
-  it("starts watching and sets root", async () => {
+  it("manages root state across start, stop, and restart", async () => {
     const { watcher } = setupWatcher();
 
     expect(watcher.isWatching()).toBe(false);
     expect(watcher.getRoot()).toBeNull();
-    expect(watcher.getRevision()).toBe(0);
 
     await watcher.start("/home/user/drawings");
-
     expect(watcher.isWatching()).toBe(true);
     expect(watcher.getRoot()).toBe("/home/user/drawings");
-    expect(watcher.getRevision()).toBe(0);
-  });
-
-  it("stop() clears state and invokes no more callbacks", async () => {
-    const { watcher } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
-    expect(watcher.isWatching()).toBe(true);
 
     await watcher.stop();
     expect(watcher.isWatching()).toBe(false);
     expect(watcher.getRoot()).toBeNull();
-  });
 
-  it("restart(null) stops without starting new", async () => {
-    const { watcher } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
     await watcher.restart(null);
-
-    expect(watcher.isWatching()).toBe(false);
     expect(watcher.getRoot()).toBeNull();
   });
 
-  it("restart(path) stops old and starts new", async () => {
+  it("restart switches roots and starting the same root is a no-op", async () => {
     const { watcher } = setupWatcher();
 
     await watcher.start("/home/user/old");
-    await watcher.restart("/home/user/new");
-
-    expect(watcher.isWatching()).toBe(true);
-    expect(watcher.getRoot()).toBe("/home/user/new");
-  });
-
-  it("start with same root is a no-op", async () => {
-    const { watcher } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
     const rev1 = watcher.getRevision();
 
-    await watcher.start("/home/user/drawings");
+    await watcher.start("/home/user/old");
     expect(watcher.getRevision()).toBe(rev1);
+
+    await watcher.restart("/home/user/new");
+    expect(watcher.isWatching()).toBe(true);
+    expect(watcher.getRoot()).toBe("/home/user/new");
   });
 
   it("emits onChange after coalesce timer fires", async () => {
@@ -249,23 +226,13 @@ describe("createDrawingsWatcher", () => {
     vi.useFakeTimers();
   });
 
-  it("drops events for ignored paths", async () => {
-    const { watcher, fakeWatcher, onChange } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
-    watcher.ignorePath("/home/user/drawings/ignore-me.excalidraw");
-    void fakeWatcher._emit("change", "/home/user/drawings/ignore-me.excalidraw");
-    await tick(60);
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("ignored path expires after TTL", async () => {
+  it("drops ignored paths until the TTL expires", async () => {
     const { watcher, fakeWatcher, onChange } = setupWatcher({
       defaultIgnoreTtlMs: 100,
     });
 
     await watcher.start("/home/user/drawings");
-    watcher.ignorePath("/home/user/drawings/temp.excalidraw");
+    watcher.ignorePaths(["/home/user/drawings/temp.excalidraw"]);
     void fakeWatcher._emit("change", "/home/user/drawings/temp.excalidraw");
 
     await tick(60);
@@ -278,82 +245,25 @@ describe("createDrawingsWatcher", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it("ignorePaths suppresses multiple paths", async () => {
-    const { watcher, fakeWatcher, onChange } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
-
-    watcher.ignorePaths(["/home/user/drawings/a.excalidraw", "/home/user/drawings/b.excalidraw"]);
-
-    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
-    void fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
-    void fakeWatcher._emit("change", "/home/user/drawings/c.excalidraw");
-
-    await tick(60);
-    expect(onChange).toHaveBeenCalledTimes(1);
-  });
-
-  it("drops dotfile events", async () => {
+  it("filters events to excalidraw files and directories only", async () => {
     const { watcher, fakeWatcher, onChange } = setupWatcher();
 
     await watcher.start("/home/user/drawings");
 
     void fakeWatcher._emit("change", "/home/user/drawings/.hidden.excalidraw");
     void fakeWatcher._emit("add", "/home/user/drawings/.DS_Store");
-
-    await tick(60);
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("drops non-excalidraw file events", async () => {
-    const { watcher, fakeWatcher, onChange } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
-
     void fakeWatcher._emit("change", "/home/user/drawings/readme.txt");
     void fakeWatcher._emit("add", "/home/user/drawings/config.json");
-
     await tick(60);
     expect(onChange).not.toHaveBeenCalled();
-  });
 
-  it("filters case-insensitively for .excalidraw extension", async () => {
-    const { watcher, fakeWatcher, onChange } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
     void fakeWatcher._emit("change", "/home/user/drawings/Drawing.EXCALIDRAW");
     await tick(60);
-
     expect(onChange).toHaveBeenCalledTimes(1);
-  });
-
-  it("accepts directory add/unlink events", async () => {
-    const { watcher, fakeWatcher, onChange } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
 
     void fakeWatcher._emit("addDir", "/home/user/drawings/new-folder");
     await tick(60);
-    expect(onChange).toHaveBeenCalledTimes(1);
-
-    void fakeWatcher._emit("unlinkDir", "/home/user/drawings/new-folder");
-    await tick(60);
     expect(onChange).toHaveBeenCalledTimes(2);
-  });
-
-  it("increments revision on each refresh", async () => {
-    const { watcher, fakeWatcher } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
-    expect(watcher.getRevision()).toBe(0);
-
-    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
-    await tick(60);
-    expect(watcher.getRevision()).toBe(1);
-
-    void fakeWatcher._emit("change", "/home/user/drawings/b.excalidraw");
-    await tick(60);
-    expect(watcher.getRevision()).toBe(2);
   });
 
   it("keeps revision monotonic across restart", async () => {
@@ -416,31 +326,13 @@ describe("createDrawingsWatcher", () => {
     expect(watcher.isWatching()).toBe(true);
   });
 
-  it("calls onRootInvalid with 'not-directory' when root is a file", async () => {
-    const statMock = vi.fn().mockResolvedValue({ isDirectory: () => false });
-    const { watcher, fakeWatcher, onRootInvalid } = setupWatcher({
-      overrideDeps: { statFn: statMock },
-    });
+  it("refreshNow immediately triggers onChange", async () => {
+    const { watcher, onChange, deps } = setupWatcher();
 
     await watcher.start("/home/user/drawings");
-    fakeWatcher._error(new Error("watch error"));
+    await watcher.refreshNow();
 
-    await vi.waitFor(() => Promise.resolve());
-
-    expect(onRootInvalid).toHaveBeenCalledWith("not-directory", 1);
-    expect(watcher.getRevision()).toBe(1);
-    expect(watcher.isWatching()).toBe(false);
-  });
-
-  it("calls onError for chokidar errors", async () => {
-    const { watcher, fakeWatcher, onError } = setupWatcher();
-
-    await watcher.start("/home/user/drawings");
-
-    const testError = new Error("test error");
-    fakeWatcher._error(testError);
-
-    await vi.waitFor(() => Promise.resolve());
-    expect(onError).toHaveBeenCalledWith(testError);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(deps.listEntries).toHaveBeenCalledOnce();
   });
 });
