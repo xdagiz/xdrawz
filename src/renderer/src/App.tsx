@@ -2,8 +2,9 @@ import { Outlet, useRouterState } from "@tanstack/react-router";
 import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
-import { conflictKeyOf } from "@/lib/conflicts";
+import { conflictKeyOf, fileNameOf } from "@/lib/conflicts";
 import { useStore } from "@/lib/store";
+import { stripExcalidraw } from "@/lib/utils";
 
 import { AppSidebar } from "./components/app-sidebar";
 import { EditorView } from "./components/editor-view";
@@ -28,6 +29,7 @@ const App = () => {
   const watcherDown = useStore((s) => s.watcherDown);
   const reportWatcherError = useStore((s) => s.reportWatcherError);
   const openFileId = useStore((s) => s.openFileId);
+  const dirtyById = useStore((s) => s.dirtyById);
   const editorEpoch = useStore((s) => s.editorEpoch);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -58,6 +60,17 @@ const App = () => {
   useEffect(() => {
     void initSettings();
   }, [initSettings]);
+
+  useEffect(() => {
+    if (!openFileId) {
+      document.title = "xdrawz";
+      return;
+    }
+
+    const name = stripExcalidraw(fileNameOf(entries, openFileId));
+    const marker = dirtyById[openFileId] ? "* " : "";
+    document.title = `${marker}${name} - xdrawz`;
+  }, [openFileId, entries, dirtyById]);
 
   useEffect(() => {
     return window.api.files.onWatcherError((event) => reportWatcherError(event));

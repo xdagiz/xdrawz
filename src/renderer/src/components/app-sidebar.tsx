@@ -129,39 +129,42 @@ export const AppSidebar = () => {
             <SidebarGroupLabel>Drawings</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {files.map((file) => (
-                  <SidebarMenuItem key={file.id}>
-                    {renamingId === file.id ? (
-                      <RenameInput
-                        initial={stripExcalidraw(file.name)}
-                        error={renameError}
-                        onCommit={(v) => handleRename(file.id, v)}
-                        onCancel={() => {
-                          setRenameError(null);
-                          setRenamingId(null);
-                        }}
-                      />
-                    ) : (
-                      <SidebarMenuButton
-                        isActive={!isSettingsRoute && file.id === openFileId}
-                        tooltip={file.id}
-                        onClick={() => void openDrawing(file.id)}
-                        onContextMenu={(e) => handleContextMenu(e, file.id)}
-                        data-dirty={dirtyById[file.id] ? "true" : undefined}
-                        className="data-[dirty=true]:after:bg-primary relative pr-6 data-[dirty=true]:after:absolute data-[dirty=true]:after:top-1/2 data-[dirty=true]:after:right-2 data-[dirty=true]:after:size-1.5 data-[dirty=true]:after:-translate-y-1/2 data-[dirty=true]:after:rounded-full data-[dirty=true]:after:content-['']"
-                      >
-                        <span className="truncate">{stripExcalidraw(file.name)}</span>
-                      </SidebarMenuButton>
-                    )}
-                  </SidebarMenuItem>
-                ))}
+                {files.map((file) => {
+                  const isDirty = dirtyById[file.id] !== undefined;
+
+                  return (
+                    <SidebarMenuItem key={file.id}>
+                      {renamingId === file.id ? (
+                        <RenameInput
+                          initial={stripExcalidraw(file.name)}
+                          error={renameError}
+                          onCommit={(v) => handleRename(file.id, v)}
+                          onCancel={() => {
+                            setRenameError(null);
+                            setRenamingId(null);
+                          }}
+                        />
+                      ) : (
+                        <SidebarMenuButton
+                          isActive={!isSettingsRoute && file.id === openFileId}
+                          tooltip={file.id}
+                          onClick={() => void openDrawing(file.id)}
+                          onContextMenu={(e) => handleContextMenu(e, file.id)}
+                          data-dirty={isDirty ? "true" : undefined}
+                          className={`relative pr-6 ${isDirty ? "dirty-dot" : ""}`}
+                        >
+                          <span className="truncate">{stripExcalidraw(file.name)}</span>
+                          {isDirty && <span className="sr-only">(unsaved changes)</span>}
+                        </SidebarMenuButton>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                })}
 
                 {files.length === 0 && (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton disabled>
-                      <span>No drawings</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <p className="text-muted-foreground px-2 py-1.5 text-xs leading-relaxed">
+                    Drawings are .excalidraw files inside your drawings folder.
+                  </p>
                 )}
               </SidebarMenu>
             </SidebarGroupContent>

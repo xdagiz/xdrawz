@@ -5,6 +5,20 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@utility dirty-dot {
+  &::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    width: 0.375rem;
+    height: 0.375rem;
+    translate: 0 -50%;
+    border-radius: 9999px;
+    background: var(--color-primary);
+  }
+}
+
 @layer base {
   body {
     @apply bg-background text-foreground;
