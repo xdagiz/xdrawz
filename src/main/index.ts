@@ -10,7 +10,7 @@ import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
 import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
-import { app, dialog, shell, nativeTheme, BrowserWindow, Menu } from "electron";
+import { app, dialog, shell, nativeTheme, BrowserWindow } from "electron";
 
 import icon from "../../assets/icon.png?asset";
 import {
@@ -267,6 +267,10 @@ function createMainWindow() {
     webPreferences: baseWebPreferences(),
   });
 
+  if (process.platform !== "darwin") {
+    win.setMenuBarVisibility(false);
+  }
+
   showWhenReady(win);
   installCloseGuard(win);
   wireNavigationPolicy(win);
@@ -332,10 +336,6 @@ void app.whenReady().then(async () => {
       setZoomLevel(win.webContents.getZoomLevel());
     });
   });
-
-  if (process.platform !== "darwin") {
-    Menu.setApplicationMenu(null);
-  }
 
   const writeDrawingFileWatched = withWatchIgnore(writeDrawingFile);
   const writeDrawingFileRecoverWatched = withWatchIgnore(writeDrawingFileRecover);
