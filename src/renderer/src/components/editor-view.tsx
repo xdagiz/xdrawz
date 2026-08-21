@@ -1,5 +1,10 @@
-import { ExcalidrawEditor } from "@/components/excalidraw-editor";
+import { lazy, Suspense } from "react";
+
 import { useStore } from "@/lib/store";
+
+const ExcalidrawEditor = lazy(() =>
+  import("@/components/excalidraw-editor").then((m) => ({ default: m.ExcalidrawEditor })),
+);
 
 export const EditorView = () => {
   const openFileId = useStore((s) => s.openFileId);
@@ -13,5 +18,9 @@ export const EditorView = () => {
     );
   }
 
-  return <ExcalidrawEditor key={`${openFileId}:${editorEpoch}`} fileId={openFileId} />;
+  return (
+    <Suspense fallback={<div className="bg-background h-full w-full" />}>
+      <ExcalidrawEditor key={`${openFileId}:${editorEpoch}`} fileId={openFileId} />
+    </Suspense>
+  );
 };
