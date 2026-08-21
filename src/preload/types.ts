@@ -5,6 +5,7 @@ import type {
   DrawingInfo,
   DrawingsSnapshot,
   FileChangedChoice,
+  FileDeleteMode,
   FileEntry,
   FileRecoverChoice,
   FilesChangedEvent,
@@ -28,7 +29,7 @@ export interface NativeApi {
     write: (id: string, content: string) => Promise<void>;
     writeRecover: (id: string, content: string) => Promise<void>;
     rename: (id: string, newName: string) => Promise<FileEntry>;
-    delete: (id: string) => Promise<void>;
+    delete: (id: string, mode?: FileDeleteMode) => Promise<void>;
     onChanged: (cb: (event: FilesChangedEvent) => void) => () => void;
     onWatcherError: (cb: (event: WatcherErrorEvent) => void) => () => void;
   };

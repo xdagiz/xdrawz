@@ -123,33 +123,71 @@ describe("files", () => {
     expect(same.id).toBe("folder/b.excalidraw");
   });
 
-  it("refuses renaming directories, collisions, and separator names", async () => {
+  it("renames directories without extension coercion and still rejects collisions", async () => {
     await mkdir(path.join(ctx.root, "folder"));
+    await mkdir(path.join(ctx.root, "other"));
     await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
     await writeFile(path.join(ctx.root, "b.excalidraw"), SCENE);
 
-    await expect(renameEntry("folder", "x")).rejects.toThrow("Only files can be renamed");
+    const entry = await renameEntry("folder", "renamed");
+    expect(entry.id).toBe("renamed");
+    expect(entry.kind).toBe("directory");
     await expect(renameEntry("a.excalidraw", "b")).rejects.toThrow(
-      "A file with that name already exists",
+      "A file or folder with that name already exists",
+    );
+    await expect(renameEntry("renamed", "other")).rejects.toThrow(
+      "A file or folder with that name already exists",
     );
     await expect(renameEntry("a.excalidraw", "../escape")).rejects.toThrow(
       "Name cannot contain path separators",
     );
 
     const entries = await listEntries();
-    expect(entries.map((e) => e.id)).toEqual(["a.excalidraw", "b.excalidraw", "folder"]);
+    expect(entries.map((e) => e.id)).toEqual(["a.excalidraw", "b.excalidraw", "other", "renamed"]);
   });
 
-  it("deletes drawings and refuses directories, the root, and other files", async () => {
+  it("performs case-only renames via a two-step move", async () => {
+    await mkdir(path.join(ctx.root, "MixedCase"));
+
+    const entry = await renameEntry("MixedCase", "mixedcase");
+
+    expect(entry.id).toBe("mixedcase");
+    const entries = await listEntries();
+    expect(entries.map((e) => e.id)).toEqual(["mixedcase"]);
+  });
+
+  it("trashes files and folders through the injected trash target", async () => {
     await mkdir(path.join(ctx.root, "folder"));
+    await writeFile(path.join(ctx.root, "folder", "nested.excalidraw"), SCENE);
     await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
-    await writeFile(path.join(ctx.root, "notes.txt"), "hi");
 
-    await deleteEntry("a.excalidraw");
+    const trashed: string[] = [];
+    const trashItem = async (trashPath: string) => {
+      trashed.push(trashPath);
+      await rm(trashPath, { recursive: true });
+    };
+
+    await deleteEntry("a.excalidraw", "trash", undefined, trashItem);
+    await deleteEntry("folder", "trash", undefined, trashItem);
+
+    expect(trashed).toEqual([path.join(ctx.root, "a.excalidraw"), path.join(ctx.root, "folder")]);
     await expect(readDrawingFile("a.excalidraw")).rejects.toThrow();
-
-    await expect(deleteEntry("folder")).rejects.toThrow("Only files can be deleted");
     await expect(deleteEntry(".")).rejects.toThrow("Cannot delete drawings root");
-    await expect(deleteEntry("notes.txt")).rejects.toThrow("Only .excalidraw files can be deleted");
+  });
+
+  it("permanently deletes directories recursively when asked", async () => {
+    await mkdir(path.join(ctx.root, "gone", "inner"), { recursive: true });
+    await writeFile(path.join(ctx.root, "gone", "inner", "a.excalidraw"), SCENE);
+
+    await deleteEntry("gone", "permanent");
+
+    const entries = await listEntries();
+    expect(entries.map((e) => e.id)).toEqual([]);
+  });
+
+  it("fails trash mode when no trash target is available", async () => {
+    await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
+
+    await expect(deleteEntry("a.excalidraw", "trash")).rejects.toThrow("Trash is unavailable");
   });
 });

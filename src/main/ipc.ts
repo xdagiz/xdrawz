@@ -29,7 +29,13 @@ import {
 } from "@shared/channels";
 import { errorWithCode, isRecord, isSerializedAppError } from "@shared/errors";
 import type { ErrorOperation } from "@shared/errors";
-import type { AppSettings, DrawingInfo, DrawingsSnapshot, FileEntry } from "@shared/ipc";
+import type {
+  AppSettings,
+  DrawingInfo,
+  DrawingsSnapshot,
+  FileDeleteMode,
+  FileEntry,
+} from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
 import { showUnsavedChangesDialog } from "./close-guard";
@@ -105,7 +111,7 @@ type Deps = {
   writeDrawingFile: (id: string, content: string) => Promise<void>;
   writeDrawingFileRecover: (id: string, content: string) => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
-  deleteEntry: (id: string) => Promise<void>;
+  deleteEntry: (id: string, mode: FileDeleteMode) => Promise<void>;
   destroyWindow: (win: BrowserWindow, requestId: number) => void;
   markWindowReady: (win: BrowserWindow) => void;
   cancelQuit: (win: BrowserWindow, requestId: number) => void;
@@ -169,6 +175,16 @@ function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId"
 const requireString = (value: unknown, field: string) => {
   if (typeof value !== "string" || value.length === 0) {
     throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
+  }
+  return value;
+};
+
+const isFileDeleteMode = (value: unknown): value is FileDeleteMode =>
+  value === "trash" || value === "permanent";
+
+const requireDeleteMode = (value: unknown): FileDeleteMode => {
+  if (!isFileDeleteMode(value)) {
+    throw errorWithCode("Delete mode must be trash or permanent", "INVALID");
   }
   return value;
 };
@@ -258,7 +274,8 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(FILES_DELETE, "delete", (_event, ...args) => {
     const id = requireString(args[0], "id");
-    return deps.deleteEntry(id);
+    const mode = args[1] === undefined ? "trash" : requireDeleteMode(args[1]);
+    return deps.deleteEntry(id, mode);
   });
 
   handle(DRAWINGS_PICK, "load", (event) => deps.pickDrawings(windowFromEvent(event)));

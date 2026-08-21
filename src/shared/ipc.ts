@@ -1,6 +1,9 @@
 export const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
 export const FILE_NOT_FOUND_MESSAGE = "File not found";
 
+export const FILE_DELETE_MODES = ["trash", "permanent"] as const;
+export type FileDeleteMode = (typeof FILE_DELETE_MODES)[number];
+
 export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<ThemePreference, "system">;
 
@@ -19,6 +22,9 @@ export type DrawingInfo = {
 export type Prefs = {
   lastOpenedFileId: string | null;
 };
+
+export const isAncestorId = (ancestorId: string, id: string): boolean =>
+  id !== ancestorId && id.startsWith(`${ancestorId}/`);
 
 export type FileEntry = {
   id: string;

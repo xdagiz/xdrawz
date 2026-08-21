@@ -340,7 +340,10 @@ void app.whenReady().then(async () => {
   const writeDrawingFileWatched = withWatchIgnore(writeDrawingFile);
   const writeDrawingFileRecoverWatched = withWatchIgnore(writeDrawingFileRecover);
   const renameEntryWatched = withWatchIgnore(renameEntry);
-  const deleteEntryWatched = withWatchIgnore(deleteEntry);
+  const deleteEntryWatched = withWatchIgnore(
+    (id: string, mode: Parameters<typeof deleteEntry>[1], hooks: FsMutationHooks | undefined) =>
+      deleteEntry(id, mode, hooks, (trashPath) => shell.trashItem(trashPath)),
+  );
 
   registerIpcHandlers({
     getDrawings,

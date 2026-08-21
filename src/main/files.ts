@@ -8,6 +8,7 @@ import {
   FILE_NOT_FOUND_MESSAGE,
   MAX_FILE_CONTENT_BYTES,
   parentIdOf,
+  type FileDeleteMode,
   type FileEntry,
 } from "@shared/ipc";
 
@@ -215,9 +216,9 @@ export const renameEntry = async (
   const { root, absPath } = await resolveInsideRoot(id);
 
   const stats = await stat(absPath);
-  if (stats.isDirectory()) throw new Error("Only files can be renamed");
+  const isDirectory = stats.isDirectory();
 
-  if (!isExcalidrawFileName(path.basename(id))) {
+  if (!isDirectory && !isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be renamed");
   }
 
@@ -227,37 +228,57 @@ export const renameEntry = async (
     throw new Error("Name cannot contain path separators");
   }
 
-  const nameWithExt = isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
+  const nameWithExt = isDirectory || isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
   const nextAbs = path.join(path.dirname(absPath), nameWithExt);
 
   assertInsideRoot(root, nextAbs);
 
   if (nextAbs === absPath) {
-    return entryFromAbs(root, absPath, "file");
+    return entryFromAbs(root, absPath, isDirectory ? "directory" : "file");
   }
 
   const exists = await stat(nextAbs).catch(() => null);
-  if (exists) throw new Error("A file with that name already exists");
+  if (exists) throw new Error("A file or folder with that name already exists");
+
+  const kind = isDirectory ? "directory" : "file";
+
+  if (nextAbs.toLowerCase() === absPath.toLowerCase()) {
+    const tempAbs = `${absPath}.renaming-${process.pid}-${Date.now()}`;
+    hooks?.beforeMutate?.([absPath, tempAbs, nextAbs]);
+    await rename(absPath, tempAbs);
+    try {
+      await rename(tempAbs, nextAbs);
+    } catch (error) {
+      await rename(tempAbs, absPath).catch(() => {});
+      throw error;
+    }
+    return entryFromAbs(root, nextAbs, kind);
+  }
 
   hooks?.beforeMutate?.([absPath, nextAbs]);
   await rename(absPath, nextAbs);
-  return entryFromAbs(root, nextAbs, "file");
+  return entryFromAbs(root, nextAbs, kind);
 };
 
-export const deleteEntry = async (id: string, hooks?: FsMutationHooks) => {
+export const deleteEntry = async (
+  id: string,
+  mode: FileDeleteMode = "trash",
+  hooks?: FsMutationHooks,
+  trashItem?: (path: string) => Promise<void>,
+): Promise<void> => {
   const { root, absPath } = await resolveInsideRoot(id);
 
   if (absPath === root) throw new Error("Cannot delete drawings root");
 
-  const stats = await stat(absPath);
-  if (stats.isDirectory()) throw new Error("Only files can be deleted");
+  hooks?.beforeMutate?.([absPath]);
 
-  if (!isExcalidrawFileName(path.basename(id))) {
-    throw new Error("Only .excalidraw files can be deleted");
+  if (mode === "permanent") {
+    await rm(absPath, { recursive: true, force: false });
+    return;
   }
 
-  hooks?.beforeMutate?.([absPath]);
-  await rm(absPath, { force: false });
+  if (!trashItem) throw errorWithCode("Trash is unavailable", "UNKNOWN");
+  await trashItem(absPath);
 };
 
 export const listEntries = async (root?: string): Promise<FileEntry[]> => {

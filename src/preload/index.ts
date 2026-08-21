@@ -80,7 +80,7 @@ const api: NativeApi = {
     write: (id, content) => invoke(FILES_WRITE, id, content),
     writeRecover: (id, content) => invoke(FILES_WRITE_RECOVER, id, content),
     rename: (id, newName) => invoke(FILES_RENAME, id, newName),
-    delete: (id) => invoke(FILES_DELETE, id),
+    delete: (id, mode) => invoke(FILES_DELETE, id, mode),
     onChanged: (cb) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: FilesChangedEvent) =>
         cb(payload);
