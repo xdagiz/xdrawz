@@ -78,6 +78,45 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     onDirtyChange?.(fileId, next);
   };
 
+  let cachedInputs: {
+    elements: readonly OrderedExcalidrawElement[];
+    files: BinaryFiles | undefined;
+    viewBackgroundColor: unknown;
+    gridSize: unknown;
+    gridStep: unknown;
+    gridModeEnabled: unknown;
+  } | null = null;
+  let cachedSignature = "";
+
+  const signatureFor = (
+    elements: readonly OrderedExcalidrawElement[],
+    appState: AppState,
+    files: BinaryFiles | undefined,
+  ): string => {
+    if (
+      cachedInputs !== null &&
+      cachedInputs.elements === elements &&
+      cachedInputs.files === files &&
+      cachedInputs.viewBackgroundColor === appState.viewBackgroundColor &&
+      cachedInputs.gridSize === appState.gridSize &&
+      cachedInputs.gridStep === appState.gridStep &&
+      cachedInputs.gridModeEnabled === appState.gridModeEnabled
+    ) {
+      return cachedSignature;
+    }
+
+    cachedInputs = {
+      elements,
+      files,
+      viewBackgroundColor: appState.viewBackgroundColor,
+      gridSize: appState.gridSize,
+      gridStep: appState.gridStep,
+      gridModeEnabled: appState.gridModeEnabled,
+    };
+    cachedSignature = drawingSignature(elements, appState, files);
+    return cachedSignature;
+  };
+
   const persistDrawing = async (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -94,7 +133,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       if (ok) {
         saveFailures = 0;
         if (revision === latestRevision) {
-          baseline = drawingSignature(elements, appState, files);
+          baseline = signatureFor(elements, appState, files);
           setDirty(false);
         } else {
           setDirty(true);
@@ -176,7 +215,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
     if (appState.isLoading) return;
 
-    const current = drawingSignature(elements, appState, files);
+    const current = signatureFor(elements, appState, files);
     if (baseline === null) {
       baseline = current;
       latestSignature = current;
@@ -224,7 +263,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     saveFailures = 0;
     if (latestDrawing) {
       const [elements, appState, files] = latestDrawing;
-      baseline = drawingSignature(elements, appState, files);
+      baseline = signatureFor(elements, appState, files);
     }
     setDirty(false);
   };
