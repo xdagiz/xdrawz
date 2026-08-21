@@ -1,3 +1,5 @@
+import type { FileDeleteMode } from "@shared/ipc";
+import { isAncestorId } from "@shared/ipc";
 import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,12 +42,16 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
-  const renameFile = useStore((s) => s.renameFile);
-  const deleteFile = useStore((s) => s.deleteFile);
+  const renameEntry = useStore((s) => s.renameEntry);
+  const deleteEntry = useStore((s) => s.deleteEntry);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<AppError | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+    mode: FileDeleteMode;
+  } | null>(null);
 
   const entriesById = useMemo(() => buildEntriesById(entries), [entries]);
   const childIndex = useMemo(() => buildSortedChildIndex(entries), [entries]);
@@ -116,24 +122,69 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     if (!deleteTarget) return;
 
     try {
-      const ok = await deleteFile(deleteTarget.id);
+      const ok = await deleteEntry(deleteTarget.id, deleteTarget.mode);
       if (ok) toast.add({ title: `Deleted ${deleteTarget.name}`, type: "success" });
     } catch (error) {
       toast.add({ title: toAppError(error, "delete").message, type: "error" });
     } finally {
       setDeleteTarget(null);
     }
-  }, [deleteTarget, deleteFile]);
+  }, [deleteTarget, deleteEntry]);
 
   const startRename = useCallback((fileId: string) => {
     setRenameError(null);
     setRenamingId(fileId);
   }, []);
 
+  const openDelete = useCallback((id: string, name: string, mode: FileDeleteMode) => {
+    const state = useStore.getState();
+    const currentOpenId = state.openFileId;
+    const containsOpenDirty =
+      currentOpenId !== null &&
+      state.dirtyById[currentOpenId] !== undefined &&
+      (id === currentOpenId || isAncestorId(id, currentOpenId));
+
+    if (containsOpenDirty) {
+      toast.add({
+        title: "Couldn’t delete",
+        description: "The folder contains the open drawing with unsaved changes. Close it first.",
+        type: "error",
+      });
+      return;
+    }
+
+    setDeleteTarget({ id, name, mode });
+  }, []);
+
+  const handleContainerKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.target instanceof HTMLInputElement) return;
+
+      const focusedItem = tree.getItems().find((item) => item.isFocused());
+      if (!focusedItem) return;
+
+      const entry = focusedItem.getItemData();
+      if (!entry) return;
+
+      if (event.key === "F2") {
+        event.preventDefault();
+        startRename(entry.id);
+        return;
+      }
+
+      if (event.key === "Delete") {
+        event.preventDefault();
+        const mode: FileDeleteMode = event.shiftKey ? "permanent" : "trash";
+        openDelete(entry.id, stripExcalidraw(entry.name), mode);
+      }
+    },
+    [tree, startRename, openDelete],
+  );
+
   const handleContextMenu = useCallback(
     async (event: React.MouseEvent, fileId: string) => {
       const entry = entriesById.get(fileId);
-      if (!entry || entry.kind !== "file") return;
+      if (!entry) return;
 
       event.preventDefault();
 
@@ -152,18 +203,18 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
           break;
         case "delete": {
           const name = entry ? stripExcalidraw(entry.name) : fileId;
-          setDeleteTarget({ id: fileId, name });
+          openDelete(fileId, name, "trash");
           break;
         }
       }
     },
-    [entriesById, startRename],
+    [entriesById, startRename, openDelete],
   );
 
   const handleRename = useCallback(
     async (fileId: string, newName: string) => {
       try {
-        const ok = await renameFile(fileId, newName);
+        const ok = await renameEntry(fileId, newName);
         if (!ok) {
           setRenameError(null);
           setRenamingId(null);
@@ -177,7 +228,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         setRenameError(toAppError(error, "rename", false));
       }
     },
-    [renameFile],
+    [renameEntry],
   );
 
   return (
@@ -193,16 +244,14 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                   file manager to organize them.
                 </p>
               ) : (
-                <TreeContainer tree={tree}>
+                <TreeContainer tree={tree} onKeyDown={handleContainerKeyDown}>
                   {tree.getItems().map((item) => {
                     const entry = item.getItemData();
                     if (!entry || !entry.name) return null;
 
-                    const isFolder = entry.kind === "directory";
-
                     return (
                       <Fragment key={item.getKey()}>
-                        {renamingId === entry.id && !isFolder ? (
+                        {renamingId === entry.id ? (
                           <div
                             style={{
                               paddingLeft: `${item.getItemMeta().level * 16 + 16 + 6 - 11}px`,
@@ -262,13 +311,21 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete &quot;{deleteTarget?.name}&quot;?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>
+              {deleteTarget?.mode === "permanent"
+                ? `Permanently delete "${deleteTarget?.name}"?`
+                : `Delete "${deleteTarget?.name}"?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.mode === "permanent"
+                ? "This cannot be undone."
+                : "The item will be moved to the system trash. You can restore it later."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel variant="outline">Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={() => void handleDeleteConfirm()}>
-              Delete
+              {deleteTarget?.mode === "permanent" ? "Delete Forever" : "Move to Trash"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -310,17 +367,17 @@ const RenameInput = ({
       finished.current = true;
       if (action === "commit") {
         const trimmed = value.trim();
-        if (trimmed) {
+        if (!trimmed || trimmed === initial) {
+          onCancel();
+        } else {
           lastCommitted.current = trimmed;
           onCommit(trimmed);
-        } else {
-          onCancel();
         }
       } else {
         onCancel();
       }
     },
-    [value, onCommit, onCancel],
+    [value, initial, onCommit, onCancel],
   );
 
   return (

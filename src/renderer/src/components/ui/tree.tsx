@@ -7,7 +7,7 @@ import {
 } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
 import { ChevronRightIcon } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
+import type { KeyboardEventHandler, MouseEvent, ReactNode } from "react";
 import { useCallback, useMemo } from "react";
 
 import type { FileEntry } from "@shared/ipc";
@@ -82,16 +82,29 @@ export const useFileTree = ({
 export const TreeContainer = ({
   tree,
   className,
+  onKeyDown,
   children,
 }: {
   tree: FileTreeInstance;
   className?: string;
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   children: ReactNode;
-}) => (
-  <div {...tree.getContainerProps("Drawings")} className={className}>
-    {children}
-  </div>
-);
+}) => {
+  const { onKeyDown: treeOnKeyDown, ...containerProps } = tree.getContainerProps("Drawings");
+
+  return (
+    <div
+      {...containerProps}
+      className={className}
+      onKeyDown={(event) => {
+        treeOnKeyDown?.(event);
+        onKeyDown?.(event);
+      }}
+    >
+      {children}
+    </div>
+  );
+};
 
 export const TreeRow = ({
   item,
