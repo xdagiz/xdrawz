@@ -1,3 +1,4 @@
+import { useHotkey } from "@tanstack/react-hotkeys";
 import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
@@ -61,17 +62,7 @@ const App = () => {
     void initSettings();
   }, [initSettings]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key !== ",") return;
-      if (event.repeat || event.defaultPrevented) return;
-      event.preventDefault();
-      setSettingsOpen(true);
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  useHotkey("Mod+,", () => setSettingsOpen(true), { requireReset: true });
 
   useEffect(() => {
     if (!openFileId) {

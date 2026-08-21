@@ -1,3 +1,4 @@
+import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { SettingsIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Field, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   Sidebar,
   SidebarContent,
@@ -170,6 +172,13 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
             <SidebarMenuButton onClick={onOpenSettings}>
               <SettingsIcon />
               Settings
+              <KbdGroup className="ml-auto group-data-[collapsible=icon]:hidden">
+                {formatForDisplay("Mod+,")
+                  .split(" ")
+                  .map((token) => (
+                    <Kbd key={token}>{token}</Kbd>
+                  ))}
+              </KbdGroup>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarFooter>

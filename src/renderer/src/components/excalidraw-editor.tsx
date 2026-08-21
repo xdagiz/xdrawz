@@ -10,6 +10,7 @@ import type {
   BinaryFiles,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
+import { useHotkey } from "@tanstack/react-hotkeys";
 import { PanelLeftIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -129,17 +130,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     };
   }, []);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
-      event.preventDefault();
-      event.stopPropagation();
-      void sessionRef.current?.saveNow();
-    };
-
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  useHotkey("Mod+S", () => {
+    void sessionRef.current?.saveNow();
+  });
 
   const handleChange = useCallback(
     (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
