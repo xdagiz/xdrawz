@@ -2,7 +2,7 @@ import type { DrawingsSnapshot, FileEntry, FilesChangedEvent } from "@shared/ipc
 import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
-import type { SceneSessionControls } from "@/lib/scene-session";
+import type { DrawingSessionControls } from "@/lib/drawing-session";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 import { toAppError } from "./app-error";
@@ -55,7 +55,7 @@ const registerSession = (allowed: boolean) => {
     ensureCleanOrConfirm: async () => allowed,
     getSerializedContent: () => "{}",
     saveNow: async () => {},
-  } as unknown as SceneSessionControls);
+  } as unknown as DrawingSessionControls);
 };
 
 const registerSessionWithContent = (content: string | null) => {
@@ -63,7 +63,7 @@ const registerSessionWithContent = (content: string | null) => {
     ensureCleanOrConfirm: async () => true,
     getSerializedContent: () => content,
     saveNow: async () => {},
-  } as unknown as SceneSessionControls);
+  } as unknown as DrawingSessionControls);
 };
 
 describe("lastOpenedFileId", () => {

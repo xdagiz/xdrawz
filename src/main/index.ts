@@ -29,10 +29,10 @@ import { shouldQuitAfterFatal } from "./errors";
 import {
   deleteEntry,
   listEntries,
-  readSceneFile,
+  readDrawingFile,
   renameEntry,
-  writeSceneFile,
-  writeSceneFileRecover,
+  writeDrawingFile,
+  writeDrawingFileRecover,
   type FsMutationHooks,
 } from "./files";
 import {
@@ -333,8 +333,8 @@ void app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
   }
 
-  const writeSceneFileWatched = withWatchIgnore(writeSceneFile);
-  const writeSceneFileRecoverWatched = withWatchIgnore(writeSceneFileRecover);
+  const writeDrawingFileWatched = withWatchIgnore(writeDrawingFile);
+  const writeDrawingFileRecoverWatched = withWatchIgnore(writeDrawingFileRecover);
   const renameEntryWatched = withWatchIgnore(renameEntry);
   const deleteEntryWatched = withWatchIgnore(deleteEntry);
 
@@ -352,11 +352,11 @@ void app.whenReady().then(async () => {
       };
     },
     listEntries,
-    readSceneFile,
-    writeSceneFile: writeSceneFileWatched,
+    readDrawingFile,
+    writeDrawingFile: writeDrawingFileWatched,
     renameEntry: renameEntryWatched,
     deleteEntry: deleteEntryWatched,
-    writeSceneFileRecover: writeSceneFileRecoverWatched,
+    writeDrawingFileRecover: writeDrawingFileRecoverWatched,
     destroyWindow,
     markWindowReady,
     cancelQuit,

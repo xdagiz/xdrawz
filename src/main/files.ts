@@ -6,8 +6,8 @@ import path from "node:path";
 import { errorWithCode } from "@shared/errors";
 import { FILE_NOT_FOUND_MESSAGE, MAX_FILE_CONTENT_BYTES, type FileEntry } from "@shared/ipc";
 
+import { assertDrawingJson } from "./drawing-json";
 import { getDrawings } from "./drawings";
-import { assertSceneJson } from "./scene";
 
 export type FsMutationHooks = {
   beforeMutate?: (absPaths: string[]) => void;
@@ -145,7 +145,7 @@ const atomicWriteFile = async (absPath: string, data: string, hooks?: FsMutation
   }
 };
 
-export const readSceneFile = async (id: string) => {
+export const readDrawingFile = async (id: string) => {
   const { absPath } = await resolveInsideRoot(id);
 
   if (!isExcalidrawFileName(path.basename(id))) {
@@ -153,12 +153,12 @@ export const readSceneFile = async (id: string) => {
   }
 
   const stats = await stat(absPath);
-  if (stats.isDirectory()) throw new Error("Cannot read a directory as a scene");
+  if (stats.isDirectory()) throw new Error("Cannot read a directory as a drawing");
   if (stats.size > MAX_FILE_CONTENT_BYTES)
     throw errorWithCode("File is too large to load", "TOO_LARGE");
 
   const content = await readFile(absPath, "utf8");
-  assertSceneJson(content);
+  assertDrawingJson(content);
   return content;
 };
 
@@ -167,11 +167,11 @@ const ensureNotDirectory = async (absPath: string) => {
   if (existing?.isDirectory()) throw new Error("Cannot write over a directory");
 };
 
-export const writeSceneFile = async (id: string, content: string, hooks?: FsMutationHooks) => {
+export const writeDrawingFile = async (id: string, content: string, hooks?: FsMutationHooks) => {
   if (typeof content !== "string") throw new Error("Content must be a string");
 
   assertContentSize(content);
-  assertSceneJson(content);
+  assertDrawingJson(content);
 
   const { absPath } = await resolveInsideRoot(id);
 
@@ -186,7 +186,7 @@ export const writeSceneFile = async (id: string, content: string, hooks?: FsMuta
   await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);
 };
 
-export const writeSceneFileRecover = async (
+export const writeDrawingFileRecover = async (
   id: string,
   content: string,
   hooks?: FsMutationHooks,
@@ -194,7 +194,7 @@ export const writeSceneFileRecover = async (
   if (typeof content !== "string") throw new Error("Content must be a string");
 
   assertContentSize(content);
-  assertSceneJson(content);
+  assertDrawingJson(content);
 
   const { absPath } = await resolveInsideRoot(id);
 

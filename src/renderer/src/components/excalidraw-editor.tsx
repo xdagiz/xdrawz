@@ -15,7 +15,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTheme } from "@/hooks/use-theme";
 import { toAppError, type AppError } from "@/lib/app-error";
-import { createSceneSession, sceneSignature, type SceneSessionControls } from "@/lib/scene-session";
+import {
+  createDrawingSession,
+  drawingSignature,
+  type DrawingSessionControls,
+} from "@/lib/drawing-session";
 import { useStore } from "@/lib/store";
 
 import { ErrorBoundary } from "./error-boundary";
@@ -29,20 +33,20 @@ import {
   EmptyTitle,
 } from "./ui/empty";
 
-type SceneData = {
+type DrawingData = {
   elements?: ExcalidrawElement[];
   appState?: Partial<AppState> | null;
   files?: ExcalidrawInitialDataState["files"];
 };
 
-type LoadedScene = {
-  scene: ExcalidrawInitialDataState | null;
+type LoadedDrawing = {
+  drawing: ExcalidrawInitialDataState | null;
   baseline: string | null;
 };
 
-const loadScene = async (fileId: string): Promise<LoadedScene> => {
+const loadDrawing = async (fileId: string): Promise<LoadedDrawing> => {
   const content = await window.api.files.read(fileId);
-  const parsed: SceneData = JSON.parse(content);
+  const parsed: DrawingData = JSON.parse(content);
   const rawElements = Array.isArray(parsed.elements) ? parsed.elements : [];
   const files = parsed.files ?? undefined;
 
@@ -52,8 +56,8 @@ const loadScene = async (fileId: string): Promise<LoadedScene> => {
   });
 
   return {
-    scene: { elements, appState, files },
-    baseline: sceneSignature(elements, appState, files),
+    drawing: { elements, appState, files },
+    baseline: drawingSignature(elements, appState, files),
   };
 };
 
@@ -68,18 +72,18 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const registerSession = useStore((s) => s.registerSession);
   const unregisterSession = useStore((s) => s.unregisterSession);
 
-  const sessionRef = useRef<SceneSessionControls | null>(null);
+  const sessionRef = useRef<DrawingSessionControls | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   const initialData = useMemo(() => {
     return async () => {
       try {
-        const loaded = await loadScene(fileId);
+        const loaded = await loadDrawing(fileId);
         sessionRef.current?.setInitialBaseline(loaded.baseline);
-        return loaded.scene;
+        return loaded.drawing;
       } catch (error) {
-        console.error("Failed to load excalidraw scene:", error);
+        console.error("Failed to load drawing:", error);
         sessionRef.current?.resetBaseline();
         setLoadError(toAppError(error, "read"));
         return null;
@@ -88,7 +92,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }, [fileId]);
 
   useEffect(() => {
-    const session = createSceneSession({
+    const session = createDrawingSession({
       fileId,
       save: saveFile,
       onDirtyChange: setFileDirty,

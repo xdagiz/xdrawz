@@ -7,7 +7,12 @@ vi.mock("@excalidraw/excalidraw", () => ({
     JSON.stringify({ scene: true, vbg: appState?.viewBackgroundColor }),
 }));
 
-import { AUTOSAVE_MS, createSceneSession, MAX_SAVE_RETRIES, sceneSignature } from "./scene-session";
+import {
+  AUTOSAVE_MS,
+  createDrawingSession,
+  drawingSignature,
+  MAX_SAVE_RETRIES,
+} from "./drawing-session";
 
 const el = (id: string) => ({ id, type: "rectangle" }) as unknown as OrderedExcalidrawElement;
 
@@ -18,7 +23,7 @@ const appState = (
 
 const emptyFiles = {} as BinaryFiles;
 
-type Session = ReturnType<typeof createSceneSession>;
+type Session = ReturnType<typeof createDrawingSession>;
 
 const makeSession = (overrides?: {
   save?: (id: string, content: string) => Promise<boolean>;
@@ -27,7 +32,7 @@ const makeSession = (overrides?: {
 }): { session: Session; dirty: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn> } => {
   const dirty = vi.fn();
   const save = overrides?.save ? vi.fn(overrides.save) : vi.fn().mockResolvedValue(true);
-  const session = createSceneSession({
+  const session = createDrawingSession({
     fileId: "f1",
     save,
     onDirtyChange: overrides?.onDirtyChange ?? dirty,
@@ -36,7 +41,7 @@ const makeSession = (overrides?: {
   return { session, dirty, save };
 };
 
-describe("createSceneSession", () => {
+describe("createDrawingSession", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -135,7 +140,7 @@ describe("createSceneSession", () => {
   });
 
   it("does not save when the first commit matches a grid-bearing disk baseline", async () => {
-    const sig = sceneSignature(
+    const sig = drawingSignature(
       [el("a")],
       appState("#ffffff", { gridModeEnabled: true, gridSize: 40 }),
       emptyFiles,
@@ -153,7 +158,7 @@ describe("createSceneSession", () => {
   });
 
   it("marks dirty until it persists when the first commit differs from the disk baseline", async () => {
-    const diskBaseline = sceneSignature([el("raw")], appState("#000000"), emptyFiles);
+    const diskBaseline = drawingSignature([el("raw")], appState("#000000"), emptyFiles);
     const { session, dirty, save } = makeSession({ initialBaseline: diskBaseline });
 
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
@@ -164,7 +169,7 @@ describe("createSceneSession", () => {
   });
 
   it("does not write when the first commit matches the disk baseline", async () => {
-    const sig = sceneSignature([el("a")], appState("#ffffff"), emptyFiles);
+    const sig = drawingSignature([el("a")], appState("#ffffff"), emptyFiles);
     const { session, dirty, save } = makeSession({ initialBaseline: sig });
 
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
@@ -259,9 +264,9 @@ describe("createSceneSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
-  it("saveNow persists the latest scene immediately", async () => {
+  it("saveNow persists the latest drawing immediately", async () => {
     const { session, dirty, save } = makeSession({
-      initialBaseline: sceneSignature([el("a")], appState(), emptyFiles),
+      initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
     });
 
     session.onChange([el("a")], appState(), emptyFiles);
@@ -293,7 +298,7 @@ describe("createSceneSession", () => {
     const save = vi.fn().mockResolvedValue(false);
     const { session } = makeSession({
       save,
-      initialBaseline: sceneSignature([el("a")], appState(), emptyFiles),
+      initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
     });
 
     session.onChange([el("a")], appState(), emptyFiles);
@@ -306,7 +311,7 @@ describe("createSceneSession", () => {
   });
 
   it("resetBaseline lets a later load re-establish the baseline without a spurious save", async () => {
-    const diskBaseline = sceneSignature([el("a")], appState("#ffffff"), emptyFiles);
+    const diskBaseline = drawingSignature([el("a")], appState("#ffffff"), emptyFiles);
     const { session, dirty, save } = makeSession();
 
     // Failed load: a placeholder scene captures the baseline (no disk baseline
@@ -353,7 +358,7 @@ describe("createSceneSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
-  it("saveNow before any scene has loaded is a no-op", async () => {
+  it("saveNow before any drawing has loaded is a no-op", async () => {
     const { session, dirty, save } = makeSession();
     const saved = await session.saveNow();
     expect(saved).toBe(false);
@@ -361,7 +366,7 @@ describe("createSceneSession", () => {
     expect(dirty).not.toHaveBeenCalled();
   });
 
-  it("getSerializedContent returns the latest scene", () => {
+  it("getSerializedContent returns the latest drawing", () => {
     const { session } = makeSession({ save: vi.fn().mockResolvedValue(true) });
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
     expect(session.getSerializedContent()).toBe(JSON.stringify({ scene: true, vbg: "#ffffff" }));

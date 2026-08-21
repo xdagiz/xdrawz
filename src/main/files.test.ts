@@ -19,7 +19,7 @@ vi.mock("./drawings", () => ({
   }),
 }));
 
-import { listEntries, readSceneFile, writeSceneFile, writeSceneFileRecover } from "./files";
+import { listEntries, readDrawingFile, writeDrawingFile, writeDrawingFileRecover } from "./files";
 
 const SCENE = '{"elements":[],"files":{}}\n';
 
@@ -46,57 +46,59 @@ describe("files", () => {
   });
 
   it("rejects paths that escape the drawings root", async () => {
-    await expect(readSceneFile("../secret.excalidraw")).rejects.toThrow(
+    await expect(readDrawingFile("../secret.excalidraw")).rejects.toThrow(
       "Path escapes drawings root",
     );
-    await expect(writeSceneFile("..%2fsecret.excalidraw", SCENE)).rejects.toThrow(
+    await expect(writeDrawingFile("..%2fsecret.excalidraw", SCENE)).rejects.toThrow(
       FILE_NOT_FOUND_MESSAGE,
     );
   });
 
   it("treats ids as literal file names", async () => {
     await writeFile(path.join(ctx.root, "100%.excalidraw"), SCENE);
-    await expect(readSceneFile("100%.excalidraw")).resolves.toBe(SCENE);
+    await expect(readDrawingFile("100%.excalidraw")).resolves.toBe(SCENE);
 
     await writeFile(path.join(ctx.root, "a%20b.excalidraw"), SCENE);
-    await expect(readSceneFile("a%20b.excalidraw")).resolves.toBe(SCENE);
-    await expect(readSceneFile("a b.excalidraw")).rejects.toThrow();
+    await expect(readDrawingFile("a%20b.excalidraw")).resolves.toBe(SCENE);
+    await expect(readDrawingFile("a b.excalidraw")).rejects.toThrow();
 
-    await writeSceneFile("100%.excalidraw", SCENE);
-    await expect(readSceneFile("100%.excalidraw")).resolves.toBe(SCENE);
+    await writeDrawingFile("100%.excalidraw", SCENE);
+    await expect(readDrawingFile("100%.excalidraw")).resolves.toBe(SCENE);
   });
 
-  it("reads and writes existing scene files", async () => {
+  it("reads and writes existing drawing files", async () => {
     await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
-    await expect(readSceneFile("a.excalidraw")).resolves.toBe(SCENE);
+    await expect(readDrawingFile("a.excalidraw")).resolves.toBe(SCENE);
 
-    await writeSceneFile("a.excalidraw", '{"elements":[{"id":"x"}],"files":{}}');
+    await writeDrawingFile("a.excalidraw", '{"elements":[{"id":"x"}],"files":{}}');
     const onDisk = await readFile(path.join(ctx.root, "a.excalidraw"), "utf8");
     expect(onDisk).toContain('"id":"x"');
     expect(onDisk.endsWith("\n")).toBe(true);
   });
 
-  it("refuses to write a scene that does not exist", async () => {
-    await expect(writeSceneFile("missing.excalidraw", SCENE)).rejects.toThrow(
+  it("refuses to write a drawing that does not exist", async () => {
+    await expect(writeDrawingFile("missing.excalidraw", SCENE)).rejects.toThrow(
       FILE_NOT_FOUND_MESSAGE,
     );
   });
 
-  it("recover creates missing scene files, including nested directories", async () => {
-    await writeSceneFileRecover("folder/new.excalidraw", SCENE);
-    await expect(readSceneFile("folder/new.excalidraw")).resolves.toBe(SCENE);
+  it("recover creates missing drawing files, including nested directories", async () => {
+    await writeDrawingFileRecover("folder/new.excalidraw", SCENE);
+    await expect(readDrawingFile("folder/new.excalidraw")).resolves.toBe(SCENE);
   });
 
-  it("rejects non-excalidraw files and invalid scene JSON", async () => {
+  it("rejects non-excalidraw files and invalid drawing JSON", async () => {
     await writeFile(path.join(ctx.root, "notes.txt"), "hi");
-    await expect(readSceneFile("notes.txt")).rejects.toThrow("Only .excalidraw files can be read");
-    await expect(writeSceneFile("notes.txt", SCENE)).rejects.toThrow(
+    await expect(readDrawingFile("notes.txt")).rejects.toThrow(
+      "Only .excalidraw files can be read",
+    );
+    await expect(writeDrawingFile("notes.txt", SCENE)).rejects.toThrow(
       "Only .excalidraw files can be written",
     );
 
     await writeFile(path.join(ctx.root, "bad.excalidraw"), "{nope");
-    await expect(readSceneFile("bad.excalidraw")).rejects.toThrow(
-      "Scene content is not valid JSON",
+    await expect(readDrawingFile("bad.excalidraw")).rejects.toThrow(
+      "Drawing content is not valid JSON",
     );
   });
 });

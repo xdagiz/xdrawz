@@ -15,7 +15,7 @@ import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
 import { toAppError, type AppError } from "@/lib/app-error";
-import type { SceneSessionControls } from "@/lib/scene-session";
+import type { DrawingSessionControls } from "@/lib/drawing-session";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
 const isOpenableFile = (
@@ -119,7 +119,7 @@ type State = {
   openFileId: string | null;
   dirtyById: Record<string, true>;
   error: AppError | null;
-  activeSession: SceneSessionControls | null;
+  activeSession: DrawingSessionControls | null;
   filesRevision: number;
   externalConflict: ExternalConflict;
   watcherDown: string | null;
@@ -148,8 +148,8 @@ type State = {
     content?: string,
     opts?: { force?: boolean },
   ) => Promise<"recover" | "discard" | "cancel">;
-  registerSession: (session: SceneSessionControls) => void;
-  unregisterSession: (session: SceneSessionControls) => void;
+  registerSession: (session: DrawingSessionControls) => void;
+  unregisterSession: (session: DrawingSessionControls) => void;
   ensureCleanOrConfirm: (reason?: UnsavedReason) => Promise<boolean>;
   initSettings: () => Promise<void>;
   updateSettings: (updated: SettingsUpdate) => Promise<boolean>;

@@ -196,9 +196,9 @@ const deps = {
   loadDrawings: vi.fn(),
   listEntries: vi.fn(),
   pickDrawings: vi.fn(),
-  readSceneFile: vi.fn(),
-  writeSceneFile: vi.fn(),
-  writeSceneFileRecover: vi.fn(),
+  readDrawingFile: vi.fn(),
+  writeDrawingFile: vi.fn(),
+  writeDrawingFileRecover: vi.fn(),
   renameEntry: vi.fn(),
   deleteEntry: vi.fn(),
   destroyWindow: vi.fn(),
@@ -350,8 +350,8 @@ describe("registerIpcHandlers wiring", () => {
 
   it("forwards invoke args to the dep", async () => {
     const handler = handlers.get(FILES_WRITE)!;
-    await handler(eventFor(), "scene-1", "content");
-    expect(deps.writeSceneFile).toHaveBeenCalledWith("scene-1", "content");
+    await handler(eventFor(), "drawing-1", "content");
+    expect(deps.writeDrawingFile).toHaveBeenCalledWith("drawing-1", "content");
   });
 
   it("forwards send-style messages to the dep", () => {
@@ -397,19 +397,19 @@ describe("registerIpcHandlers error propagation", () => {
 
   it("propagates handler rejections as plain errors", async () => {
     const handler = handlers.get(FILES_READ)!;
-    deps.readSceneFile.mockRejectedValue(new Error("Scene content is not valid JSON"));
+    deps.readDrawingFile.mockRejectedValue(new Error("Drawing content is not valid JSON"));
 
     await expect(handler(eventFor(), "broken.excalidraw")).resolves.toEqual(
       expect.objectContaining({
         ok: false,
-        error: expect.objectContaining({ message: "Scene content is not valid JSON" }),
+        error: expect.objectContaining({ message: "Drawing content is not valid JSON" }),
       }),
     );
   });
 
   it("propagates sync handler throws as plain errors", async () => {
     const handler = handlers.get(FILES_WRITE)!;
-    deps.writeSceneFile.mockRejectedValue(new Error("disk on fire"));
+    deps.writeDrawingFile.mockRejectedValue(new Error("disk on fire"));
 
     await expect(handler(eventFor(), "a.excalidraw", "{}")).resolves.toEqual(
       expect.objectContaining({

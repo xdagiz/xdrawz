@@ -102,9 +102,9 @@ type Deps = {
   loadDrawings: () => Promise<DrawingsSnapshot>;
   listEntries: (root?: string) => Promise<FileEntry[]>;
   pickDrawings: (parentWindow: BrowserWindow | null) => Promise<DrawingInfo | null>;
-  readSceneFile: (id: string) => Promise<string>;
-  writeSceneFile: (id: string, content: string) => Promise<void>;
-  writeSceneFileRecover: (id: string, content: string) => Promise<void>;
+  readDrawingFile: (id: string) => Promise<string>;
+  writeDrawingFile: (id: string, content: string) => Promise<void>;
+  writeDrawingFileRecover: (id: string, content: string) => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
   deleteEntry: (id: string) => Promise<void>;
   destroyWindow: (win: BrowserWindow, requestId: number) => void;
@@ -249,7 +249,7 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(FILES_READ, "read", (_event, ...args) => {
     const id = requireString(args[0], "id");
-    return deps.readSceneFile(id);
+    return deps.readDrawingFile(id);
   });
 
   handle(FILES_RENAME, "rename", (_event, ...args) => {
@@ -261,7 +261,7 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(FILES_WRITE, "save", (_event, ...args) => {
     const id = requireString(args[0], "id");
     const content = requireString(args[1], "content");
-    return deps.writeSceneFile(id, content);
+    return deps.writeDrawingFile(id, content);
   });
 
   handle(FILES_DELETE, "delete", (_event, ...args) => {
@@ -372,7 +372,7 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(FILES_WRITE_RECOVER, "recover", (_event, ...args) => {
     const id = requireString(args[0], "id");
     const content = requireString(args[1], "content");
-    return deps.writeSceneFileRecover(id, content);
+    return deps.writeDrawingFileRecover(id, content);
   });
 
   handle(DIALOG_FILE_RECOVER, "unexpected", async (event, ...args) => {

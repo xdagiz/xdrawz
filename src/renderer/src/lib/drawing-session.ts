@@ -10,13 +10,13 @@ export const AUTOSAVE_MS = 5_000;
 
 export const MAX_SAVE_RETRIES = 3;
 
-type SceneSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFiles];
+type DrawingSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFiles];
 
 type FlushOpts = {
   force?: boolean;
 };
 
-export type SceneSessionControls = {
+export type DrawingSessionControls = {
   onChange: (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -38,14 +38,14 @@ export type SceneSessionControls = {
 
 type SaveOrigin = "auto" | "explicit";
 
-type SceneSessionDeps = {
+type DrawingSessionDeps = {
   fileId: string;
   save: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
   initialBaseline?: string | null;
 };
 
-export const sceneSignature = (
+export const drawingSignature = (
   elements: readonly OrderedExcalidrawElement[],
   appState: RestoredDataState["appState"],
   files: BinaryFiles | undefined,
@@ -59,12 +59,12 @@ export const sceneSignature = (
     gridModeEnabled: appState.gridModeEnabled,
   });
 
-export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls => {
+export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionControls => {
   const { fileId, save, onDirtyChange, initialBaseline = null } = deps;
 
   let baseline: string | null = null;
   let diskBaseline = initialBaseline;
-  let latestScene: SceneSnapshot | null = null;
+  let latestDrawing: DrawingSnapshot | null = null;
   let latestSignature: string | null = null;
   let latestRevision = 0;
   let savesInFlight = 0;
@@ -80,7 +80,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     onDirtyChange?.(fileId, next);
   };
 
-  const persistScene = async (
+  const persistDrawing = async (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
     files: BinaryFiles,
@@ -96,7 +96,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
       if (ok) {
         saveFailures = 0;
         if (revision === latestRevision) {
-          baseline = sceneSignature(elements, appState, files);
+          baseline = drawingSignature(elements, appState, files);
           setDirty(false);
         } else {
           setDirty(true);
@@ -124,7 +124,7 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
       origin: SaveOrigin = "auto",
     ) => {
       if (blocked || disposed) return;
-      await persistScene(elements, appState, files, revision, origin);
+      await persistDrawing(elements, appState, files, revision, origin);
     },
     AUTOSAVE_MS,
   );
@@ -139,9 +139,9 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     if (temporarilyUnblocked) blocked = false;
 
     try {
-      if (force && latestScene) {
+      if (force && latestDrawing) {
         debounced.cancel();
-        const [elements, appState, files] = latestScene;
+        const [elements, appState, files] = latestDrawing;
         debounced(elements, appState, files, latestRevision, "explicit");
         await debounced.flush({ force: true });
         return;
@@ -153,9 +153,9 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   };
 
   const saveNow = async () => {
-    if (disposed || blocked || !latestScene || diskBaseline === null) return false;
+    if (disposed || blocked || !latestDrawing || diskBaseline === null) return false;
 
-    const [elements, appState, files] = latestScene;
+    const [elements, appState, files] = latestDrawing;
     debounced.cancel();
     debounced(elements, appState, files, latestRevision, "explicit");
     await debounced.flush({ force: true });
@@ -163,8 +163,8 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   };
 
   const getSerializedContent = () => {
-    if (!latestScene) return null;
-    const [elements, appState, files] = latestScene;
+    if (!latestDrawing) return null;
+    const [elements, appState, files] = latestDrawing;
     return serializeAsJSON(elements, appState, files, "local");
   };
 
@@ -174,18 +174,18 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
     files: BinaryFiles,
   ) => {
     if (disposed) return;
-    latestScene = [elements, appState, files];
+    latestDrawing = [elements, appState, files];
 
     if (appState.isLoading) return;
 
-    const current = sceneSignature(elements, appState, files);
+    const current = drawingSignature(elements, appState, files);
     if (baseline === null) {
       baseline = current;
       latestSignature = current;
       if (diskBaseline != null && current !== diskBaseline) {
         latestRevision += 1;
         setDirty(true);
-        void persistScene(elements, appState, files, latestRevision);
+        void persistDrawing(elements, appState, files, latestRevision);
       }
 
       return;
@@ -224,9 +224,9 @@ export const createSceneSession = (deps: SceneSessionDeps): SceneSessionControls
   const abandon = () => {
     debounced.cancel();
     saveFailures = 0;
-    if (latestScene) {
-      const [elements, appState, files] = latestScene;
-      baseline = sceneSignature(elements, appState, files);
+    if (latestDrawing) {
+      const [elements, appState, files] = latestDrawing;
+      baseline = drawingSignature(elements, appState, files);
     }
     setDirty(false);
   };

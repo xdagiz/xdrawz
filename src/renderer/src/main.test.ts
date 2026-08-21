@@ -2,7 +2,7 @@ import type { WindowCloseRequest } from "@shared/ipc";
 import type { ReactNode } from "react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { SceneSessionControls } from "./lib/scene-session";
+import type { DrawingSessionControls } from "./lib/drawing-session";
 import { useStore } from "./lib/store";
 
 const hoisted = vi.hoisted(() => ({
@@ -35,7 +35,7 @@ let onWillClose: (request: WindowCloseRequest) => void;
 let onCloseCancelled: () => void;
 let consoleError: ReturnType<typeof vi.spyOn>;
 
-type FakeSession = SceneSessionControls & {
+type FakeSession = DrawingSessionControls & {
   setAutosavePaused: ReturnType<typeof vi.fn>;
   flush: ReturnType<typeof vi.fn>;
   isDirty: ReturnType<typeof vi.fn>;
@@ -50,7 +50,7 @@ const fakeSession = (): FakeSession => {
   return session as unknown as FakeSession;
 };
 
-const expectAutosave = (session: SceneSessionControls) =>
+const expectAutosave = (session: DrawingSessionControls) =>
   session.setAutosavePaused as unknown as ReturnType<typeof vi.fn>;
 
 describe("window close flow (renderer)", () => {
@@ -103,7 +103,7 @@ describe("window close flow (renderer)", () => {
     expect(expectAutosave(session)).toHaveBeenCalledWith(true);
   });
 
-  it("closes after a flush that persists the scene", async () => {
+  it("closes after a flush that persists the drawing", async () => {
     const session = fakeSession();
     session.isDirty.mockReturnValue(false);
     useStore.setState({ activeSession: session, dirtyById: { f1: true } });
@@ -115,7 +115,7 @@ describe("window close flow (renderer)", () => {
     expect(hoisted.api.window.cancelQuit).not.toHaveBeenCalled();
   });
 
-  it("aborts the close when the flush fails to persist the scene", async () => {
+  it("aborts the close when the flush fails to persist the drawing", async () => {
     // flush() resolves without throwing when the write fails, leaving the
     // session dirty; the window must not close in that case.
     const session = fakeSession();
