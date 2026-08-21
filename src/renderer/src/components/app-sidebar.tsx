@@ -32,10 +32,19 @@ import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/compon
 import { useExpandedFolders } from "@/hooks/use-expanded-folders";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
-import { ancestorIdsOf, buildEntriesById, buildSortedChildIndex } from "@/lib/tree";
+import {
+  TYPEAHEAD_RESET_MS,
+  ancestorIdsOf,
+  buildEntriesById,
+  buildSortedChildIndex,
+  findTypeaheadMatch,
+} from "@/lib/tree";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { toast } from "./ui/toast";
+
+const isTypeaheadChar = (event: React.KeyboardEvent<HTMLDivElement>): boolean =>
+  event.key !== " " && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
 
 export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) => {
   const entries = useStore((s) => s.entries);
@@ -52,6 +61,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     name: string;
     mode: FileDeleteMode;
   } | null>(null);
+  const typeahead = useRef({ buffer: "", at: 0 });
 
   const entriesById = useMemo(() => buildEntriesById(entries), [entries]);
   const childIndex = useMemo(() => buildSortedChildIndex(entries), [entries]);
@@ -160,10 +170,11 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (event.target instanceof HTMLInputElement) return;
 
-      const focusedItem = tree.getItems().find((item) => item.isFocused());
-      if (!focusedItem) return;
+      const items = tree.getItems();
+      const focusedIndex = items.findIndex((item) => item.isFocused());
+      if (focusedIndex === -1) return;
 
-      const entry = focusedItem.getItemData();
+      const entry = items[focusedIndex].getItemData();
       if (!entry) return;
 
       if (event.key === "F2") {
@@ -176,6 +187,24 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         event.preventDefault();
         const mode: FileDeleteMode = event.shiftKey ? "permanent" : "trash";
         openDelete(entry.id, stripExcalidraw(entry.name), mode);
+        return;
+      }
+
+      if (!isTypeaheadChar(event)) return;
+      event.preventDefault();
+
+      const now = Date.now();
+      typeahead.current.buffer =
+        now - typeahead.current.at > TYPEAHEAD_RESET_MS
+          ? event.key
+          : typeahead.current.buffer + event.key;
+      typeahead.current.at = now;
+
+      const names = items.map((item) => item.getItemName());
+      const hit = findTypeaheadMatch(names, focusedIndex, typeahead.current.buffer);
+      if (hit !== null) {
+        items[hit].setFocused();
+        tree.updateDomFocus();
       }
     },
     [tree, startRename, openDelete],

@@ -5,6 +5,7 @@ import {
   EXPANDED_FOLDERS_STORAGE_KEY,
   ancestorIdsOf,
   buildSortedChildIndex,
+  findTypeaheadMatch,
   readExpandedFolderIds,
   sortSiblings,
   writeExpandedFolderIds,
@@ -79,6 +80,46 @@ describe("buildSortedChildIndex", () => {
       "sketch 2.excalidraw",
       "sketch 10.excalidraw",
     ]);
+  });
+});
+
+describe("findTypeaheadMatch", () => {
+  const names = ["alpha", "Beta", "boat", "cat"];
+
+  it("finds the first forward match after the start index", () => {
+    expect(findTypeaheadMatch(names, 0, "b")).toBe(1);
+    expect(findTypeaheadMatch(names, 1, "c")).toBe(3);
+  });
+
+  it("wraps around past the end", () => {
+    expect(findTypeaheadMatch(names, 2, "a")).toBe(0);
+    expect(findTypeaheadMatch(names, 3, "b")).toBe(1);
+  });
+
+  it("matches accumulated prefixes case-insensitively", () => {
+    expect(findTypeaheadMatch(names, 0, "be")).toBe(1);
+    expect(findTypeaheadMatch(names, 0, "BO")).toBe(2);
+    expect(findTypeaheadMatch(names, 1, "boat")).toBe(2);
+  });
+
+  it("cycles repeated letters through successive matches", () => {
+    const cycleNames = ["ab", "cd", "ae", "af"];
+
+    const first = findTypeaheadMatch(cycleNames, 0, "a");
+    const second = findTypeaheadMatch(cycleNames, first ?? -1, "a");
+
+    expect(first).toBe(2);
+    expect(second).toBe(3);
+    expect(findTypeaheadMatch(cycleNames, second ?? -1, "a")).toBe(0);
+  });
+
+  it("returns null on a miss", () => {
+    expect(findTypeaheadMatch(names, 0, "zzz")).toBeNull();
+  });
+
+  it("returns null for an empty query or empty list", () => {
+    expect(findTypeaheadMatch(names, 0, "")).toBeNull();
+    expect(findTypeaheadMatch([], 0, "a")).toBeNull();
   });
 });
 

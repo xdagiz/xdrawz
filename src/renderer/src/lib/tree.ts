@@ -36,6 +36,26 @@ export const buildEntriesById = (entries: FileEntry[]): Map<string, FileEntry> =
   return map;
 };
 
+export const TYPEAHEAD_RESET_MS = 500;
+
+export const findTypeaheadMatch = (
+  names: string[],
+  startIndex: number,
+  query: string,
+): number | null => {
+  const count = names.length;
+  if (!query || count === 0) return null;
+
+  const needle = query.toLowerCase();
+
+  for (let step = 1; step <= count; step += 1) {
+    const index = (startIndex + step) % count;
+    if (names[index].toLowerCase().startsWith(needle)) return index;
+  }
+
+  return null;
+};
+
 export const ancestorIdsOf = (id: string): string[] => {
   const out: string[] = [];
   let current = parentIdOf(id);
