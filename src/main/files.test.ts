@@ -19,7 +19,14 @@ vi.mock("./drawings", () => ({
   }),
 }));
 
-import { listEntries, readDrawingFile, writeDrawingFile, writeDrawingFileRecover } from "./files";
+import {
+  deleteEntry,
+  listEntries,
+  readDrawingFile,
+  renameEntry,
+  writeDrawingFile,
+  writeDrawingFileRecover,
+} from "./files";
 
 const SCENE = '{"elements":[],"files":{}}\n';
 
@@ -100,5 +107,49 @@ describe("files", () => {
     await expect(readDrawingFile("bad.excalidraw")).rejects.toThrow(
       "Drawing content is not valid JSON",
     );
+  });
+
+  it("renames within the same folder and appends the extension", async () => {
+    await mkdir(path.join(ctx.root, "folder"));
+    await writeFile(path.join(ctx.root, "folder", "a.excalidraw"), SCENE);
+
+    const entry = await renameEntry("folder/a.excalidraw", "b");
+
+    expect(entry.id).toBe("folder/b.excalidraw");
+    await expect(readDrawingFile("folder/b.excalidraw")).resolves.toBe(SCENE);
+    await expect(readDrawingFile("folder/a.excalidraw")).rejects.toThrow();
+
+    const same = await renameEntry("folder/b.excalidraw", "b.excalidraw");
+    expect(same.id).toBe("folder/b.excalidraw");
+  });
+
+  it("refuses renaming directories, collisions, and separator names", async () => {
+    await mkdir(path.join(ctx.root, "folder"));
+    await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
+    await writeFile(path.join(ctx.root, "b.excalidraw"), SCENE);
+
+    await expect(renameEntry("folder", "x")).rejects.toThrow("Only files can be renamed");
+    await expect(renameEntry("a.excalidraw", "b")).rejects.toThrow(
+      "A file with that name already exists",
+    );
+    await expect(renameEntry("a.excalidraw", "../escape")).rejects.toThrow(
+      "Name cannot contain path separators",
+    );
+
+    const entries = await listEntries();
+    expect(entries.map((e) => e.id)).toEqual(["a.excalidraw", "b.excalidraw", "folder"]);
+  });
+
+  it("deletes drawings and refuses directories, the root, and other files", async () => {
+    await mkdir(path.join(ctx.root, "folder"));
+    await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
+    await writeFile(path.join(ctx.root, "notes.txt"), "hi");
+
+    await deleteEntry("a.excalidraw");
+    await expect(readDrawingFile("a.excalidraw")).rejects.toThrow();
+
+    await expect(deleteEntry("folder")).rejects.toThrow("Only files can be deleted");
+    await expect(deleteEntry(".")).rejects.toThrow("Cannot delete drawings root");
+    await expect(deleteEntry("notes.txt")).rejects.toThrow("Only .excalidraw files can be deleted");
   });
 });
