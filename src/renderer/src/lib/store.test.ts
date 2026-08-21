@@ -483,6 +483,10 @@ describe("renameFile/deleteFile cancellation", () => {
 
     expect(ok).toBe(true);
     expect(useStore.getState().openFileId).toBe("renamed.excalidraw");
+    expect(window.api.files.list).not.toHaveBeenCalled();
+    const ids = useStore.getState().entries.map((e) => e.id);
+    expect(ids).toContain("renamed.excalidraw");
+    expect(ids).not.toContain("file-1");
   });
 
   it("deleteFile returns true on success", async () => {
@@ -490,6 +494,8 @@ describe("renameFile/deleteFile cancellation", () => {
 
     expect(ok).toBe(true);
     expect(window.api.files.delete).toHaveBeenCalledWith("file-2");
+    expect(window.api.files.list).not.toHaveBeenCalled();
+    expect(useStore.getState().entries.some((e) => e.id === "file-2")).toBe(false);
   });
 });
 

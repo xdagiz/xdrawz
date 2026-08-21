@@ -270,8 +270,8 @@ export const useStore = create<State>((set, get) => {
       }
 
       const entry = await window.api.files.rename(id, newName);
-      const { openFileId, dirtyById } = get();
-      const entries = await window.api.files.list();
+      const { openFileId, dirtyById, entries } = get();
+      const nextEntries = upsertSorted(entries, entry, id);
 
       const nextDirty = { ...dirtyById };
       if (id !== entry.id && nextDirty[id]) {
@@ -280,7 +280,7 @@ export const useStore = create<State>((set, get) => {
       }
 
       set({
-        entries,
+        entries: nextEntries,
         openFileId: openFileId === id ? entry.id : openFileId,
         dirtyById: nextDirty,
         error: null,
@@ -295,14 +295,14 @@ export const useStore = create<State>((set, get) => {
       }
 
       await window.api.files.delete(id);
-      const { openFileId, dirtyById } = get();
-      const entries = await window.api.files.list();
+      const { openFileId, dirtyById, entries } = get();
+      const nextEntries = entries.filter((e) => e.id !== id);
 
       const nextDirty = { ...dirtyById };
       delete nextDirty[id];
 
       set({
-        entries,
+        entries: nextEntries,
         openFileId: openFileId === id ? null : openFileId,
         dirtyById: nextDirty,
         error: null,
