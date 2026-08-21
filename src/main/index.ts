@@ -62,11 +62,10 @@ process.on("uncaughtException", (error) => {
 
 process.on("unhandledRejection", (reason) => {
   log.error("[main:unhandledRejection]", reason);
-  dialog.showErrorBox("xdrawz error", reason instanceof Error ? reason.message : String(reason));
-  app.exit(1);
 });
 
 app.on("render-process-gone", (_event, _contents, details) => {
+  if (details.reason === "clean-exit") return;
   log.error("[render-process-gone]", details);
   const shouldQuit = shouldQuitAfterFatal(Date.now());
   if (shouldQuit) {
@@ -213,25 +212,14 @@ function wireNavigationPolicy(win: BrowserWindow) {
   });
 }
 
-function createMainWindow() {
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false,
-    backgroundColor: windowBgColor(),
-    ...(process.platform === "linux" ? { icon } : {}),
-    webPreferences: {
-      preload: join(__dirname, "../preload/index.cjs"),
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
+const baseWebPreferences = () => ({
+  preload: join(__dirname, "../preload/index.cjs"),
+  sandbox: true,
+  contextIsolation: true,
+  nodeIntegration: false,
+});
 
-  showWhenReady(win);
-  installCloseGuard(win);
-  wireNavigationPolicy(win);
-
+function wireRendererDiagnostics(win: BrowserWindow) {
   win.webContents.on("preload-error", (_event, preloadPath, error) =>
     log.error("Preload failed:", preloadPath, error),
   );
@@ -239,16 +227,33 @@ function createMainWindow() {
   win.webContents.on("unresponsive", () => {
     log.warn("[webContents] unresponsive", win.id);
   });
+}
 
-  win.on("unresponsive", () => {
-    log.warn("[window] unresponsive", win.id);
+function loadRendererPage(win: BrowserWindow, devPath: string, prodUrl: string) {
+  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+    const base = process.env["ELECTRON_RENDERER_URL"].replace(/\/$/, "");
+    void win.loadURL(devPath ? `${base}/${devPath}` : base);
+    return;
+  }
+
+  void win.loadURL(prodUrl);
+}
+
+function createMainWindow() {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: false,
+    backgroundColor: windowBgColor(),
+    ...(process.platform === "linux" ? { icon } : {}),
+    webPreferences: baseWebPreferences(),
   });
 
-  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-  } else {
-    void win.loadURL(APP_INDEX_URL);
-  }
+  showWhenReady(win);
+  installCloseGuard(win);
+  wireNavigationPolicy(win);
+  wireRendererDiagnostics(win);
+  loadRendererPage(win, "", APP_INDEX_URL);
 
   return win;
 }
@@ -263,32 +268,13 @@ function createGreetingWindow() {
     show: false,
     backgroundColor: windowBgColor(),
     ...(process.platform === "linux" ? { type: "splash" } : {}),
-    webPreferences: {
-      preload: join(__dirname, "../preload/index.cjs"),
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
+    webPreferences: baseWebPreferences(),
   });
 
   showWhenReady(greetingWindow);
   wireNavigationPolicy(greetingWindow);
-
-  greetingWindow.webContents.on("preload-error", (_event, preloadPath, error) =>
-    log.error("Preload failed:", preloadPath, error),
-  );
-
-  greetingWindow.webContents.on("unresponsive", () => {
-    log.warn("[webContents] unresponsive", greetingWindow.id);
-  });
-
-  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    void greetingWindow.loadURL(
-      process.env["ELECTRON_RENDERER_URL"].replace(/\/$/, "") + "/greeting.html",
-    );
-  } else {
-    void greetingWindow.loadURL(APP_GREETING_URL);
-  }
+  wireRendererDiagnostics(greetingWindow);
+  loadRendererPage(greetingWindow, "greeting.html", APP_GREETING_URL);
 
   return greetingWindow;
 }
@@ -325,7 +311,7 @@ void app.whenReady().then(async () => {
       const level = win.webContents.getZoomLevel();
       const next = zoomIn ? level + 0.5 : zoomOut ? level - 0.5 : 0;
       win.webContents.setZoomLevel(next);
-      setZoomLevel(next);
+      setZoomLevel(win.webContents.getZoomLevel());
     });
   });
 
