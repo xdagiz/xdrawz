@@ -46,6 +46,38 @@
   }
 }
 
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lg-button-size, 2.25rem);
+  height: var(--lg-button-size, 2.25rem);
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-lg, 0.5rem);
+  background-color: var(--color-surface-low, #f1f0ff);
+  color: var(--color-on-surface, #1b1b1f);
+  box-shadow: 0 0 0 1px var(--color-surface-lowest, #fff);
+}
+
+.sidebar-toggle:hover {
+  background-color: var(--button-hover-bg, var(--color-surface-high, #f1f0ff));
+}
+
+.sidebar-toggle:active {
+  box-shadow: 0 0 0 1px var(--color-brand-active, #4440bf);
+}
+
+.sidebar-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--color-brand-hover, #5753d0);
+}
+
+.sidebar-toggle svg {
+  width: var(--lg-icon-size, 1rem);
+  height: var(--lg-icon-size, 1rem);
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Inter Variable", sans-serif;

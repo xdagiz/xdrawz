@@ -10,8 +10,9 @@ import type {
   BinaryFiles,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { PanelLeftIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useTheme } from "@/hooks/use-theme";
 import { toAppError, type AppError } from "@/lib/app-error";
@@ -32,6 +33,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "./ui/empty";
+import { useSidebar } from "./ui/sidebar";
 
 type DrawingData = {
   elements?: ExcalidrawElement[];
@@ -71,10 +73,13 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const setFileDirty = useStore((s) => s.setFileDirty);
   const registerSession = useStore((s) => s.registerSession);
   const unregisterSession = useStore((s) => s.unregisterSession);
+  const { toggleSidebar } = useSidebar();
 
   const sessionRef = useRef<DrawingSessionControls | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
 
   const initialData = useMemo(() => {
     return async () => {
@@ -143,6 +148,53 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     [],
   );
 
+  useEffect(() => {
+    const root = editorRef.current;
+
+    let anchor: HTMLElement | null = null;
+    let observer: MutationObserver | null = null;
+
+    const sync = () => {
+      const canvasActions = root?.querySelector<HTMLElement>(".App-menu_top__left > :first-child");
+      if (!canvasActions) return;
+
+      let host = canvasActions.querySelector<HTMLElement>(":scope > [data-xdrawz-sidebar-anchor]");
+      if (!host) {
+        host = document.createElement("div");
+        host.dataset.xdrawzSidebarAnchor = "";
+        host.style.position = "absolute";
+        host.style.top = "0";
+        host.style.left = "0";
+        host.style.pointerEvents = "auto";
+        canvasActions.prepend(host);
+      }
+
+      const reserved = "calc(var(--lg-button-size, 2.25rem) + 0.5rem)";
+      if (canvasActions.style.paddingLeft !== reserved) {
+        canvasActions.style.paddingLeft = reserved;
+      }
+
+      if (anchor !== host) {
+        anchor = host;
+        setMenuAnchor(host);
+      }
+    };
+
+    if (root) {
+      sync();
+      observer = new MutationObserver(sync);
+      observer.observe(root, { childList: true, subtree: true });
+    }
+
+    return () => {
+      observer?.disconnect();
+      if (anchor) {
+        anchor.parentElement?.style.removeProperty("padding-left");
+        anchor.remove();
+      }
+    };
+  }, []);
+
   if (loadError) {
     return (
       <>
@@ -171,7 +223,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden">
+    <div ref={editorRef} className="relative h-full min-h-0 w-full overflow-hidden">
       <ErrorBoundary
         title="The drawing editor stopped working"
         description="Try again. Your saved drawing is still available from the sidebar."
@@ -190,6 +242,19 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           }}
         />
       </ErrorBoundary>
+      {menuAnchor &&
+        createPortal(
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
+            onClick={toggleSidebar}
+          >
+            <PanelLeftIcon />
+          </button>,
+          menuAnchor,
+        )}
     </div>
   );
 };
