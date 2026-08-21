@@ -2,6 +2,7 @@ import { Outlet, useRouterState } from "@tanstack/react-router";
 import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
+import { conflictKeyOf } from "@/lib/conflicts";
 import { useStore } from "@/lib/store";
 
 import { AppSidebar } from "./components/app-sidebar";
@@ -142,10 +143,7 @@ const App = () => {
       return;
     }
 
-    const key =
-      externalConflict.type === "changed"
-        ? `changed:${externalConflict.fileId}:${externalConflict.diskModifiedAt}`
-        : `missing:${externalConflict.fileId}`;
+    const key = conflictKeyOf(externalConflict);
 
     if (conflictPromptRef.current === key) return;
     conflictPromptRef.current = key;
