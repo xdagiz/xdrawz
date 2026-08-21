@@ -1,15 +1,14 @@
 import "./assets/main.css";
-import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { installRendererErrorHandlers } from "@/lib/report-error";
 
+import App from "./App";
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster } from "./components/ui/toast";
 import { reportRendererError } from "./lib/report-error";
 import { useStore } from "./lib/store";
-import { router } from "./router";
 
 installRendererErrorHandlers();
 
@@ -55,7 +54,7 @@ createRoot(document.getElementById("root")!).render(
       title="xdrawz couldn’t start"
       description="Try again. If this keeps happening, copy the details for support."
     >
-      <RouterProvider router={router} />
+      <App />
     </ErrorBoundary>
   </StrictMode>,
 );

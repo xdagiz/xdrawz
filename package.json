@@ -35,7 +35,6 @@
     "@excalidraw/excalidraw": "^0.18.0",
     "@fontsource-variable/inter": "^5.2.8",
     "@tailwindcss/vite": "^4.2.1",
-    "@tanstack/react-router": "^1.168.8",
     "@types/node": "^22.19.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

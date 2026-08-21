@@ -1,5 +1,4 @@
-import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { ArrowLeftIcon, SettingsIcon } from "lucide-react";
+import { SettingsIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -31,9 +30,7 @@ import { stripExcalidraw } from "@/lib/utils";
 
 import { toast } from "./ui/toast";
 
-export const AppSidebar = () => {
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) => {
   const entries = useStore((s) => s.entries);
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
@@ -41,7 +38,6 @@ export const AppSidebar = () => {
   const renameFile = useStore((s) => s.renameFile);
   const deleteFile = useStore((s) => s.deleteFile);
   const files = entries.filter((entry) => entry.kind === "file");
-  const isSettingsRoute = pathname === "/settings";
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<AppError | null>(null);
@@ -115,10 +111,8 @@ export const AppSidebar = () => {
         await setOpenFileId(fileId);
         if (useStore.getState().openFileId !== fileId) return;
       }
-
-      if (pathname !== "/") await navigate({ to: "/" });
     },
-    [setOpenFileId, pathname, navigate],
+    [setOpenFileId],
   );
 
   return (
@@ -146,7 +140,7 @@ export const AppSidebar = () => {
                         />
                       ) : (
                         <SidebarMenuButton
-                          isActive={!isSettingsRoute && file.id === openFileId}
+                          isActive={file.id === openFileId}
                           tooltip={file.id}
                           onClick={() => void openDrawing(file.id)}
                           onContextMenu={(e) => handleContextMenu(e, file.id)}
@@ -173,17 +167,10 @@ export const AppSidebar = () => {
 
         <SidebarFooter>
           <SidebarMenuItem>
-            {isSettingsRoute ? (
-              <SidebarMenuButton onClick={() => void navigate({ to: "/" })}>
-                <ArrowLeftIcon />
-                Back
-              </SidebarMenuButton>
-            ) : (
-              <SidebarMenuButton onClick={() => void navigate({ to: "/settings" })}>
-                <SettingsIcon />
-                Settings
-              </SidebarMenuButton>
-            )}
+            <SidebarMenuButton onClick={onOpenSettings}>
+              <SettingsIcon />
+              Settings
+            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarFooter>
       </Sidebar>

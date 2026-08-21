@@ -1,4 +1,3 @@
-import { Outlet, useRouterState } from "@tanstack/react-router";
 import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
@@ -9,6 +8,7 @@ import { stripExcalidraw } from "@/lib/utils";
 import { AppSidebar } from "./components/app-sidebar";
 import { EditorView } from "./components/editor-view";
 import { ErrorBoundary } from "./components/error-boundary";
+import { SettingsDialog } from "./components/settings-dialog";
 import { ThemeProvider } from "./components/theme-provider";
 import { Button } from "./components/ui/button";
 import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
@@ -31,10 +31,10 @@ const App = () => {
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
   const editorEpoch = useStore((s) => s.editorEpoch);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const folderMissing = drawings?.missing === true && entries.length === 0;
   const lastToastRef = useRef<string | null>(null);
@@ -60,6 +60,18 @@ const App = () => {
   useEffect(() => {
     void initSettings();
   }, [initSettings]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key !== ",") return;
+      if (event.repeat || event.defaultPrevented) return;
+      event.preventDefault();
+      setSettingsOpen(true);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!openFileId) {
@@ -188,7 +200,7 @@ const App = () => {
           } as CSSProperties
         }
       >
-        <AppSidebar />
+        <AppSidebar onOpenSettings={() => setSettingsOpen(true)} />
         <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
           <div className="relative min-h-0 flex-1 overflow-hidden">
             <ErrorBoundary resetKeys={[openFileId, editorEpoch]}>
@@ -207,13 +219,9 @@ const App = () => {
                 </div>
               </div>
             )}
-            {pathname === "/settings" && (
-              <div className="bg-sidebar absolute inset-0 z-10 overflow-y-auto">
-                <Outlet />
-              </div>
-            )}
           </div>
         </SidebarInset>
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </SidebarProvider>
     </ThemeProvider>
   );

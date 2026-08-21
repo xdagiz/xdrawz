@@ -25,7 +25,7 @@ const hoisted = vi.hoisted(() => ({
 }));
 
 vi.mock("react-dom/client", () => ({ createRoot: hoisted.createRoot }));
-vi.mock("./router", () => ({ RouterProvider: () => null, router: {} }));
+vi.mock("./App", () => ({ default: () => null }));
 vi.mock("./components/error-boundary", () => ({
   ErrorBoundary: ({ children }: { children?: ReactNode }) => children,
 }));

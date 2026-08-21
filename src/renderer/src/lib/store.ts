@@ -65,7 +65,7 @@ const entryAfterWrite = (id: string, content: string, entries: FileEntry[]): Fil
   const existing = entries.find((e) => e.id === id);
   const now = Date.now();
   const normalized = content.endsWith("\n") ? content : `${content}\n`;
-  const size = new TextEncoder().encode(normalized).byteLength;
+  const size = new Blob([normalized]).size;
   if (existing) {
     return {
       ...existing,
