@@ -24,6 +24,49 @@ export type EntryTreeState = {
   dirtyById: Record<string, true>;
 };
 
+export type SubtreeRemapResult = {
+  entries: FileEntry[];
+  openFileId: string | null;
+  dirtyById: Record<string, true>;
+};
+
+export const applySubtreeRemap = (
+  state: EntryTreeState,
+  oldRoot: string,
+  newRoot: string,
+  opts?: { sort?: boolean; rootEntry?: FileEntry },
+): SubtreeRemapResult => {
+  const nextEntries = state.entries.map((e): FileEntry => {
+    if (opts?.rootEntry && e.id === oldRoot) return opts.rootEntry;
+
+    const nextId = remapId(e.id, oldRoot, newRoot);
+    const nextParentId = remapNullableId(e.parentId, oldRoot, newRoot);
+    if (nextId === e.id && nextParentId === e.parentId) return e;
+    return {
+      id: nextId,
+      name: e.name,
+      kind: e.kind,
+      parentId: nextParentId,
+      modifiedAt: e.modifiedAt,
+      size: e.size,
+    };
+  });
+
+  const entries = opts?.sort
+    ? nextEntries.toSorted((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }))
+    : nextEntries;
+
+  const openFileId = remapNullableId(state.openFileId, oldRoot, newRoot);
+
+  const dirtyById: Record<string, true> = {};
+  for (const key of Object.keys(state.dirtyById)) {
+    const mapped = remapId(key, oldRoot, newRoot);
+    if (mapped) dirtyById[mapped] = true;
+  }
+
+  return { entries, openFileId, dirtyById };
+};
+
 export type SubtreeDeleteResult = {
   entries: FileEntry[];
   openFileId: string | null;

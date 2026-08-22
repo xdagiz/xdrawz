@@ -25,9 +25,8 @@ import { conflictKeyOf, createSingleFlight, fileNameOf, reduceEntries } from "@/
 import type { DrawingSessionControls } from "@/lib/drawing-session";
 import {
   applySubtreeDelete,
+  applySubtreeRemap,
   isInsideSubtree,
-  remapId,
-  remapNullableId,
 } from "@/lib/entry-tree";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
@@ -283,39 +282,19 @@ export const useStore = create<State>((set, get) => {
       }
 
       const entry = await window.api.files.rename(id, newName);
-      const { openFileId, dirtyById, entries } = get();
-
-      const nextEntries = entries.map((e): FileEntry => {
-        if (e.id === id) return entry;
-
-        const nextId = remapId(e.id, id, entry.id);
-        const nextParentId = remapNullableId(e.parentId, id, entry.id);
-        if (nextId === e.id && nextParentId === e.parentId) return e;
-        return {
-          id: nextId,
-          name: e.name,
-          kind: e.kind,
-          parentId: nextParentId,
-          modifiedAt: e.modifiedAt,
-          size: e.size,
-        };
+      const { entries, openFileId, dirtyById } = get();
+      const next = applySubtreeRemap({ entries, openFileId, dirtyById }, id, entry.id, {
+        rootEntry: entry,
       });
-
-      const nextOpen = remapNullableId(openFileId, id, entry.id);
-      const nextDirty: Record<string, true> = {};
-      for (const key of Object.keys(dirtyById)) {
-        const mapped = remapId(key, id, entry.id);
-        if (mapped) nextDirty[mapped] = true;
-      }
 
       set({
-        entries: nextEntries,
-        openFileId: nextOpen,
-        dirtyById: nextDirty,
+        entries: next.entries,
+        openFileId: next.openFileId,
+        dirtyById: next.dirtyById,
         error: null,
       });
-      if (nextOpen !== openFileId) {
-        void window.api.store.set("lastOpenedFileId", nextOpen);
+      if (next.openFileId !== openFileId) {
+        void window.api.store.set("lastOpenedFileId", next.openFileId);
       }
       return true;
     },

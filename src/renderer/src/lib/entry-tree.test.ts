@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applySubtreeDelete,
+  applySubtreeRemap,
   isInsideSubtree,
   remapId,
   remapNullableId,
@@ -62,6 +63,80 @@ describe("isInsideSubtree", () => {
     expect(isInsideSubtree("a/b", "a/bc.excalidraw")).toBe(false);
     expect(isInsideSubtree("a", null)).toBe(false);
     expect(isInsideSubtree("a", undefined)).toBe(false);
+  });
+});
+
+describe("applySubtreeRemap", () => {
+  it("rewrites ids and parentIds of a renamed subtree", () => {
+    const state = baseState();
+    const next = applySubtreeRemap(state, "notes", "docs");
+
+    expect(next.entries.map((e) => e.id)).toEqual([
+      "docs",
+      "docs/a.excalidraw",
+      "docs/deep",
+      "docs/deep/b.excalidraw",
+      "z.excalidraw",
+    ]);
+    expect(next.entries.find((e) => e.id === "docs/a.excalidraw")?.parentId).toBe("docs");
+    expect(next.openFileId).toBeNull();
+  });
+
+  it("remaps the open file id when it lives inside the subtree", () => {
+    const state = { ...baseState(), openFileId: "notes/deep/b.excalidraw" };
+    const next = applySubtreeRemap(state, "notes", "docs");
+
+    expect(next.openFileId).toBe("docs/deep/b.excalidraw");
+  });
+
+  it("keeps unaffected entries by reference and leaves their ids alone", () => {
+    const state = baseState();
+    const untouched = state.entries[4];
+    const next = applySubtreeRemap(state, "notes", "docs");
+
+    expect(next.entries).toContain(untouched);
+    expect(untouched.id).toBe("z.excalidraw");
+  });
+
+  it("does not corrupt sibling-prefixed ids during rename", () => {
+    const state = { ...baseState(), openFileId: null };
+    state.entries.push(entry("notesb.excalidraw"));
+    const next = applySubtreeRemap(state, "notes", "docs");
+
+    expect(next.entries.find((e) => e.id === "notesb.excalidraw")).toBeDefined();
+    expect(next.entries.find((e) => e.id === "notes/b.excalidraw")).toBeUndefined();
+  });
+
+  it("remaps dirty keys inside the subtree only", () => {
+    const state = {
+      ...baseState(),
+      dirtyById: { "notes/a.excalidraw": true as const, "z.excalidraw": true as const },
+    };
+    const next = applySubtreeRemap(state, "notes", "docs");
+
+    expect(next.dirtyById).toEqual({ "docs/a.excalidraw": true, "z.excalidraw": true });
+  });
+
+  it("preserves insertion order by default and sorts by id when asked", () => {
+    const state = baseState();
+    const reordered = { ...state, entries: [state.entries[4], ...state.entries.slice(0, 4)] };
+    const unsorted = applySubtreeRemap(reordered, "notes", "docs");
+    const sorted = applySubtreeRemap(reordered, "notes", "docs", { sort: true });
+
+    expect(unsorted.entries.map((e) => e.id)).toEqual([
+      "z.excalidraw",
+      "docs",
+      "docs/a.excalidraw",
+      "docs/deep",
+      "docs/deep/b.excalidraw",
+    ]);
+    expect(sorted.entries.map((e) => e.id)).toEqual([
+      "docs",
+      "docs/a.excalidraw",
+      "docs/deep",
+      "docs/deep/b.excalidraw",
+      "z.excalidraw",
+    ]);
   });
 });
 
