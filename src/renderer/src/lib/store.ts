@@ -13,7 +13,6 @@ import type {
 import {
   DEFAULT_SETTINGS,
   FILE_NOT_FOUND_MESSAGE,
-  isAncestorId,
   parentIdOf,
   type FileDeleteMode,
   type SaveOrigin,
@@ -24,6 +23,12 @@ import { toast } from "@/components/ui/toast";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { conflictKeyOf, createSingleFlight, fileNameOf, reduceEntries } from "@/lib/conflicts";
 import type { DrawingSessionControls } from "@/lib/drawing-session";
+import {
+  applySubtreeDelete,
+  isInsideSubtree,
+  remapId,
+  remapNullableId,
+} from "@/lib/entry-tree";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
 const isOpenableFile = (
@@ -67,23 +72,6 @@ let pendingRecoverContent: string | undefined;
 
 const savedAfterDisk = (diskModifiedAt: number, savedAt: number) =>
   Math.max(diskModifiedAt + 1, savedAt);
-
-const remapId = (id: string, oldRoot: string, newRoot: string): string => {
-  if (id === oldRoot) return newRoot;
-  if (isAncestorId(oldRoot, id)) return `${newRoot}${id.slice(oldRoot.length)}`;
-  return id;
-};
-
-const remapNullableId = (
-  id: string | null | undefined,
-  oldRoot: string,
-  newRoot: string,
-): string | null => (id ? remapId(id, oldRoot, newRoot) : null);
-
-const isInsideSubtree = (root: string, id: string | null | undefined): id is string => {
-  if (!id) return false;
-  return id === root || isAncestorId(root, id);
-};
 
 const entryAfterWrite = (id: string, content: string, entries: FileEntry[]): FileEntry => {
   const existing = entries.find((e) => e.id === id);
@@ -353,22 +341,15 @@ export const useStore = create<State>((set, get) => {
       await window.api.files.delete(id, mode);
 
       const { entries } = get();
-      const nextEntries = entries.filter((e) => !isInsideSubtree(id, e.id));
-
-      const nextDirty: Record<string, true> = {};
-      for (const key of Object.keys(dirtyById)) {
-        if (!isInsideSubtree(id, key)) nextDirty[key] = true;
-      }
-
-      const openedRemoved = isInsideSubtree(id, openFileId);
+      const next = applySubtreeDelete({ entries, openFileId, dirtyById }, id);
 
       set({
-        entries: nextEntries,
-        openFileId: openedRemoved ? null : openFileId,
-        dirtyById: nextDirty,
+        entries: next.entries,
+        openFileId: next.openFileId,
+        dirtyById: next.dirtyById,
         error: null,
       });
-      if (openedRemoved) {
+      if (next.openedRemoved) {
         void window.api.store.set("lastOpenedFileId", null);
       }
 
