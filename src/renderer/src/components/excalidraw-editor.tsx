@@ -17,9 +17,10 @@ import { createPortal } from "react-dom";
 
 import { useTheme } from "@/hooks/use-theme";
 import { toAppError, type AppError } from "@/lib/app-error";
-import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
-import { type BoundDrawingSession, sessionOwner } from "@/lib/session-owner";
+import { drawingSignature } from "@/lib/drawing-session";
+import type { BoundDrawingSession } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
+import { useDrawingSession } from "@/hooks/use-drawing-session";
 
 import { ErrorBoundary } from "./error-boundary";
 import { Button } from "./ui/button";
@@ -72,6 +73,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const { toggleSidebar } = useSidebar();
 
   const sessionRef = useRef<BoundDrawingSession | null>(null);
+  useDrawingSession(fileId, saveFile, setFileDirty, sessionRef);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -91,39 +93,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       }
     };
   }, [fileId]);
-
-  useEffect(() => {
-    const session = sessionOwner.acquire(
-      fileId,
-      createDrawingSession({
-        fileId,
-        save: saveFile,
-        onDirtyChange: setFileDirty,
-      }),
-    );
-    sessionRef.current = session;
-
-    return () => {
-      sessionOwner.release(fileId);
-      if (sessionRef.current === session) sessionRef.current = null;
-    };
-  }, [fileId, saveFile, setFileDirty]);
-
-  useEffect(() => {
-    const flushOnEdge = () => {
-      void sessionRef.current?.flush();
-    };
-
-    window.addEventListener("blur", flushOnEdge);
-    document.addEventListener("visibilitychange", flushOnEdge);
-    window.addEventListener("beforeunload", flushOnEdge);
-
-    return () => {
-      window.removeEventListener("blur", flushOnEdge);
-      document.removeEventListener("visibilitychange", flushOnEdge);
-      window.removeEventListener("beforeunload", flushOnEdge);
-    };
-  }, []);
 
   useHotkey("Mod+S", () => {
     void sessionRef.current?.saveNow();
