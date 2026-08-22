@@ -17,11 +17,8 @@ import { createPortal } from "react-dom";
 
 import { useTheme } from "@/hooks/use-theme";
 import { toAppError, type AppError } from "@/lib/app-error";
-import {
-  createDrawingSession,
-  drawingSignature,
-  type DrawingSessionControls,
-} from "@/lib/drawing-session";
+import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
+import { type BoundDrawingSession, sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 
 import { ErrorBoundary } from "./error-boundary";
@@ -72,11 +69,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const theme = useTheme();
   const saveFile = useStore((s) => s.saveFile);
   const setFileDirty = useStore((s) => s.setFileDirty);
-  const registerSession = useStore((s) => s.registerSession);
-  const unregisterSession = useStore((s) => s.unregisterSession);
   const { toggleSidebar } = useSidebar();
 
-  const sessionRef = useRef<DrawingSessionControls | null>(null);
+  const sessionRef = useRef<BoundDrawingSession | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -98,21 +93,21 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }, [fileId]);
 
   useEffect(() => {
-    const session = createDrawingSession({
+    const session = sessionOwner.acquire(
       fileId,
-      save: saveFile,
-      onDirtyChange: setFileDirty,
-    });
-
+      createDrawingSession({
+        fileId,
+        save: saveFile,
+        onDirtyChange: setFileDirty,
+      }),
+    );
     sessionRef.current = session;
-    registerSession(session);
 
     return () => {
-      session.dispose();
-      unregisterSession(session);
+      sessionOwner.release(fileId);
       if (sessionRef.current === session) sessionRef.current = null;
     };
-  }, [fileId, saveFile, setFileDirty, registerSession, unregisterSession]);
+  }, [fileId, saveFile, setFileDirty]);
 
   useEffect(() => {
     const flushOnEdge = () => {

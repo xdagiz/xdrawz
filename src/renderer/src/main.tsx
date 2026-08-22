@@ -8,13 +8,14 @@ import App from "./App";
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster } from "./components/ui/toast";
 import { reportRendererError } from "./lib/report-error";
+import { sessionOwner } from "./lib/session-owner";
 import { useStore } from "./lib/store";
 
 installRendererErrorHandlers();
 
 window.api.window.onWillClose((request) => {
   if (request.kind === "check") {
-    const session = useStore.getState().activeSession;
+    const session = sessionOwner.getSession();
     const dirty = Object.keys(useStore.getState().dirtyById).length > 0;
     if (dirty) session?.setAutosavePaused(true);
     window.api.window.reportDirtyState(request.requestId, dirty);
@@ -23,7 +24,7 @@ window.api.window.onWillClose((request) => {
 
   void (async () => {
     window.api.window.flushStarted(request.requestId);
-    const session = useStore.getState().activeSession;
+    const session = sessionOwner.getSession();
     try {
       if (session) await session.flush({ force: true });
     } catch (error) {
@@ -42,7 +43,7 @@ window.api.window.onWillClose((request) => {
 });
 
 window.api.window.onCloseCancelled(() => {
-  useStore.getState().activeSession?.setAutosavePaused(false);
+  sessionOwner.getSession()?.setAutosavePaused(false);
 });
 
 window.api.window.ready();

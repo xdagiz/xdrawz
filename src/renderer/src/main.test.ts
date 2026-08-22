@@ -2,7 +2,7 @@ import type { WindowCloseRequest } from "@shared/ipc";
 import type { ReactNode } from "react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { DrawingSessionControls } from "./lib/drawing-session";
+import { type BoundDrawingSession, sessionOwner } from "./lib/session-owner";
 import { useStore } from "./lib/store";
 
 const hoisted = vi.hoisted(() => ({
@@ -35,7 +35,7 @@ let onWillClose: (request: WindowCloseRequest) => void;
 let onCloseCancelled: () => void;
 let consoleError: ReturnType<typeof vi.spyOn>;
 
-type FakeSession = DrawingSessionControls & {
+type FakeSession = BoundDrawingSession & {
   setAutosavePaused: ReturnType<typeof vi.fn>;
   flush: ReturnType<typeof vi.fn>;
   isDirty: ReturnType<typeof vi.fn>;
@@ -50,7 +50,7 @@ const fakeSession = (): FakeSession => {
   return session as unknown as FakeSession;
 };
 
-const expectAutosave = (session: DrawingSessionControls) =>
+const expectAutosave = (session: BoundDrawingSession) =>
   session.setAutosavePaused as unknown as ReturnType<typeof vi.fn>;
 
 describe("window close flow (renderer)", () => {
@@ -79,13 +79,14 @@ describe("window close flow (renderer)", () => {
   });
 
   beforeEach(() => {
-    useStore.setState({ activeSession: null, dirtyById: {} });
+    sessionOwner.setActiveForTest(null);
+    useStore.setState({ dirtyById: {} });
     for (const mock of Object.values(hoisted.api.window)) mock.mockClear();
   });
 
   it("reports clean without pausing autosave", () => {
     const session = fakeSession();
-    useStore.setState({ activeSession: session, dirtyById: {} });
+    sessionOwner.setActiveForTest(session);
 
     onWillClose({ requestId: 7, kind: "check" });
 
@@ -95,7 +96,8 @@ describe("window close flow (renderer)", () => {
 
   it("pauses autosave when the check reports dirty", () => {
     const session = fakeSession();
-    useStore.setState({ activeSession: session, dirtyById: { f1: true } });
+    sessionOwner.setActiveForTest(session);
+    useStore.setState({ dirtyById: { f1: true } });
 
     onWillClose({ requestId: 7, kind: "check" });
 
@@ -106,7 +108,8 @@ describe("window close flow (renderer)", () => {
   it("closes after a flush that persists the drawing", async () => {
     const session = fakeSession();
     session.isDirty.mockReturnValue(false);
-    useStore.setState({ activeSession: session, dirtyById: { f1: true } });
+    sessionOwner.setActiveForTest(session);
+    useStore.setState({ dirtyById: { f1: true } });
 
     onWillClose({ requestId: 9, kind: "flush" });
 
@@ -121,7 +124,7 @@ describe("window close flow (renderer)", () => {
     const session = fakeSession();
     session.flush.mockResolvedValue(undefined);
     session.isDirty.mockReturnValue(true);
-    useStore.setState({ activeSession: session, dirtyById: { f1: true } });
+    sessionOwner.setActiveForTest(session);
 
     onWillClose({ requestId: 9, kind: "flush" });
 
@@ -132,7 +135,7 @@ describe("window close flow (renderer)", () => {
   it("cancels the close when the flush throws and reports the error", async () => {
     const session = fakeSession();
     session.flush.mockRejectedValue(new Error("boom"));
-    useStore.setState({ activeSession: session, dirtyById: { f1: true } });
+    sessionOwner.setActiveForTest(session);
 
     onWillClose({ requestId: 9, kind: "flush" });
 
@@ -143,7 +146,7 @@ describe("window close flow (renderer)", () => {
 
   it("resumes autosave when the close flow is cancelled", () => {
     const session = fakeSession();
-    useStore.setState({ activeSession: session });
+    sessionOwner.setActiveForTest(session);
 
     onCloseCancelled();
 

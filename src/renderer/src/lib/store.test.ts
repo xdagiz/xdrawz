@@ -2,7 +2,7 @@ import type { DrawingsSnapshot, FileEntry, FilesChangedEvent } from "@shared/ipc
 import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
-import type { DrawingSessionControls } from "@/lib/drawing-session";
+import { type BoundDrawingSession, sessionOwner } from "./session-owner";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 import { toAppError } from "./app-error";
@@ -36,13 +36,13 @@ const baseInfo = {
 };
 
 const resetStore = () => {
+  sessionOwner.setActiveForTest(null);
   useStore.setState({
     drawings: null,
     entries: [],
     openFileId: null,
     dirtyById: {},
     error: null,
-    activeSession: null,
     filesRevision: 0,
     externalConflict: null,
     editorEpoch: 0,
@@ -51,19 +51,19 @@ const resetStore = () => {
 };
 
 const registerSession = (allowed: boolean) => {
-  useStore.getState().registerSession({
+  sessionOwner.setActiveForTest({
     ensureCleanOrConfirm: async () => allowed,
     getSerializedContent: () => "{}",
     saveNow: async () => {},
-  } as unknown as DrawingSessionControls);
+  } as unknown as BoundDrawingSession);
 };
 
 const registerSessionWithContent = (content: string | null) => {
-  useStore.getState().registerSession({
+  sessionOwner.setActiveForTest({
     ensureCleanOrConfirm: async () => true,
     getSerializedContent: () => content,
     saveNow: async () => {},
-  } as unknown as DrawingSessionControls);
+  } as unknown as BoundDrawingSession);
 };
 
 describe("lastOpenedFileId", () => {

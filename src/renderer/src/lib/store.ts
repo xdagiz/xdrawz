@@ -22,12 +22,12 @@ import { create } from "zustand";
 import { toast } from "@/components/ui/toast";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { conflictKeyOf, createSingleFlight, fileNameOf, reduceEntries } from "@/lib/conflicts";
-import type { DrawingSessionControls } from "@/lib/drawing-session";
 import {
   applySubtreeDelete,
   applySubtreeRemap,
   isInsideSubtree,
 } from "@/lib/entry-tree";
+import { sessionOwner } from "@/lib/session-owner";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
 const isOpenableFile = (
@@ -117,7 +117,6 @@ type State = {
   openFileId: string | null;
   dirtyById: Record<string, true>;
   error: AppError | null;
-  activeSession: DrawingSessionControls | null;
   filesRevision: number;
   externalConflict: ExternalConflict;
   watcherDown: string | null;
@@ -146,8 +145,6 @@ type State = {
     content?: string,
     opts?: { force?: boolean },
   ) => Promise<"recover" | "discard" | "cancel">;
-  registerSession: (session: DrawingSessionControls) => void;
-  unregisterSession: (session: DrawingSessionControls) => void;
   ensureCleanOrConfirm: (reason?: UnsavedReason) => Promise<boolean>;
   initSettings: () => Promise<void>;
   updateSettings: (updated: SettingsUpdate) => Promise<boolean>;
@@ -217,7 +214,6 @@ export const useStore = create<State>((set, get) => {
     openFileId: null,
     dirtyById: {},
     error: null,
-    activeSession: null,
     filesRevision: 0,
     externalConflict: null,
     watcherDown: null,
@@ -439,7 +435,7 @@ export const useStore = create<State>((set, get) => {
             return "discard";
           }
 
-          const body = pendingRecoverContent ?? get().activeSession?.getSerializedContent() ?? null;
+          const body = pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
 
           if (!body) {
             set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
@@ -461,7 +457,7 @@ export const useStore = create<State>((set, get) => {
       const fileId = conflict?.type === "missing" ? conflict.fileId : (state.openFileId ?? null);
       if (!fileId) return false;
 
-      const body = pendingRecoverContent ?? state.activeSession?.getSerializedContent() ?? null;
+      const body = pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
       if (!body) {
         set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
         return false;
@@ -496,19 +492,13 @@ export const useStore = create<State>((set, get) => {
       void window.api.store.set("lastOpenedFileId", null);
     },
 
-    registerSession: (session) => set({ activeSession: session }),
-
-    unregisterSession: (session) => {
-      set((state) => (state.activeSession === session ? { activeSession: null } : state));
-    },
-
     ensureCleanOrConfirm: async (reason = "switch") => {
-      const session = get().activeSession;
+      const session = sessionOwner.getSession();
       if (!session) {
         return Object.keys(get().dirtyById).length === 0;
       }
 
-      return session.ensureCleanOrConfirm(reason, window.api.dialog.unsavedChanges);
+      return session.ensureCleanOrConfirm(reason);
     },
 
     initSettings: async () => {
