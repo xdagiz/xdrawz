@@ -73,6 +73,13 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const sessionRef = useRef<BoundDrawingSession | null>(null);
   useDrawingSession(fileId, saveFile, setFileDirty, sessionRef);
+
+  const autosaveIntervalMs = useStore((s) => s.settings.autosaveIntervalMs);
+
+  useEffect(() => {
+    sessionRef.current?.setAutosaveInterval(autosaveIntervalMs);
+  }, [autosaveIntervalMs]);
+
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);

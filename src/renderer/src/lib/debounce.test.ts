@@ -133,4 +133,52 @@ describe("debounceAsync", () => {
     await tick(100);
     expect(fn.mock.calls).toHaveLength(1);
   });
+
+  it("setWait with no pending call just updates the wait", async () => {
+    debounced.setWait(30);
+
+    debounced();
+    await tick(20);
+    expect(fn.mock.calls).toHaveLength(0);
+    await tick(40);
+    expect(fn.mock.calls).toHaveLength(1);
+  });
+
+  it("setWait keeps a pending call on its original deadline", async () => {
+    debounced();
+    debounced.setWait(5000);
+
+    await tick(150);
+    expect(fn.mock.calls).toHaveLength(1);
+  });
+
+  it("setWait fires a pending call sooner when shortened", async () => {
+    debounced.setWait(5000);
+    debounced();
+
+    debounced.setWait(30);
+    await tick(80);
+    expect(fn.mock.calls).toHaveLength(1);
+  });
+
+  it("setWait while paused preserves the shortened delay for resume", async () => {
+    debounced.setWait(5000);
+    debounced();
+    debounced.pause();
+    debounced.setWait(30);
+
+    debounced.resume();
+    await tick(80);
+    expect(fn.mock.calls).toHaveLength(1);
+  });
+
+  it("setWait ignores non-positive and non-finite values", async () => {
+    debounced();
+    debounced.setWait(0);
+    debounced.setWait(-5);
+    debounced.setWait(Number.NaN);
+
+    await tick(150);
+    expect(fn.mock.calls).toHaveLength(1);
+  });
 });

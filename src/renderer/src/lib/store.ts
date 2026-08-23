@@ -178,6 +178,7 @@ type State = {
   ensureCleanOrConfirm: (reason?: UnsavedReason) => Promise<boolean>;
   initSettings: () => Promise<void>;
   updateSettings: (updated: SettingsUpdate) => Promise<boolean>;
+  changeDrawingsFolder: () => Promise<boolean>;
 };
 
 type SaveGate = { action: "proceed" } | { action: "stop"; result: boolean };
@@ -251,16 +252,18 @@ export const useStore = create<State>((set, get) => {
     dismissedConflictKey: null,
     settings:
       typeof window !== "undefined"
-        ? { theme: readStoredTheme(window.localStorage) }
+        ? { ...DEFAULT_SETTINGS, theme: readStoredTheme(window.localStorage) }
         : DEFAULT_SETTINGS,
 
     loadSnapshot: (snapshot) =>
       set((state) => ({
         drawings: snapshot.info,
         entries: snapshot.entries,
-        openFileId: isOpenableFile(snapshot.entries, snapshot.prefs.lastOpenedFileId)
-          ? snapshot.prefs.lastOpenedFileId
-          : null,
+        openFileId:
+          state.settings.reopenLastDrawing &&
+          isOpenableFile(snapshot.entries, snapshot.prefs.lastOpenedFileId)
+            ? snapshot.prefs.lastOpenedFileId
+            : null,
         dirtyById: {},
         error: null,
         watcherDown: null,
@@ -577,6 +580,49 @@ export const useStore = create<State>((set, get) => {
       const settings = await window.api.settings.update(updated);
       writeStoredTheme(window.localStorage, settings.theme);
       set({ settings });
+      return true;
+    },
+
+    changeDrawingsFolder: async () => {
+      const ok = await get().ensureCleanOrConfirm("switch");
+      if (!ok) return false;
+
+      const previousPath = get().drawings?.path ?? null;
+
+      let picked: DrawingInfo;
+      try {
+        const info = await window.api.drawings.pick();
+        if (!info) return false;
+        picked = info;
+      } catch (error) {
+        toast.add({
+          title: "Couldn’t choose the drawings folder",
+          description: toAppError(error, "unexpected", false).message,
+          type: "error",
+        });
+        return false;
+      }
+
+      if (picked.path !== null && picked.path === previousPath) return true;
+
+      set({
+        drawings: picked,
+        entries: [],
+        openFileId: null,
+        dirtyById: {},
+        error: null,
+        watcherDown: null,
+        externalConflict: null,
+        dismissedConflictKey: null,
+      });
+      void window.api.store.set("lastOpenedFileId", null);
+
+      try {
+        const snapshot = await window.api.drawings.load();
+        get().loadSnapshot(snapshot);
+      } catch (error) {
+        get().reportError(error, "load");
+      }
       return true;
     },
   };

@@ -1,11 +1,13 @@
-import { DEFAULT_THEME, THEME_PREFERENCES } from "@shared/ipc";
+import { DEFAULT_SETTINGS, validateSettingsUpdate } from "@shared/ipc";
 import type { AppSettings, SettingsUpdate } from "@shared/ipc";
 import { BrowserWindow, nativeTheme } from "electron";
 
 import { store } from "./store";
 
 export const getSettings = (): AppSettings => ({
-  theme: store.get("theme") ?? DEFAULT_THEME,
+  theme: store.get("theme") ?? DEFAULT_SETTINGS.theme,
+  autosaveIntervalMs: store.get("autosaveIntervalMs") ?? DEFAULT_SETTINGS.autosaveIntervalMs,
+  reopenLastDrawing: store.get("reopenLastDrawing") ?? DEFAULT_SETTINGS.reopenLastDrawing,
 });
 
 export const windowBgColor = () => (nativeTheme.shouldUseDarkColors ? "#181818" : "#ffffff");
@@ -24,15 +26,24 @@ export const applyTheme = () => {
 };
 
 export const setSettings = (update: SettingsUpdate): AppSettings => {
+  const clean = validateSettingsUpdate(update);
   const next = getSettings();
-  if (update.theme !== undefined) {
-    if (!THEME_PREFERENCES.includes(update.theme)) {
-      throw new Error(`Invalid theme preference: ${update.theme}`);
-    }
-    next.theme = update.theme;
-    store.set("theme", update.theme);
+  let themeChanged = false;
+
+  if (clean.theme !== undefined) {
+    next.theme = clean.theme;
+    store.set("theme", clean.theme);
+    themeChanged = true;
+  }
+  if (clean.autosaveIntervalMs !== undefined) {
+    next.autosaveIntervalMs = clean.autosaveIntervalMs;
+    store.set("autosaveIntervalMs", clean.autosaveIntervalMs);
+  }
+  if (clean.reopenLastDrawing !== undefined) {
+    next.reopenLastDrawing = clean.reopenLastDrawing;
+    store.set("reopenLastDrawing", clean.reopenLastDrawing);
   }
 
-  applyTheme();
+  if (themeChanged) applyTheme();
   return next;
 };

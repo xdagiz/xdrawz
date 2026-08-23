@@ -59,10 +59,6 @@ const App = () => {
     }
   }, []);
 
-  useEffect(() => {
-    void initSettings();
-  }, [initSettings]);
-
   useHotkey("Mod+,", () => setSettingsOpen(true), { requireReset: true });
 
   useEffect(() => {
@@ -132,23 +128,28 @@ const App = () => {
   useEffect(() => {
     let cancelled = false;
 
-    window.api.drawings
-      .load()
-      .then((snapshot) => {
+    const boot = async () => {
+      await initSettings();
+      if (cancelled) return;
+
+      try {
+        const snapshot = await window.api.drawings.load();
         if (!cancelled) {
           loadSnapshot(snapshot);
         }
-      })
-      .catch((err: unknown) => {
+      } catch (err) {
         if (!cancelled) {
           reportError(err, "load");
         }
-      });
+      }
+    };
+
+    void boot();
 
     return () => {
       cancelled = true;
     };
-  }, [loadSnapshot, reportError]);
+  }, [initSettings, loadSnapshot, reportError]);
 
   useEffect(() => {
     return window.api.files.onChanged((event) => applyEntries(event));

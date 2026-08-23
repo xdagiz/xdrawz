@@ -1,4 +1,9 @@
-import { DEFAULT_THEME, StoreType } from "@shared/ipc";
+import {
+  AUTOSAVE_PRESETS_MS,
+  DEFAULT_AUTOSAVE_INTERVAL_MS,
+  DEFAULT_THEME,
+  StoreType,
+} from "@shared/ipc";
 import Store from "electron-store";
 
 export const store = new Store<StoreType>({
@@ -18,6 +23,15 @@ export const store = new Store<StoreType>({
     zoomLevel: {
       type: "number",
       default: 0,
+    },
+    autosaveIntervalMs: {
+      type: "number",
+      enum: [...AUTOSAVE_PRESETS_MS],
+      default: DEFAULT_AUTOSAVE_INTERVAL_MS,
+    },
+    reopenLastDrawing: {
+      type: "boolean",
+      default: true,
     },
   },
 });

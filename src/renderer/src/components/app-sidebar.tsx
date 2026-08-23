@@ -62,6 +62,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     name: string;
     mode: FileDeleteMode;
   } | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const typeahead = useRef({ buffer: "", at: 0 });
 
   const entriesById = useMemo(() => buildEntriesById(entries), [entries]);
@@ -129,18 +130,24 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     };
   }, [openFileId, tree, entries.length]);
 
+  const performDelete = useCallback(
+    async (target: { id: string; name: string; mode: FileDeleteMode }) => {
+      try {
+        const ok = await deleteEntry(target.id, target.mode);
+        if (ok) toast.add({ title: `Deleted ${target.name}`, type: "success" });
+      } catch (error) {
+        toast.add({ title: toAppError(error, "delete").message, type: "error" });
+      }
+    },
+    [deleteEntry],
+  );
+
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
 
-    try {
-      const ok = await deleteEntry(deleteTarget.id, deleteTarget.mode);
-      if (ok) toast.add({ title: `Deleted ${deleteTarget.name}`, type: "success" });
-    } catch (error) {
-      toast.add({ title: toAppError(error, "delete").message, type: "error" });
-    } finally {
-      setDeleteTarget(null);
-    }
-  }, [deleteTarget, deleteEntry]);
+    await performDelete(deleteTarget);
+    setDeleteOpen(false);
+  }, [deleteTarget, performDelete]);
 
   const startRename = useCallback((fileId: string) => {
     setRenameError(null);
@@ -189,25 +196,34 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   useHotkey("Mod+N", () => void handleCreate(null, "file"));
   useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"));
 
-  const openDelete = useCallback((id: string, name: string, mode: FileDeleteMode) => {
-    const state = useStore.getState();
-    const currentOpenId = state.openFileId;
-    const containsOpenDirty =
-      currentOpenId !== null &&
-      state.dirtyById[currentOpenId] !== undefined &&
-      (id === currentOpenId || isAncestorId(id, currentOpenId));
+  const openDelete = useCallback(
+    (id: string, name: string, mode: FileDeleteMode) => {
+      const state = useStore.getState();
+      const currentOpenId = state.openFileId;
+      const containsOpenDirty =
+        currentOpenId !== null &&
+        state.dirtyById[currentOpenId] !== undefined &&
+        (id === currentOpenId || isAncestorId(id, currentOpenId));
 
-    if (containsOpenDirty) {
-      toast.add({
-        title: "Couldn’t delete",
-        description: "The folder contains the open drawing with unsaved changes. Close it first.",
-        type: "error",
-      });
-      return;
-    }
+      if (containsOpenDirty) {
+        toast.add({
+          title: "Couldn’t delete",
+          description: "The folder contains the open drawing with unsaved changes. Close it first.",
+          type: "error",
+        });
+        return;
+      }
 
-    setDeleteTarget({ id, name, mode });
-  }, []);
+      if (mode !== "permanent") {
+        void performDelete({ id, name, mode });
+        return;
+      }
+
+      setDeleteTarget({ id, name, mode });
+      setDeleteOpen(true);
+    },
+    [performDelete],
+  );
 
   const handleContainerKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -420,8 +436,10 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       </Sidebar>
 
       <AlertDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!open) setDeleteOpen(false);
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>

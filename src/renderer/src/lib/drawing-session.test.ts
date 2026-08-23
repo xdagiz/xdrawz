@@ -8,7 +8,6 @@ vi.mock("@excalidraw/excalidraw", () => ({
 }));
 
 import {
-  AUTOSAVE_MS,
   createDrawingSession,
   drawingSignature,
   type FrameScheduler,
@@ -90,7 +89,7 @@ describe("createDrawingSession", () => {
 
     expect(dirty).toHaveBeenCalledWith("f1", true);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
 
     expect(save).toHaveBeenCalledWith("f1", expect.any(String), "auto");
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
@@ -108,7 +107,7 @@ describe("createDrawingSession", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
     expect(save).not.toHaveBeenCalled();
   });
 
@@ -172,7 +171,7 @@ describe("createDrawingSession", () => {
     expect(allowed).toBe(false);
     expect(dirty).toHaveBeenLastCalledWith("f1", true);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
 
     expect(save).toHaveBeenCalledTimes(1);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
@@ -315,21 +314,21 @@ describe("createDrawingSession", () => {
 
     session.onChange([el("a")], appState("#000000"), emptyFiles);
     session.onChange([el("a"), el("b")], appState("#ffffff"), emptyFiles);
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
     expect(save).toHaveBeenCalledTimes(1);
 
     // Reverting while the first write is unresolved must queue the final state.
     session.onChange([el("a")], appState("#000000"), emptyFiles);
     await vi.advanceTimersByTimeAsync(0);
     resolveFirstSave(true);
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
 
     expect(save).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenLastCalledWith("f1", expect.stringContaining('"vbg":"#000000"'), "auto");
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
-  it("retries a failed save after AUTOSAVE_MS", async () => {
+  it("retries a failed save after the autosave interval", async () => {
     const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
     const { session, dirty } = makeSession({ save });
 
@@ -337,11 +336,11 @@ describe("createDrawingSession", () => {
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
     await vi.advanceTimersByTimeAsync(0);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
     expect(save).toHaveBeenCalledTimes(1);
     expect(dirty).toHaveBeenLastCalledWith("f1", true);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
     expect(save).toHaveBeenCalledTimes(2);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
@@ -354,16 +353,76 @@ describe("createDrawingSession", () => {
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
     await vi.advanceTimersByTimeAsync(0);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
 
     for (let i = 0; i < MAX_SAVE_RETRIES + 1; i++) {
-      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+      await vi.advanceTimersByTimeAsync(5100);
     }
 
     expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
 
-    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+    await vi.advanceTimersByTimeAsync(5100);
     expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+  });
+
+  it("setAutosaveInterval keeps a pending save on its original deadline", async () => {
+    const { session, save } = makeSession();
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    session.setAutosaveInterval(30000);
+
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    session.onChange([el("a"), el("b"), el("c")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(25000);
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it("setAutosaveInterval speeds up a pending save when shortened", async () => {
+    const { session, save } = makeSession();
+
+    session.setAutosaveInterval(30000);
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    session.setAutosaveInterval(1000);
+
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps autosave paused across an interval change", async () => {
+    const { session, save } = makeSession();
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    session.setAutosavePaused(true);
+    session.setAutosaveInterval(30000);
+
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(save).not.toHaveBeenCalled();
+
+    session.setAutosavePaused(false);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    session.onChange([el("a"), el("b"), el("c")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(30100);
+    expect(save).toHaveBeenCalledTimes(2);
   });
 
   describe("deferred signature evaluation", () => {
@@ -383,14 +442,14 @@ describe("createDrawingSession", () => {
         session.onChange([el("a"), el(`stroke-${i}`)], appState(`#${i}`), emptyFiles);
       }
 
-      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * 2);
+      await vi.advanceTimersByTimeAsync(10000);
       expect(save).not.toHaveBeenCalled();
       expect(dirty).not.toHaveBeenCalled();
 
       frame.fireFrame();
       expect(dirty).toHaveBeenCalledWith("f1", true);
 
-      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+      await vi.advanceTimersByTimeAsync(5100);
 
       expect(save).toHaveBeenCalledTimes(1);
       expect(save).toHaveBeenCalledWith("f1", expect.stringContaining("#49"), "auto");
@@ -408,7 +467,7 @@ describe("createDrawingSession", () => {
 
       expect(dirty).not.toHaveBeenCalled();
 
-      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+      await vi.advanceTimersByTimeAsync(5100);
       expect(save).not.toHaveBeenCalled();
     });
 
@@ -449,7 +508,7 @@ describe("createDrawingSession", () => {
       session.dispose();
       frame.fireFrame();
 
-      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 100);
+      await vi.advanceTimersByTimeAsync(5100);
 
       expect(save).not.toHaveBeenCalled();
       expect(dirty).not.toHaveBeenCalled();

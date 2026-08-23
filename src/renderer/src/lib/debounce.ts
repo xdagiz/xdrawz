@@ -1,6 +1,6 @@
 export function debounceAsync<TArgs extends unknown[]>(
   fn: (...args: TArgs) => Promise<void>,
-  wait: number,
+  initialWait: number,
 ) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastArgs: TArgs | null = null;
@@ -8,6 +8,7 @@ export function debounceAsync<TArgs extends unknown[]>(
   let paused = false;
   let frozenRemainingMs: number | null = null;
   let deadlineMs: number | null = null;
+  let wait = initialWait;
 
   const run = (args: TArgs) => {
     pending = pending
@@ -96,6 +97,37 @@ export function debounceAsync<TArgs extends unknown[]>(
     const remaining = frozenRemainingMs ?? wait;
     frozenRemainingMs = null;
     armTimer(remaining);
+  };
+
+  debounced.setWait = (nextMs: number) => {
+    if (!Number.isFinite(nextMs) || nextMs <= 0) return;
+
+    const remainingMs =
+      deadlineMs !== null ? Math.max(0, deadlineMs - Date.now()) : frozenRemainingMs;
+
+    wait = nextMs;
+
+    if (lastArgs === null) {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      deadlineMs = null;
+      frozenRemainingMs = null;
+      return;
+    }
+
+    const delayMs = remainingMs === null ? wait : Math.min(remainingMs, wait);
+
+    if (paused) {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+        deadlineMs = null;
+      }
+      frozenRemainingMs = delayMs;
+      return;
+    }
+
+    armTimer(delayMs);
   };
 
   return debounced;

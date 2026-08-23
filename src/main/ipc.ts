@@ -30,12 +30,14 @@ import {
 } from "@shared/channels";
 import { errorWithCode, isRecord, isSerializedAppError } from "@shared/errors";
 import type { ErrorOperation } from "@shared/errors";
+import { validateSettingsUpdate } from "@shared/ipc";
 import type {
   AppSettings,
   DrawingInfo,
   DrawingsSnapshot,
   FileDeleteMode,
   FileEntry,
+  SettingsUpdate,
 } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
@@ -124,7 +126,7 @@ type Deps = {
   onDirtyState: (win: BrowserWindow, requestId: number, dirty: boolean) => void;
   onFlushStarted: (win: BrowserWindow, requestId: number) => void;
   getSettings: () => AppSettings;
-  updateSettings: (update: AppSettings) => AppSettings;
+  updateSettings: (update: SettingsUpdate) => AppSettings;
 };
 
 const windowFromEvent = (
@@ -353,15 +355,11 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(SETTINGS_GET, "settings", () => deps.getSettings());
 
   handle(SETTINGS_SET, "settings", (_event, ...args) => {
-    const update = args[0];
-    if (!isRecord(update)) {
+    const payload = args[0];
+    if (!isRecord(payload)) {
       throw errorWithCode("Settings update must be an object", "INVALID");
     }
-    const themeRaw = update.theme;
-    if (themeRaw !== "light" && themeRaw !== "dark" && themeRaw !== "system") {
-      throw errorWithCode("Invalid theme", "INVALID");
-    }
-    return deps.updateSettings({ theme: themeRaw });
+    return deps.updateSettings(validateSettingsUpdate(payload));
   });
 
   handle(WINDOW_CLOSE, "unexpected", (event, ...args) => {

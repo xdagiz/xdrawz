@@ -1,12 +1,16 @@
 import type { ThemePreference } from "@shared/ipc";
-import { CheckIcon, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { AUTOSAVE_PRESETS_MS, isAutosavePresetMs } from "@shared/ipc";
+import { CheckIcon, Folder, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
 
+import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
-import { FieldLabel } from "./ui/field";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "./ui/field";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
+import { Switch } from "./ui/switch";
 import { toast } from "./ui/toast";
 
 type ThemeOption = {
@@ -94,8 +98,11 @@ type Props = {
 };
 
 export const SettingsDialog = ({ open, onOpenChange }: Props) => {
-  const theme = useStore((s) => s.settings.theme);
+  const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
+  const drawings = useStore((s) => s.drawings);
+  const changeDrawingsFolder = useStore((s) => s.changeDrawingsFolder);
+  const [pickingFolder, setPickingFolder] = useState(false);
 
   const handleThemeChange = async (value: ThemePreference) => {
     try {
@@ -105,9 +112,35 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     }
   };
 
+  const handleIntervalChange = async (value: number) => {
+    try {
+      await updateSettings({ autosaveIntervalMs: value });
+    } catch (error) {
+      toast.add({ title: toAppError(error, "settings", false).message, type: "error" });
+    }
+  };
+
+  const handleReopenChange = async (value: boolean) => {
+    try {
+      await updateSettings({ reopenLastDrawing: value });
+    } catch (error) {
+      toast.add({ title: toAppError(error, "settings", false).message, type: "error" });
+    }
+  };
+
+  const handleChangeFolder = async () => {
+    setPickingFolder(true);
+    try {
+      const switched = await changeDrawingsFolder();
+      if (switched) onOpenChange(false);
+    } finally {
+      setPickingFolder(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 sm:max-w-lg">
+      <DialogContent className="max-h-[85svh] gap-0 overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold">Settings</DialogTitle>
         </DialogHeader>
@@ -116,7 +149,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
           <p className="text-muted-foreground text-xs font-medium">Appearance</p>
           <RadioGroup
             aria-label="Theme"
-            value={theme}
+            value={settings.theme}
             onValueChange={(value) => {
               const option = THEME_OPTIONS.find((o) => o.value === value);
               if (option) void handleThemeChange(option.value);
@@ -127,11 +160,11 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
               <FieldLabel
                 key={option.value}
                 htmlFor={`theme-${option.value}`}
-                className="bg-card has-[button[data-checked]]:border-primary hover:border-foreground/25 flex w-full cursor-pointer flex-col gap-0 overflow-hidden rounded-lg border text-left shadow-none transition-colors"
+                className="bg-card has-[button[data-checked]]:border-primary hover:border-foreground/25 has-[button:focus-visible]:border-ring has-[button:focus-visible]:ring-ring/50 flex w-full cursor-pointer flex-col gap-0 overflow-hidden rounded-lg border text-left shadow-none transition-colors has-[button:focus-visible]:ring-1"
               >
                 <span className="relative block">
                   <ThemePreview value={option.value} />
-                  {theme === option.value && (
+                  {settings.theme === option.value && (
                     <span className="bg-primary text-primary-foreground absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full">
                       <CheckIcon className="size-3" />
                     </span>
@@ -147,6 +180,76 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
               </FieldLabel>
             ))}
           </RadioGroup>
+        </div>
+
+        <div className="pt-6">
+          <p className="text-muted-foreground text-xs font-medium">Autosave</p>
+          <RadioGroup
+            aria-label="Autosave interval"
+            value={String(settings.autosaveIntervalMs)}
+            onValueChange={(value) => {
+              const ms = Number(value);
+              if (isAutosavePresetMs(ms)) {
+                void handleIntervalChange(ms);
+              }
+            }}
+            className="mt-3 grid grid-cols-4 gap-3"
+          >
+            {AUTOSAVE_PRESETS_MS.map((ms) => (
+              <FieldLabel
+                key={ms}
+                htmlFor={`autosave-${ms}`}
+                className="bg-card has-[button[data-checked]]:border-primary hover:border-foreground/25 has-[button:focus-visible]:border-ring has-[button:focus-visible]:ring-ring/50 flex w-full cursor-pointer flex-col items-center gap-0 overflow-hidden rounded-lg border py-2.5 text-left shadow-none transition-colors has-[button:focus-visible]:ring-1"
+              >
+                <span className="flex items-center justify-center text-xs font-medium">
+                  {`${ms / 1000}s`}
+                </span>
+                <span className="sr-only">
+                  <RadioGroupItem value={String(ms)} id={`autosave-${ms}`} />
+                </span>
+              </FieldLabel>
+            ))}
+          </RadioGroup>
+        </div>
+
+        <div className="pt-6">
+          <p className="text-muted-foreground text-xs font-medium">Startup</p>
+          <Field orientation="horizontal" className="mt-3">
+            <FieldContent>
+              <FieldLabel htmlFor="reopen-last-drawing">Reopen last drawing</FieldLabel>
+            </FieldContent>
+            <Switch
+              id="reopen-last-drawing"
+              checked={settings.reopenLastDrawing}
+              onCheckedChange={(value) => void handleReopenChange(value)}
+            />
+          </Field>
+        </div>
+
+        <div className="pt-6">
+          <p className="text-muted-foreground text-xs font-medium">Storage</p>
+          <Field orientation="horizontal" className="mt-3">
+            <FieldContent>
+              <FieldLabel>Drawings folder</FieldLabel>
+              <FieldDescription className="break-all">
+                {drawings?.path ?? "Not set"}
+              </FieldDescription>
+            </FieldContent>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pickingFolder}
+              onClick={() => void handleChangeFolder()}
+            >
+              <Folder className="size-3.5" />
+              {pickingFolder ? "Choosing…" : "Change…"}
+            </Button>
+          </Field>
+          {drawings?.missing && (
+            <FieldDescription className="text-destructive mt-2">
+              This folder can’t be found. Pick it again or choose a new one.
+            </FieldDescription>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -3,10 +3,9 @@ import { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { SaveOrigin, UnsavedChoice, UnsavedReason } from "@shared/ipc";
+import { DEFAULT_AUTOSAVE_INTERVAL_MS } from "@shared/ipc";
 
 import { debounceAsync } from "@/lib/debounce";
-
-export const AUTOSAVE_MS = 5_000;
 
 export const MAX_SAVE_RETRIES = 3;
 
@@ -45,6 +44,7 @@ export type DrawingSessionControls = {
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
   ) => Promise<boolean>;
   isDirty: () => boolean;
+  setAutosaveInterval: (nextMs: number) => void;
   dispose: () => void;
 };
 
@@ -172,19 +172,18 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     }
   };
 
-  const debounced = debounceAsync(
-    async (
-      elements: readonly OrderedExcalidrawElement[],
-      appState: AppState,
-      files: BinaryFiles,
-      revision: number,
-      origin: SaveOrigin = "auto",
-    ) => {
-      if (blocked || disposed) return;
-      await persistDrawing(elements, appState, files, revision, origin);
-    },
-    AUTOSAVE_MS,
-  );
+  const persistLatest = async (
+    elements: readonly OrderedExcalidrawElement[],
+    appState: AppState,
+    files: BinaryFiles,
+    revision: number,
+    origin: SaveOrigin = "auto",
+  ) => {
+    if (blocked || disposed) return;
+    await persistDrawing(elements, appState, files, revision, origin);
+  };
+
+  const debounced = debounceAsync(persistLatest, DEFAULT_AUTOSAVE_INTERVAL_MS);
 
   const flush = async (opts?: FlushOpts) => {
     if (disposed) return;
@@ -311,6 +310,11 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     else unblock();
   };
 
+  const setAutosaveInterval = (nextMs: number) => {
+    if (!Number.isFinite(nextMs) || nextMs <= 0) return;
+    debounced.setWait(nextMs);
+  };
+
   const abandon = () => {
     debounced.cancel();
     saveFailures = 0;
@@ -370,6 +374,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     getSerializedContent,
     ensureCleanOrConfirm,
     isDirty: () => dirty,
+    setAutosaveInterval,
     setInitialBaseline: (signature: string | null) => {
       if (disposed || baseline !== null) return;
       diskBaseline = signature;

@@ -6,10 +6,7 @@ import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 import { toAppError } from "./app-error";
 import { type BoundDrawingSession, sessionOwner } from "./session-owner";
-import { nextDefaultName, useStore } from "./store";
-
-const STAMPED = "Untitled-2025-08-23-0942.excalidraw";
-const FIXED_NOW = new Date(2025, 7, 23, 9, 42);
+import { useStore } from "./store";
 
 const mockEntries: FileEntry[] = [
   {
@@ -98,6 +95,10 @@ describe("lastOpenedFileId", () => {
   });
 
   describe("loadSnapshot", () => {
+    beforeEach(() => {
+      useStore.setState({ settings: { ...DEFAULT_SETTINGS, reopenLastDrawing: true } });
+    });
+
     it("restores the last opened file only when it still exists as a file entry", () => {
       const snapshot = (lastOpenedFileId: string | null) =>
         ({
@@ -131,6 +132,28 @@ describe("lastOpenedFileId", () => {
       useStore.getState().loadSnapshot(snapshot);
 
       expect(useStore.getState().dirtyById).toEqual({});
+    });
+
+    it("skips restore when reopenLastDrawing is off even with a valid id", () => {
+      useStore.setState({ settings: { ...DEFAULT_SETTINGS, reopenLastDrawing: false } });
+
+      useStore.getState().loadSnapshot({
+        info: { path: null, displayName: null, configured: false, missing: false },
+        entries: mockEntries,
+        prefs: { lastOpenedFileId: "file-1" },
+      });
+
+      expect(useStore.getState().openFileId).toBeNull();
+    });
+
+    it("restores the last opened file when reopenLastDrawing is on", () => {
+      useStore.getState().loadSnapshot({
+        info: { path: null, displayName: null, configured: false, missing: false },
+        entries: mockEntries,
+        prefs: { lastOpenedFileId: "file-1" },
+      });
+
+      expect(useStore.getState().openFileId).toBe("file-1");
     });
   });
 
@@ -672,7 +695,10 @@ describe("settings theme sync", () => {
   });
 
   it("updateSettings writes the mirror on success and initSettings reconciles", async () => {
-    vi.mocked(window.api.settings.update).mockResolvedValue({ theme: "dark" });
+    vi.mocked(window.api.settings.update).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      theme: "dark",
+    });
 
     await useStore.getState().updateSettings({ theme: "dark" });
 
@@ -681,7 +707,7 @@ describe("settings theme sync", () => {
     expect(window.localStorage.setItem).toHaveBeenCalledWith(THEME_STORAGE_KEY, "dark");
     expect(useStore.getState().settings.theme).toBe("dark");
 
-    vi.mocked(window.api.settings.get).mockResolvedValue({ theme: "light" });
+    vi.mocked(window.api.settings.get).mockResolvedValue({ ...DEFAULT_SETTINGS, theme: "light" });
 
     await useStore.getState().initSettings();
 
