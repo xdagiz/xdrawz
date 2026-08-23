@@ -379,8 +379,10 @@ void app.whenReady().then(async () => {
       if (info) {
         const w = ensureWatcher();
         if (info.configured && info.path) {
-          await w.restart(info.path);
-          void w.refreshNow();
+          if (w.getRoot() !== info.path) {
+            await w.restart(info.path);
+            void w.refreshNow();
+          }
         } else {
           await w.stop();
         }
