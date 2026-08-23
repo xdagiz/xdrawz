@@ -7,6 +7,7 @@ import { installRendererErrorHandlers } from "@/lib/report-error";
 import App from "./App";
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster } from "./components/ui/toast";
+import { setCloseHandshakeActive } from "./lib/close-handshake";
 import { reportRendererError } from "./lib/report-error";
 import { sessionOwner } from "./lib/session-owner";
 import { useStore } from "./lib/store";
@@ -14,6 +15,8 @@ import { useStore } from "./lib/store";
 installRendererErrorHandlers();
 
 window.api.window.onWillClose((request) => {
+  setCloseHandshakeActive(true);
+
   if (request.kind === "check") {
     const session = sessionOwner.getSession();
     const dirty = Object.keys(useStore.getState().dirtyById).length > 0;
@@ -30,19 +33,23 @@ window.api.window.onWillClose((request) => {
     } catch (error) {
       reportRendererError(error, "save");
       window.api.window.cancelQuit(request.requestId);
+      setCloseHandshakeActive(false);
       return;
     }
 
     if (session?.isDirty()) {
       window.api.window.cancelQuit(request.requestId);
+      setCloseHandshakeActive(false);
       return;
     }
 
     await window.api.window.close(request.requestId);
+    setCloseHandshakeActive(false);
   })();
 });
 
 window.api.window.onCloseCancelled(() => {
+  setCloseHandshakeActive(false);
   sessionOwner.getSession()?.setAutosavePaused(false);
 });
 

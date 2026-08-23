@@ -180,8 +180,8 @@ export const normalizeContextMenuPos = (
   };
 };
 
-function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId" {
-  if (key !== "lastOpenedFileId") {
+function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId" | "recentFileIds" {
+  if (key !== "lastOpenedFileId" && key !== "recentFileIds") {
     throw new Error("Store key is not allowed");
   }
 }

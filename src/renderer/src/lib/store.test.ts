@@ -41,6 +41,7 @@ const resetStore = () => {
     drawings: null,
     entries: [],
     openFileId: null,
+    recentFileIds: [],
     dirtyById: {},
     error: null,
     filesRevision: 0,
@@ -841,5 +842,159 @@ describe("createEntry", () => {
       "already exists",
     );
     expect(useStore.getState().entries).toHaveLength(mockEntries.length);
+  });
+});
+
+describe("recentFileIds", () => {
+  const snapshotOf = (lastOpenedFileId: string | null): DrawingsSnapshot => ({
+    info: { path: null, displayName: null, configured: false, missing: false },
+    entries: mockEntries,
+    prefs: { lastOpenedFileId },
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("window", {
+      api: {
+        store: { set: vi.fn(), get: vi.fn() },
+        dialog: {
+          unsavedChanges: vi.fn(),
+          fileRecover: vi.fn(),
+          fileChanged: vi.fn(),
+        },
+        files: {
+          rename: vi.fn(),
+          delete: vi.fn(),
+          write: vi.fn(),
+          writeRecover: vi.fn(),
+          list: vi.fn().mockResolvedValue(mockEntries),
+        },
+      },
+    });
+    resetStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("moves an opened drawing to the head and persists a stringified payload", async () => {
+    useStore.setState({
+      entries: mockEntries,
+      openFileId: "file-2",
+      recentFileIds: ["file-2", "dir-1"],
+    });
+
+    await useStore.getState().setOpenFileId("file-1");
+
+    expect(useStore.getState().recentFileIds).toEqual(["file-1", "file-2", "dir-1"]);
+    expect(window.api.store.set).toHaveBeenCalledWith(
+      "recentFileIds",
+      JSON.stringify(["file-1", "file-2", "dir-1"]),
+    );
+  });
+
+  it("leaves recency untouched when the switch is cancelled", async () => {
+    registerSession(false);
+    useStore.setState({ entries: mockEntries, openFileId: "file-1" });
+    useStore.setState({ recentFileIds: ["file-1"] });
+
+    await useStore.getState().setOpenFileId("file-2");
+
+    expect(useStore.getState().openFileId).toBe("file-1");
+    expect(useStore.getState().recentFileIds).toEqual(["file-1"]);
+    expect(window.api.store.set).not.toHaveBeenCalledWith("recentFileIds", expect.anything());
+  });
+
+  it("rewrites nested ids when a folder is renamed and persists the change", async () => {
+    useStore.setState({
+      entries: [
+        {
+          id: "folder",
+          name: "folder",
+          kind: "directory",
+          parentId: null,
+          modifiedAt: 10,
+          size: 0,
+        },
+        {
+          id: "folder/old.excalidraw",
+          name: "old.excalidraw",
+          kind: "file",
+          parentId: "folder",
+          modifiedAt: 20,
+          size: 5,
+        },
+        mockEntries[0],
+      ],
+      recentFileIds: ["folder/old.excalidraw", "file-1"],
+    });
+    vi.mocked(window.api.files.rename).mockResolvedValue({
+      id: "renamed",
+      name: "renamed",
+      kind: "directory",
+      parentId: null,
+      modifiedAt: 30,
+      size: 0,
+    });
+
+    const ok = await useStore.getState().renameEntry("folder", "renamed");
+
+    expect(ok).toBe(true);
+    expect(useStore.getState().recentFileIds).toEqual(["renamed/old.excalidraw", "file-1"]);
+    expect(window.api.store.set).toHaveBeenCalledWith(
+      "recentFileIds",
+      JSON.stringify(["renamed/old.excalidraw", "file-1"]),
+    );
+  });
+
+  it("prunes ids inside a deleted folder and persists the change", async () => {
+    useStore.setState({
+      entries: [
+        {
+          id: "dir-1",
+          name: "subfolder",
+          kind: "directory",
+          parentId: null,
+          modifiedAt: 300,
+          size: 0,
+        },
+        ...mockEntries.filter((e) => e.id !== "dir-1"),
+      ],
+      recentFileIds: ["file-1", "dir-1/file-x", "file-2"],
+    });
+    vi.mocked(window.api.files.delete).mockResolvedValue(undefined);
+
+    const ok = await useStore.getState().deleteEntry("dir-1", "trash");
+
+    expect(ok).toBe(true);
+    expect(useStore.getState().recentFileIds).toEqual(["file-1", "file-2"]);
+    expect(window.api.store.set).toHaveBeenCalledWith(
+      "recentFileIds",
+      JSON.stringify(["file-1", "file-2"]),
+    );
+  });
+
+  it("boot hydration drops vanished ids and keeps surviving order", () => {
+    useStore.setState({ settings: { ...DEFAULT_SETTINGS, reopenLastDrawing: true } });
+
+    useStore
+      .getState()
+      .loadSnapshot(snapshotOf("file-2"), JSON.stringify(["gone", "dir-1", "file-1", "file-2"]));
+
+    expect(useStore.getState().recentFileIds).toEqual(["file-1", "file-2"]);
+    expect(useStore.getState().openFileId).toBe("file-2");
+  });
+
+  it("boot hydration seeds from the restored open file when nothing survives", () => {
+    useStore.setState({ settings: { ...DEFAULT_SETTINGS, reopenLastDrawing: true } });
+
+    useStore.getState().loadSnapshot(snapshotOf("file-1"), JSON.stringify(["vanished"]));
+
+    expect(useStore.getState().recentFileIds).toEqual(["file-1"]);
+
+    useStore.getState().loadSnapshot(snapshotOf(null), null);
+
+    expect(useStore.getState().recentFileIds).toEqual([]);
+    expect(useStore.getState().openFileId).toBeNull();
   });
 });

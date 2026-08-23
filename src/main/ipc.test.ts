@@ -315,6 +315,39 @@ describe("registerIpcHandlers wiring", () => {
     );
   });
 
+  it("allows recentFileIds store access and keeps the wire format string-only", async () => {
+    mocks.store.set.mockClear();
+    await expect(
+      handlers.get(STORE_SET)!(eventFor(), "recentFileIds", '["b","a"]'),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(mocks.store.set).toHaveBeenCalledWith("recentFileIds", '["b","a"]');
+
+    await expect(handlers.get(STORE_SET)!(eventFor(), "recentFileIds", ["b"])).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(mocks.store.set).toHaveBeenLastCalledWith("recentFileIds", null);
+
+    await expect(handlers.get(STORE_GET)!(eventFor(), "recentFileIds")).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(mocks.store.get).toHaveBeenCalledWith("recentFileIds");
+
+    await expect(handlers.get(STORE_DELETE)!(eventFor(), "recentFileIds")).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(mocks.store.delete).toHaveBeenCalledWith("recentFileIds");
+
+    await expect(handlers.get(STORE_GET)!(eventFor(), "unknownKey")).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({ message: "Store key is not allowed" }),
+      }),
+    );
+  });
+
   it("resolves the context menu with the clicked item id", async () => {
     const handler = handlers.get(CONTEXT_MENU_SHOW)!;
     const pending = handler(eventFor(), {

@@ -23,6 +23,13 @@ import { toast } from "@/components/ui/toast";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { conflictKeyOf, createSingleFlight, fileNameOf, reduceEntries } from "@/lib/conflicts";
 import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree } from "@/lib/entry-tree";
+import {
+  parseRecentIdsJson,
+  pushRecentId,
+  remapRecentIds,
+  removeRecentIds,
+  selectRecentFiles,
+} from "@/lib/recent-files";
 import { sessionOwner } from "@/lib/session-owner";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
@@ -75,6 +82,9 @@ export const drawingTimestamp = (date: Date): string => {
 
 const isNameTaken = (entries: FileEntry[], parentId: string | null, candidate: string) =>
   entries.some((e) => e.parentId === parentId && e.name.toLowerCase() === candidate.toLowerCase());
+
+const sameIdList = (a: string[], b: string[]): boolean =>
+  a.length === b.length && a.every((id, i) => b[i] === id);
 
 export const nextDefaultName = (
   entries: FileEntry[],
@@ -143,6 +153,7 @@ type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
   openFileId: string | null;
+  recentFileIds: string[];
   homeReturnFileId: string | null;
   dirtyById: Record<string, true>;
   error: AppError | null;
@@ -153,7 +164,7 @@ type State = {
   dismissedConflictKey: string | null;
   settings: AppSettings;
   settingsDialogOpen: boolean;
-  loadSnapshot: (snapshot: DrawingsSnapshot) => void;
+  loadSnapshot: (snapshot: DrawingsSnapshot, recentFileIdsJson?: string | null) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
   clearWatcherError: () => void;
@@ -247,6 +258,7 @@ export const useStore = create<State>((set, get) => {
     drawings: null,
     entries: [],
     openFileId: null,
+    recentFileIds: [],
     homeReturnFileId: null,
     dirtyById: {},
     error: null,
@@ -261,22 +273,33 @@ export const useStore = create<State>((set, get) => {
         ? { ...DEFAULT_SETTINGS, theme: readStoredTheme(window.localStorage) }
         : DEFAULT_SETTINGS,
 
-    loadSnapshot: (snapshot) =>
-      set((state) => ({
-        drawings: snapshot.info,
-        entries: snapshot.entries,
-        openFileId:
+    loadSnapshot: (snapshot, recentFileIdsJson) =>
+      set((state) => {
+        const openFileId =
           state.settings.reopenLastDrawing &&
           isOpenableFile(snapshot.entries, snapshot.prefs.lastOpenedFileId)
             ? snapshot.prefs.lastOpenedFileId
-            : null,
-        dirtyById: {},
-        error: null,
-        watcherDown: null,
-        filesRevision: state.filesRevision,
-        externalConflict: null,
-        dismissedConflictKey: null,
-      })),
+            : null;
+
+        const sanitized = selectRecentFiles(
+          parseRecentIdsJson(recentFileIdsJson ?? null),
+          snapshot.entries,
+        ).map((entry) => entry.id);
+        const recentFileIds = sanitized.length > 0 ? sanitized : openFileId ? [openFileId] : [];
+
+        return {
+          drawings: snapshot.info,
+          entries: snapshot.entries,
+          openFileId,
+          recentFileIds,
+          dirtyById: {},
+          error: null,
+          watcherDown: null,
+          filesRevision: state.filesRevision,
+          externalConflict: null,
+          dismissedConflictKey: null,
+        };
+      }),
 
     applyEntries: (event) => {
       const state = get();
@@ -302,8 +325,10 @@ export const useStore = create<State>((set, get) => {
         set({ openFileId: null, error: null, externalConflict: null });
         void window.api.store.set("lastOpenedFileId", null);
       } else if (isOpenableFile(get().entries, fileId)) {
-        set({ openFileId: fileId, error: null, externalConflict: null });
+        const recentFileIds = pushRecentId(get().recentFileIds, fileId);
+        set({ openFileId: fileId, error: null, externalConflict: null, recentFileIds });
         void window.api.store.set("lastOpenedFileId", fileId);
+        void window.api.store.set("recentFileIds", JSON.stringify(recentFileIds));
       } else {
         set({ error: null });
       }
@@ -327,19 +352,31 @@ export const useStore = create<State>((set, get) => {
       }
 
       const entry = await window.api.files.rename(id, newName);
-      const { entries, openFileId, dirtyById } = get();
+      const { entries, openFileId, dirtyById, recentFileIds } = get();
       const next = applySubtreeRemap({ entries, openFileId, dirtyById }, id, entry.id, {
         rootEntry: entry,
       });
+
+      const pairs = new Map<string, string>();
+      entries.forEach((e, i) => {
+        const mapped = next.entries[i]?.id;
+        if (mapped && mapped !== e.id) pairs.set(e.id, mapped);
+      });
+      const nextRecentFileIds = remapRecentIds(recentFileIds, (rid) => pairs.get(rid) ?? rid);
+      const recentChanged = !sameIdList(nextRecentFileIds, recentFileIds);
 
       set({
         entries: next.entries,
         openFileId: next.openFileId,
         dirtyById: next.dirtyById,
+        ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
       if (next.openFileId !== openFileId) {
         void window.api.store.set("lastOpenedFileId", next.openFileId);
+      }
+      if (recentChanged) {
+        void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
       }
       return true;
     },
@@ -364,17 +401,23 @@ export const useStore = create<State>((set, get) => {
 
       await window.api.files.delete(id, mode);
 
-      const { entries } = get();
+      const { entries, recentFileIds } = get();
       const next = applySubtreeDelete({ entries, openFileId, dirtyById }, id);
+      const nextRecentFileIds = removeRecentIds(recentFileIds, (rid) => isInsideSubtree(id, rid));
+      const recentChanged = nextRecentFileIds.length !== recentFileIds.length;
 
       set({
         entries: next.entries,
         openFileId: next.openFileId,
         dirtyById: next.dirtyById,
+        ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
       if (next.openedRemoved) {
         void window.api.store.set("lastOpenedFileId", null);
+      }
+      if (recentChanged) {
+        void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
       }
 
       return true;
@@ -559,14 +602,23 @@ export const useStore = create<State>((set, get) => {
     },
 
     discardMissingOpenFile: () => {
-      const { openFileId, dirtyById } = get();
+      const { openFileId, dirtyById, recentFileIds } = get();
+      const nextRecentFileIds = openFileId
+        ? removeRecentIds(recentFileIds, (rid) => rid === openFileId)
+        : recentFileIds;
+      const recentChanged = nextRecentFileIds.length !== recentFileIds.length;
+
       set({
         openFileId: null,
         externalConflict: null,
         dirtyById: openFileId ? removeKey(dirtyById, openFileId) : dirtyById,
+        ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
       void window.api.store.set("lastOpenedFileId", null);
+      if (recentChanged) {
+        void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
+      }
     },
 
     ensureCleanOrConfirm: async (reason = "switch") => {

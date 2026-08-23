@@ -8,6 +8,7 @@ import { stripExcalidraw } from "@/lib/utils";
 
 import { AppSidebar } from "./components/app-sidebar";
 import { CommandPalette } from "./components/command-palette";
+import { DrawingSwitcher } from "./components/drawing-switcher";
 import { EditorView } from "./components/editor-view";
 import { ErrorBoundary } from "./components/error-boundary";
 import { SettingsDialog } from "./components/settings-dialog";
@@ -15,6 +16,7 @@ import { ThemeProvider } from "./components/theme-provider";
 import { Button } from "./components/ui/button";
 import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
 import { toast } from "./components/ui/toast";
+import { useSwitcher } from "./hooks/use-switcher";
 
 const App = () => {
   const error = useStore((s) => s.error);
@@ -40,6 +42,7 @@ const App = () => {
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const switcher = useSwitcher({ paletteOpen });
 
   const folderMissing = drawings?.missing === true && entries.length === 0;
   const lastToastRef = useRef<string | null>(null);
@@ -138,8 +141,17 @@ const App = () => {
 
       try {
         const snapshot = await window.api.drawings.load();
+        if (cancelled) return;
+
+        let recentFileIdsJson: string | null = null;
+        try {
+          recentFileIdsJson = await window.api.store.get("recentFileIds");
+        } catch {
+          recentFileIdsJson = null;
+        }
+
         if (!cancelled) {
-          loadSnapshot(snapshot);
+          loadSnapshot(snapshot, recentFileIdsJson);
         }
       } catch (err) {
         if (!cancelled) {
@@ -225,6 +237,13 @@ const App = () => {
         </SidebarInset>
         <SettingsDialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        {switcher.state.phase === "cycling" && (
+          <DrawingSwitcher
+            index={switcher.state.index}
+            commitAt={switcher.commitAt}
+            onCancel={switcher.cancel}
+          />
+        )}
       </SidebarProvider>
     </ThemeProvider>
   );

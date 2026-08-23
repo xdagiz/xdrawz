@@ -8,6 +8,7 @@ import {
   remapId,
   remapNullableId,
 } from "./entry-tree";
+import { remapRecentIds } from "./recent-files";
 
 const entry = (id: string, kind: "file" | "directory" = "file"): FileEntry => ({
   id,
@@ -194,5 +195,40 @@ describe("applySubtreeDelete", () => {
   it("handles an empty dirty map", () => {
     const next = applySubtreeDelete(baseState(), "notes");
     expect(next.dirtyById).toEqual({});
+  });
+});
+
+const pairMapOf = (
+  state: ReturnType<typeof baseState>,
+  next: ReturnType<typeof applySubtreeRemap>,
+): Map<string, string> => new Map(state.entries.map((e, i) => [e.id, next.entries[i]?.id ?? e.id]));
+
+describe("recent-id remap feeding", () => {
+  it("folder renames produce pairs that remap nested recent ids in order", () => {
+    const state = baseState();
+    const next = applySubtreeRemap(state, "notes", "archive");
+    const pairs = pairMapOf(state, next);
+
+    const remapped = remapRecentIds(
+      ["z.excalidraw", "notes/deep/b.excalidraw", "notes/a.excalidraw"],
+      (id) => pairs.get(id) ?? id,
+    );
+
+    expect(remapped).toEqual(["z.excalidraw", "archive/deep/b.excalidraw", "archive/a.excalidraw"]);
+  });
+
+  it("keeps pair alignment when the renamed root entry is replaced wholesale", () => {
+    const state = baseState();
+    const rootEntry = { ...entry("archive", "directory"), modifiedAt: 500 };
+    const next = applySubtreeRemap(state, "notes", "archive", { rootEntry });
+    const pairs = pairMapOf(state, next);
+
+    expect(pairs.get("notes")).toBe("archive");
+    const remapped = remapRecentIds(
+      ["notes/deep/b.excalidraw", "notes"],
+      (id) => pairs.get(id) ?? id,
+    );
+
+    expect(remapped).toEqual(["archive/deep/b.excalidraw", "archive"]);
   });
 });

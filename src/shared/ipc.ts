@@ -75,6 +75,7 @@ export type WindowCloseRequest = {
 export type StoreType = {
   drawingsPath?: string;
   lastOpenedFileId?: string | null;
+  recentFileIds?: string[] | null;
   theme?: ThemePreference;
   zoomLevel?: number;
   autosaveIntervalMs?: number;
