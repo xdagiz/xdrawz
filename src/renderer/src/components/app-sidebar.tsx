@@ -354,7 +354,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                 type="button"
                 title="Show recent drawings"
                 data-home-active={openFileId === null ? "true" : undefined}
-                className="rounded outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[home-active=true]:text-sidebar-foreground"
+                className="focus-visible:ring-sidebar-ring data-[home-active=true]:text-sidebar-foreground rounded outline-none focus-visible:ring-2"
                 onClick={() => void openHome()}
               >
                 Drawings

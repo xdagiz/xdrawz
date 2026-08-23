@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { AppSidebar } from "./components/app-sidebar";
+import { CommandPalette } from "./components/command-palette";
 import { EditorView } from "./components/editor-view";
 import { ErrorBoundary } from "./components/error-boundary";
 import { SettingsDialog } from "./components/settings-dialog";
@@ -33,10 +34,12 @@ const App = () => {
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
   const editorEpoch = useStore((s) => s.editorEpoch);
+  const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
+  const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
 
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const folderMissing = drawings?.missing === true && entries.length === 0;
   const lastToastRef = useRef<string | null>(null);
@@ -59,7 +62,8 @@ const App = () => {
     }
   }, []);
 
-  useHotkey("Mod+,", () => setSettingsOpen(true), { requireReset: true });
+  useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
+  useHotkey("Mod+K", () => setPaletteOpen((current) => !current));
 
   useEffect(() => {
     if (!openFileId) {
@@ -198,7 +202,7 @@ const App = () => {
           } as CSSProperties
         }
       >
-        <AppSidebar onOpenSettings={() => setSettingsOpen(true)} />
+        <AppSidebar onOpenSettings={() => setSettingsDialogOpen(true)} />
         <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
           <div className="relative min-h-0 flex-1 overflow-hidden">
             <ErrorBoundary resetKeys={[openFileId, editorEpoch]}>
@@ -219,7 +223,8 @@ const App = () => {
             )}
           </div>
         </SidebarInset>
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+        <SettingsDialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       </SidebarProvider>
     </ThemeProvider>
   );

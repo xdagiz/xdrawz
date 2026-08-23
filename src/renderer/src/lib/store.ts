@@ -152,6 +152,7 @@ type State = {
   editorEpoch: number;
   dismissedConflictKey: string | null;
   settings: AppSettings;
+  settingsDialogOpen: boolean;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
@@ -165,6 +166,7 @@ type State = {
   overwriteOpenFileFromSession: () => Promise<boolean>;
   retryRecover: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
+  setSettingsDialogOpen: (open: boolean) => void;
   clearError: () => void;
   reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
   clearExternalConflict: () => void;
@@ -253,6 +255,7 @@ export const useStore = create<State>((set, get) => {
     watcherDown: null,
     editorEpoch: 0,
     dismissedConflictKey: null,
+    settingsDialogOpen: false,
     settings:
       typeof window !== "undefined"
         ? { ...DEFAULT_SETTINGS, theme: readStoredTheme(window.localStorage) }
@@ -435,6 +438,8 @@ export const useStore = create<State>((set, get) => {
     reportWatcherError: (event) => set({ watcherDown: event.message }),
 
     clearWatcherError: () => set({ watcherDown: null }),
+
+    setSettingsDialogOpen: (open) => set({ settingsDialogOpen: open }),
 
     clearExternalConflict: () => set({ externalConflict: null }),
 
