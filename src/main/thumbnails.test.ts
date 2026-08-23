@@ -1,0 +1,113 @@
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+vi.mock("electron", () => ({
+  app: {
+    getPath: () => "/mock-user-data",
+  },
+}));
+
+vi.mock("./drawings", () => ({
+  getDrawings: async () => ({ configured: false, path: null }),
+}));
+
+import {
+  decodeThumbnailKey,
+  getThumbnailCacheDir,
+  pruneThumbnailCache,
+  readThumbnailRecords,
+  thumbnailKey,
+  writeThumbnailRecord,
+} from "./thumbnails";
+
+const record = (fileId: string) => ({
+  fileId,
+  mtimeMs: 100,
+  size: 10,
+  light: "data:image/png;base64,AAAA",
+  dark: "data:image/png;base64,BBBB",
+});
+
+describe("thumbnails cache", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "xdrawz-thumbs-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("builds stable base64url keys that decode back to the id", () => {
+    const id = "nested folder/naïve drawing.excalidraw";
+    const key = thumbnailKey(id);
+    expect(key.endsWith(".json")).toBe(true);
+    expect(key.includes("=")).toBe(false);
+    expect(thumbnailKey(id)).toBe(key);
+    expect(decodeThumbnailKey(key)).toBe(id);
+    expect(getThumbnailCacheDir()).toBe(path.join("/mock-user-data", "thumbnails"));
+  });
+
+  it("roundtrips records through write and read", async () => {
+    await writeThumbnailRecord(record("a.excalidraw"), { cacheDir: dir });
+
+    const hits = await readThumbnailRecords(["a.excalidraw", "missing.excalidraw"], {
+      cacheDir: dir,
+    });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.fileId).toBe("a.excalidraw");
+    expect(hits[0]?.light).toBe(record("a.excalidraw").light);
+  });
+
+  it("skips corrupt or malformed record files instead of throwing", async () => {
+    await writeThumbnailRecord(record("good.excalidraw"), { cacheDir: dir });
+    await writeFile(path.join(dir, thumbnailKey("bad.excalidraw")), "{not json");
+    await writeFile(
+      path.join(dir, thumbnailKey("wrong-shape.excalidraw")),
+      JSON.stringify({ fileId: "x" }),
+    );
+
+    const hits = await readThumbnailRecords(
+      ["good.excalidraw", "bad.excalidraw", "wrong-shape.excalidraw"],
+      { cacheDir: dir },
+    );
+    expect(hits.map((r) => r.fileId)).toEqual(["good.excalidraw"]);
+  });
+
+  it("prunes records whose ids are no longer valid and keeps the rest", async () => {
+    await writeThumbnailRecord(record("keep.excalidraw"), { cacheDir: dir });
+    await writeThumbnailRecord(record("gone/deleted.excalidraw"), { cacheDir: dir });
+    await writeFile(path.join(dir, "garbage-name.json"), "{}");
+
+    const result = await pruneThumbnailCache(new Set(["keep.excalidraw"]), 2000, {
+      cacheDir: dir,
+    });
+
+    expect(result.removed).toBe(2);
+    const remaining = await readThumbnailRecords(["keep.excalidraw", "gone/deleted.excalidraw"], {
+      cacheDir: dir,
+    });
+    expect(remaining.map((r) => r.fileId)).toEqual(["keep.excalidraw"]);
+  });
+
+  it("evicts oldest records first when over the cap", async () => {
+    const ids = ["a.excalidraw", "b.excalidraw", "c.excalidraw"];
+    for (const [index, id] of ids.entries()) {
+      await writeThumbnailRecord(record(id), { cacheDir: dir });
+      const file = path.join(dir, thumbnailKey(id));
+      const stamp = 1_000_000 + index * 1_000;
+      await utimes(file, stamp / 1000, stamp / 1000);
+    }
+
+    await pruneThumbnailCache(new Set(ids), 2, { cacheDir: dir });
+
+    const remainingIds = (await readThumbnailRecords(ids, { cacheDir: dir }))
+      .map((r) => r.fileId)
+      .toSorted();
+    expect(remainingIds).toEqual(["b.excalidraw", "c.excalidraw"]);
+  });
+});

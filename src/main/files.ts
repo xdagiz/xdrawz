@@ -19,6 +19,22 @@ export type FsMutationHooks = {
   beforeMutate?: (absPaths: string[]) => void;
 };
 
+export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsMutationHooks) => {
+  const dir = path.dirname(absPath);
+  const tmp = path.join(dir, `.${path.basename(absPath)}.${process.pid}.${Date.now()}.tmp`);
+
+  hooks?.beforeMutate?.([absPath, tmp]);
+
+  try {
+    await writeFile(tmp, data, "utf8");
+    await rename(tmp, absPath);
+  } catch (error) {
+    await unlink(tmp).catch(() => {});
+
+    throw error;
+  }
+};
+
 const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
 
 const toRelativeId = (root: string, absPath: string) =>
@@ -127,22 +143,6 @@ const assertContentSize = (content: string) => {
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > MAX_FILE_CONTENT_BYTES) {
     throw errorWithCode(`Content exceeds ${MAX_FILE_CONTENT_BYTES} bytes`, "TOO_LARGE");
-  }
-};
-
-const atomicWriteFile = async (absPath: string, data: string, hooks?: FsMutationHooks) => {
-  const dir = path.dirname(absPath);
-  const tmp = path.join(dir, `.${path.basename(absPath)}.${process.pid}.${Date.now()}.tmp`);
-
-  hooks?.beforeMutate?.([absPath, tmp]);
-
-  try {
-    await writeFile(tmp, data, "utf8");
-    await rename(tmp, absPath);
-  } catch (error) {
-    await unlink(tmp).catch(() => {});
-
-    throw error;
   }
 };
 

@@ -19,6 +19,8 @@ import {
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
+  THUMBNAILS_GET,
+  THUMBNAILS_PUT,
   WATCHER_ERROR,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
@@ -104,6 +106,10 @@ const api: NativeApi = {
   settings: {
     get: () => invoke(SETTINGS_GET),
     update: (updates) => invoke(SETTINGS_SET, updates),
+  },
+  thumbnails: {
+    get: (ids) => invoke(THUMBNAILS_GET, ids),
+    put: (record) => invoke(THUMBNAILS_PUT, record),
   },
   contextMenu: {
     show: (items, x, y) => invoke(CONTEXT_MENU_SHOW, { items, x, y }),

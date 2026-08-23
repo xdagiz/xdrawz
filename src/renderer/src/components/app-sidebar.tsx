@@ -51,6 +51,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
+  const openHome = useStore((s) => s.openHome);
   const renameEntry = useStore((s) => s.renameEntry);
   const createEntry = useStore((s) => s.createEntry);
   const deleteEntry = useStore((s) => s.deleteEntry);
@@ -349,7 +350,15 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupLabel className="flex items-center justify-between">
-              Drawings
+              <button
+                type="button"
+                title="Show recent drawings"
+                data-home-active={openFileId === null ? "true" : undefined}
+                className="rounded outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[home-active=true]:text-sidebar-foreground"
+                onClick={() => void openHome()}
+              >
+                Drawings
+              </button>
               <button
                 type="button"
                 aria-label="New drawing or folder"

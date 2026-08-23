@@ -21,6 +21,8 @@ import {
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
+  THUMBNAILS_GET,
+  THUMBNAILS_PUT,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
   WINDOW_DIRTY_STATE,
@@ -38,6 +40,7 @@ import type {
   FileDeleteMode,
   FileEntry,
   SettingsUpdate,
+  ThumbnailRecord,
 } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
@@ -45,6 +48,7 @@ import { showUnsavedChangesDialog } from "./close-guard";
 import { shouldQuitAfterFatal, withIpcResult } from "./errors";
 import { log } from "./logger";
 import { store } from "./store";
+import { isValidThumbnailRecord } from "./thumbnails";
 
 export const APP_ORIGIN = "app://renderer";
 export const APP_HOST = "renderer";
@@ -127,6 +131,8 @@ type Deps = {
   onFlushStarted: (win: BrowserWindow, requestId: number) => void;
   getSettings: () => AppSettings;
   updateSettings: (update: SettingsUpdate) => AppSettings;
+  getThumbnails: (ids: string[]) => Promise<ThumbnailRecord[]>;
+  saveThumbnail: (record: ThumbnailRecord) => Promise<void>;
 };
 
 const windowFromEvent = (
@@ -185,6 +191,16 @@ const requireString = (value: unknown, field: string) => {
     throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
   }
   return value;
+};
+
+const requireIdArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    throw errorWithCode("ids must be an array", "INVALID");
+  }
+  if (value.length > 500) {
+    throw errorWithCode("Too many ids", "INVALID");
+  }
+  return [...new Set(value.map((item) => requireString(item, "id")))];
 };
 
 const isFileDeleteMode = (value: unknown): value is FileDeleteMode =>
@@ -443,6 +459,16 @@ export const registerIpcHandlers = (deps: Deps) => {
     if (response === 0) return "reload";
     if (response === 1) return "overwrite";
     return "cancel";
+  });
+
+  handle(THUMBNAILS_GET, "read", (_event, ...args) => deps.getThumbnails(requireIdArray(args[0])));
+
+  handle(THUMBNAILS_PUT, "save", (_event, ...args) => {
+    const record = args[0];
+    if (!isValidThumbnailRecord(record)) {
+      throw errorWithCode("Invalid thumbnail record", "INVALID");
+    }
+    return deps.saveThumbnail(record);
   });
 
   handle(WINDOW_REPORT_FATAL, "unexpected", (_event, ...args) => {

@@ -53,6 +53,7 @@ import {
   applyWindowBgColor,
 } from "./settings";
 import { getLastOpenedFileId, getZoomLevel, setZoomLevel } from "./store";
+import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 
 process.on("uncaughtException", (error) => {
@@ -167,6 +168,15 @@ function createWatcher() {
 function ensureWatcher() {
   if (!watcher) watcher = createWatcher();
   return watcher;
+}
+
+async function pruneThumbnails() {
+  try {
+    const entries = await listEntries();
+    await pruneThumbnailCache(new Set(entries.map((entry) => entry.id)));
+  } catch (error) {
+    log.error("[thumbnails] prune failed", error);
+  }
 }
 
 function withWatchIgnore<TArgs extends unknown[], TRet>(
@@ -374,6 +384,8 @@ void app.whenReady().then(async () => {
     onFlushStarted,
     getSettings,
     updateSettings: setSettings,
+    getThumbnails: readThumbnailRecords,
+    saveThumbnail: writeThumbnailRecord,
     pickDrawings: async (parentWindow) => {
       const info = await pickDrawings(parentWindow);
       if (info) {
@@ -383,6 +395,7 @@ void app.whenReady().then(async () => {
             await w.restart(info.path);
             void w.refreshNow();
           }
+          void pruneThumbnails();
         } else {
           await w.stop();
         }
@@ -401,6 +414,7 @@ void app.whenReady().then(async () => {
   if (info.configured && info.path) {
     const w = ensureWatcher();
     await w.start(info.path);
+    void pruneThumbnails();
     ensureMainWindow();
   } else {
     createGreetingWindow();

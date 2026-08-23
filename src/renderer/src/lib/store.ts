@@ -143,6 +143,7 @@ type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
   openFileId: string | null;
+  homeReturnFileId: string | null;
   dirtyById: Record<string, true>;
   error: AppError | null;
   filesRevision: number;
@@ -156,6 +157,7 @@ type State = {
   reportWatcherError: (event: WatcherErrorEvent) => void;
   clearWatcherError: () => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
+  openHome: () => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<boolean>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<boolean>;
   createEntry: (parentId: string | null, kind: "file" | "directory") => Promise<string | null>;
@@ -243,6 +245,7 @@ export const useStore = create<State>((set, get) => {
     drawings: null,
     entries: [],
     openFileId: null,
+    homeReturnFileId: null,
     dirtyById: {},
     error: null,
     filesRevision: 0,
@@ -300,6 +303,16 @@ export const useStore = create<State>((set, get) => {
         void window.api.store.set("lastOpenedFileId", fileId);
       } else {
         set({ error: null });
+      }
+    },
+
+    openHome: async () => {
+      const current = get().openFileId;
+      if (current === null) return;
+
+      await get().setOpenFileId(null);
+      if (get().openFileId === null) {
+        set({ homeReturnFileId: current });
       }
     },
 

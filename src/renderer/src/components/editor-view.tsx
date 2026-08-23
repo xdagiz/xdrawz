@@ -2,6 +2,8 @@ import { lazy, Suspense } from "react";
 
 import { useStore } from "@/lib/store";
 
+import { HomeGrid } from "./home-grid";
+
 const ExcalidrawEditor = lazy(() =>
   import("@/components/excalidraw-editor").then((m) => ({ default: m.ExcalidrawEditor })),
 );
@@ -11,11 +13,7 @@ export const EditorView = () => {
   const editorEpoch = useStore((s) => s.editorEpoch);
 
   if (!openFileId) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground text-sm">No file selected</p>
-      </div>
-    );
+    return <HomeGrid />;
   }
 
   return (

@@ -48,6 +48,8 @@ import {
   STORE_DELETE,
   STORE_GET,
   STORE_SET,
+  THUMBNAILS_GET,
+  THUMBNAILS_PUT,
   WINDOW_CLOSE,
   WINDOW_READY,
 } from "@shared/channels";
@@ -177,6 +179,8 @@ const deps = {
   onFlushStarted: vi.fn(),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
+  getThumbnails: vi.fn(),
+  saveThumbnail: vi.fn(async () => undefined),
 };
 
 const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
@@ -206,6 +210,54 @@ describe("registerIpcHandlers wiring", () => {
     mocks.on.mockImplementation((channel, listener) => listeners.set(channel, listener));
 
     registerIpcHandlers(deps);
+  });
+
+  const thumbnailRecord = {
+    fileId: "a.excalidraw",
+    mtimeMs: 1,
+    size: 2,
+    light: "data:image/png;base64,AAAA",
+    dark: "data:image/png;base64,BBBB",
+  };
+
+  it("serves thumbnail records through the get channel", async () => {
+    deps.getThumbnails.mockResolvedValue([thumbnailRecord]);
+
+    await expect(handlers.get(THUMBNAILS_GET)!(eventFor(), ["a.excalidraw"])).resolves.toEqual({
+      ok: true,
+      value: [thumbnailRecord],
+    });
+    expect(deps.getThumbnails).toHaveBeenCalledWith(["a.excalidraw"]);
+  });
+
+  it("rejects invalid thumbnail get requests", async () => {
+    await expect(handlers.get(THUMBNAILS_GET)!(eventFor(), "not-an-array")).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
+    );
+    await expect(
+      handlers.get(THUMBNAILS_GET)!(
+        eventFor(),
+        Array.from({ length: 501 }, () => "x"),
+      ),
+    ).resolves.toEqual(expect.objectContaining({ ok: false }));
+    await expect(handlers.get(THUMBNAILS_GET)!(eventFor(), [""])).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
+    );
+  });
+
+  it("validates thumbnail put payloads", async () => {
+    await expect(handlers.get(THUMBNAILS_PUT)!(eventFor(), thumbnailRecord)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(deps.saveThumbnail).toHaveBeenCalledWith(thumbnailRecord);
+
+    await expect(handlers.get(THUMBNAILS_PUT)!(eventFor(), { fileId: "x" })).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
+    );
+    await expect(handlers.get(THUMBNAILS_PUT)!(eventFor(), "nope")).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
+    );
   });
 
   it("validates the close request id before destroying the window", async () => {

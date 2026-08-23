@@ -153,3 +153,11 @@ export const validateSettingsUpdate = (payload: Record<string, unknown>): Settin
   }
   return update;
 };
+
+export type ThumbnailRecord = {
+  fileId: string;
+  mtimeMs: number;
+  size: number;
+  light: string;
+  dark: string;
+};

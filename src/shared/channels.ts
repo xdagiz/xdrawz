@@ -27,3 +27,5 @@ export const STORE_SET = "store:set";
 export const STORE_DELETE = "store:delete";
 export const SETTINGS_GET = "settings:get";
 export const SETTINGS_SET = "settings:set";
+export const THUMBNAILS_GET = "thumbnails:get";
+export const THUMBNAILS_PUT = "thumbnails:put";

@@ -11,6 +11,7 @@ import type {
   FilesChangedEvent,
   SettingsUpdate,
   StoreKey,
+  ThumbnailRecord,
   UnsavedChoice,
   UnsavedReason,
   WatcherErrorEvent,
@@ -46,6 +47,10 @@ export interface NativeApi {
   settings: {
     get: () => Promise<AppSettings>;
     update: (updated: SettingsUpdate) => Promise<AppSettings>;
+  };
+  thumbnails: {
+    get: (ids: string[]) => Promise<ThumbnailRecord[]>;
+    put: (record: ThumbnailRecord) => Promise<void>;
   };
   contextMenu: {
     show: (items: ContextMenuItem[], x: number, y: number) => Promise<string | null>;
