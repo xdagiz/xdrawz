@@ -11,9 +11,8 @@ import type {
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 import { useHotkey } from "@tanstack/react-hotkeys";
-import { PanelLeftIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { useDrawingSession } from "@/hooks/use-drawing-session";
 import { useTheme } from "@/hooks/use-theme";
@@ -77,7 +76,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+
+  const toggleSidebarRef = useRef(toggleSidebar);
+  toggleSidebarRef.current = toggleSidebar;
 
   const initialData = useMemo(() => {
     return async () => {
@@ -105,6 +106,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     [],
   );
 
+  // TODO: update this with renderTopLeftUI when a new release includes it
   useEffect(() => {
     const root = editorRef.current;
 
@@ -123,17 +125,20 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         host.style.top = "0";
         host.style.left = "0";
         host.style.pointerEvents = "auto";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "sidebar-toggle";
+        button.setAttribute("aria-label", "Toggle sidebar");
+        button.title = "Toggle sidebar";
+        button.addEventListener("click", () => toggleSidebarRef.current());
+        button.innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>';
+
+        host.appendChild(button);
         canvasActions.prepend(host);
-      }
-
-      const reserved = "calc(var(--lg-button-size, 2.25rem) + 0.5rem)";
-      if (canvasActions.style.paddingLeft !== reserved) {
-        canvasActions.style.paddingLeft = reserved;
-      }
-
-      if (anchor !== host) {
+        canvasActions.style.paddingLeft = "calc(var(--lg-button-size, 2.25rem) + 0.5rem)";
         anchor = host;
-        setMenuAnchor(host);
       }
     };
 
@@ -145,10 +150,8 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
     return () => {
       observer?.disconnect();
-      if (anchor) {
-        anchor.parentElement?.style.removeProperty("padding-left");
-        anchor.remove();
-      }
+      anchor?.parentElement?.style.removeProperty("padding-left");
+      anchor?.remove();
     };
   }, []);
 
@@ -199,19 +202,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           }}
         />
       </ErrorBoundary>
-      {menuAnchor &&
-        createPortal(
-          <button
-            type="button"
-            className="sidebar-toggle"
-            aria-label="Toggle sidebar"
-            title="Toggle sidebar"
-            onClick={toggleSidebar}
-          >
-            <PanelLeftIcon />
-          </button>,
-          menuAnchor,
-        )}
     </div>
   );
 };
