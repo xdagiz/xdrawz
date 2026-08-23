@@ -168,6 +168,7 @@ const deps = {
   writeDrawingFile: vi.fn(),
   writeDrawingFileRecover: vi.fn(),
   renameEntry: vi.fn(),
+  createEntry: vi.fn(),
   deleteEntry: vi.fn(),
   destroyWindow: vi.fn(),
   markWindowReady: vi.fn(),

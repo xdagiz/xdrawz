@@ -6,7 +6,10 @@ import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 import { toAppError } from "./app-error";
 import { type BoundDrawingSession, sessionOwner } from "./session-owner";
-import { useStore } from "./store";
+import { nextDefaultName, useStore } from "./store";
+
+const STAMPED = "Untitled-2025-08-23-0942.excalidraw";
+const FIXED_NOW = new Date(2025, 7, 23, 9, 42);
 
 const mockEntries: FileEntry[] = [
   {
@@ -543,7 +546,14 @@ describe("renameEntry/deleteEntry cancellation", () => {
 
     expect(ok).toBe(true);
     expect(useStore.getState().entries).toEqual([
-      { id: "renamed", name: "renamed", kind: "directory", parentId: null, modifiedAt: 30, size: 0 },
+      {
+        id: "renamed",
+        name: "renamed",
+        kind: "directory",
+        parentId: null,
+        modifiedAt: 30,
+        size: 0,
+      },
       {
         id: "renamed/old.excalidraw",
         name: "old.excalidraw",
@@ -741,5 +751,69 @@ describe("ensureCleanOrConfirm without a session", () => {
     });
 
     await expect(useStore.getState().ensureCleanOrConfirm("switch")).resolves.toBe(true);
+  });
+});
+
+describe("createEntry", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", {
+      api: {
+        store: { set: vi.fn(), get: vi.fn() },
+        files: {
+          create: vi.fn(),
+          rename: vi.fn(),
+          delete: vi.fn(),
+          write: vi.fn(),
+          writeRecover: vi.fn(),
+          list: vi.fn(),
+        },
+        dialog: {
+          unsavedChanges: vi.fn(),
+          fileRecover: vi.fn(),
+          fileChanged: vi.fn(),
+        },
+      },
+    });
+    resetStore();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns the new id and inserts the returned entry sorted", async () => {
+    useStore.setState({ entries: mockEntries });
+    const created: FileEntry = {
+      id: "dir-1/m.excalidraw",
+      name: "m.excalidraw",
+      kind: "file",
+      parentId: "dir-1",
+      modifiedAt: 400,
+      size: 10,
+    };
+    vi.mocked(window.api.files.create).mockResolvedValue(created);
+
+    const id = await useStore.getState().createEntry("dir-1", "file");
+
+    expect(id).toBe("dir-1/m.excalidraw");
+    expect(window.api.files.create).toHaveBeenCalledWith(
+      "dir-1",
+      expect.stringMatching(/^Untitled-\d{4}-\d{2}-\d{2}-\d{4}\.excalidraw$/),
+      "file",
+    );
+    const ids = useStore.getState().entries.map((e) => e.id);
+    expect(ids).toContain("dir-1/m.excalidraw");
+  });
+
+  it("propagates failures to the caller", async () => {
+    useStore.setState({ entries: mockEntries });
+    vi.mocked(window.api.files.create).mockRejectedValue(
+      new Error("A file or folder with that name already exists"),
+    );
+
+    await expect(useStore.getState().createEntry(null, "directory")).rejects.toThrow(
+      "already exists",
+    );
+    expect(useStore.getState().entries).toHaveLength(mockEntries.length);
   });
 });

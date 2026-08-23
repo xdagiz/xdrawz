@@ -29,6 +29,11 @@ export interface NativeApi {
     write: (id: string, content: string) => Promise<void>;
     writeRecover: (id: string, content: string) => Promise<void>;
     rename: (id: string, newName: string) => Promise<FileEntry>;
+    create: (
+      parentId: string | null,
+      name: string,
+      kind: "file" | "directory",
+    ) => Promise<FileEntry>;
     delete: (id: string, mode?: FileDeleteMode) => Promise<void>;
     onChanged: (cb: (event: FilesChangedEvent) => void) => () => void;
     onWatcherError: (cb: (event: WatcherErrorEvent) => void) => () => void;

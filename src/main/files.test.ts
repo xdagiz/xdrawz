@@ -20,6 +20,7 @@ vi.mock("./drawings", () => ({
 }));
 
 import {
+  createEntry,
   deleteEntry,
   listEntries,
   readDrawingFile,
@@ -189,5 +190,51 @@ describe("files", () => {
     await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
 
     await expect(deleteEntry("a.excalidraw", "trash")).rejects.toThrow("Trash is unavailable");
+  });
+
+  it("creates a drawing at the root, appending the extension", async () => {
+    const entry = await createEntry(null, "Untitled", "file");
+
+    expect(entry.id).toBe("Untitled.excalidraw");
+    expect(entry.kind).toBe("file");
+    expect((await listEntries()).map((e) => e.id)).toContain("Untitled.excalidraw");
+    await expect(readDrawingFile("Untitled.excalidraw")).resolves.toContain('"elements":[]');
+  });
+
+  it("creates a nested drawing inside an existing folder", async () => {
+    await mkdir(path.join(ctx.root, "nested"));
+
+    const entry = await createEntry("nested", "Sketch", "file");
+
+    expect(entry.id).toBe("nested/Sketch.excalidraw");
+    expect(entry.parentId).toBe("nested");
+  });
+
+  it("creates directories without extension coercion", async () => {
+    const entry = await createEntry(null, "Cats", "directory");
+
+    expect(entry.id).toBe("Cats");
+    expect(entry.kind).toBe("directory");
+    const listed = (await listEntries()).find((e) => e.id === "Cats");
+    expect(listed?.kind).toBe("directory");
+  });
+
+  it("rejects duplicate names at the destination", async () => {
+    await writeFile(path.join(ctx.root, "a.excalidraw"), SCENE);
+
+    await expect(createEntry(null, "a.excalidraw", "file")).rejects.toThrow(
+      "A file or folder with that name already exists",
+    );
+    await expect(createEntry(null, "a", "file")).rejects.toThrow(
+      "A file or folder with that name already exists",
+    );
+  });
+
+  it("rejects names with path separators and missing parents", async () => {
+    await expect(createEntry(null, "bad/name", "file")).rejects.toThrow(
+      "Name cannot contain path separators",
+    );
+    await expect(createEntry("ghost", "x.excalidraw", "file")).rejects.toThrow();
+    await expect(createEntry(null, "   ", "directory")).rejects.toThrow("Name cannot be empty");
   });
 });

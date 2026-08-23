@@ -9,6 +9,7 @@ import {
   DRAWINGS_GET,
   DRAWINGS_LOAD,
   DRAWINGS_PICK,
+  FILES_CREATE,
   FILES_DELETE,
   FILES_LIST,
   FILES_READ,
@@ -111,6 +112,11 @@ type Deps = {
   writeDrawingFile: (id: string, content: string) => Promise<void>;
   writeDrawingFileRecover: (id: string, content: string) => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
+  createEntry: (
+    parentId: string | null,
+    name: string,
+    kind: "file" | "directory",
+  ) => Promise<FileEntry>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<void>;
   destroyWindow: (win: BrowserWindow, requestId: number) => void;
   markWindowReady: (win: BrowserWindow) => void;
@@ -264,6 +270,17 @@ export const registerIpcHandlers = (deps: Deps) => {
     const id = requireString(args[0], "id");
     const newName = requireString(args[1], "newName");
     return deps.renameEntry(id, newName);
+  });
+
+  handle(FILES_CREATE, "create", (_event, ...args) => {
+    const parentRaw = args[0];
+    const parentId = parentRaw === null ? null : requireString(parentRaw, "parentId");
+    const name = requireString(args[1], "name");
+    const kindRaw = args[2];
+    if (kindRaw !== "file" && kindRaw !== "directory") {
+      throw errorWithCode("Kind must be file or directory", "INVALID");
+    }
+    return deps.createEntry(parentId, name, kindRaw);
   });
 
   handle(FILES_WRITE, "save", (_event, ...args) => {

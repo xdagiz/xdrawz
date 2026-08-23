@@ -27,6 +27,7 @@ import {
 import { getDrawings, pickDrawings } from "./drawings";
 import { shouldQuitAfterFatal } from "./errors";
 import {
+  createEntry,
   deleteEntry,
   listEntries,
   readDrawingFile,
@@ -340,6 +341,7 @@ void app.whenReady().then(async () => {
   const writeDrawingFileWatched = withWatchIgnore(writeDrawingFile);
   const writeDrawingFileRecoverWatched = withWatchIgnore(writeDrawingFileRecover);
   const renameEntryWatched = withWatchIgnore(renameEntry);
+  const createEntryWatched = withWatchIgnore(createEntry);
   const deleteEntryWatched = withWatchIgnore(
     (id: string, mode: Parameters<typeof deleteEntry>[1], hooks: FsMutationHooks | undefined) =>
       deleteEntry(id, mode, hooks, (trashPath) => shell.trashItem(trashPath)),
@@ -362,6 +364,7 @@ void app.whenReady().then(async () => {
     readDrawingFile,
     writeDrawingFile: writeDrawingFileWatched,
     renameEntry: renameEntryWatched,
+    createEntry: createEntryWatched,
     deleteEntry: deleteEntryWatched,
     writeDrawingFileRecover: writeDrawingFileRecoverWatched,
     destroyWindow,

@@ -1,5 +1,8 @@
 import { errorWithCode } from "@shared/errors";
 
+export const EMPTY_DRAWING_CONTENT =
+  '{"type":"excalidraw","version":2,"source":"xdrawz","elements":[],"appState":{},"files":{}}';
+
 export const assertDrawingJson = (content: string) => {
   let parsed: unknown;
   try {

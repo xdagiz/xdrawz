@@ -33,6 +33,13 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
     };
   }
 
+  if (operation === "create") {
+    return {
+      title: "Couldn’t create this drawing",
+      message: "Check that the drawings folder is available and try again.",
+    };
+  }
+
   if (operation === "delete") {
     return {
       title: "Couldn’t delete this drawing",

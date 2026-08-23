@@ -61,6 +61,38 @@ const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.i
   return next;
 };
 
+const pad2 = (value: number) => `${value}`.padStart(2, "0");
+
+export const drawingTimestamp = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = pad2(date.getMonth() + 1);
+  const day = pad2(date.getDate());
+  const hr = pad2(date.getHours());
+  const min = pad2(date.getMinutes());
+
+  return `${year}-${month}-${day}-${hr}${min}`;
+};
+
+const isNameTaken = (entries: FileEntry[], parentId: string | null, candidate: string) =>
+  entries.some((e) => e.parentId === parentId && e.name.toLowerCase() === candidate.toLowerCase());
+
+export const nextDefaultName = (
+  entries: FileEntry[],
+  parentId: string | null,
+  kind: "file" | "directory",
+  now: Date = new Date(),
+): string => {
+  const base = kind === "directory" ? "New Folder" : `Untitled-${drawingTimestamp(now)}`;
+  const suffix = kind === "directory" ? "" : ".excalidraw";
+  let n = 1;
+  let candidate = `${base}${suffix}`;
+  while (isNameTaken(entries, parentId, candidate)) {
+    n += 1;
+    candidate = `${base} ${n}${suffix}`;
+  }
+  return candidate;
+};
+
 const runChangedDialog = createSingleFlight<"reload" | "overwrite" | "cancel">();
 const runRecoverDialog = createSingleFlight<"recover" | "discard" | "cancel">();
 let pendingRecoverContent: string | undefined;
@@ -126,6 +158,7 @@ type State = {
   setOpenFileId: (fileId: string | null) => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<boolean>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<boolean>;
+  createEntry: (parentId: string | null, kind: "file" | "directory") => Promise<string | null>;
   saveFile: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   overwriteOpenFileFromSession: () => Promise<boolean>;
   retryRecover: () => Promise<boolean>;
@@ -326,6 +359,16 @@ export const useStore = create<State>((set, get) => {
       }
 
       return true;
+    },
+
+    createEntry: async (parentId, kind) => {
+      const name = nextDefaultName(get().entries, parentId, kind);
+      const entry = await window.api.files.create(parentId, name, kind);
+      set((state) => ({
+        entries: upsertSorted(state.entries, entry),
+        error: null,
+      }));
+      return entry.id;
     },
 
     saveFile: async (id, content, origin = "auto") => {

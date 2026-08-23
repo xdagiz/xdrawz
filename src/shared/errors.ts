@@ -4,6 +4,7 @@ export type ErrorOperation =
   | "save"
   | "recover"
   | "rename"
+  | "create"
   | "delete"
   | "settings"
   | "unexpected";
@@ -39,6 +40,7 @@ const ERROR_OPERATIONS: ReadonlySet<string> = new Set([
   "save",
   "recover",
   "rename",
+  "create",
   "delete",
   "settings",
   "unexpected",
@@ -141,6 +143,7 @@ const getOperation = (error: unknown): ErrorOperation | undefined => {
       op === "save" ||
       op === "recover" ||
       op === "rename" ||
+      op === "create" ||
       op === "delete" ||
       op === "settings" ||
       op === "unexpected"

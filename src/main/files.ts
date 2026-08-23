@@ -12,7 +12,7 @@ import {
   type FileEntry,
 } from "@shared/ipc";
 
-import { assertDrawingJson } from "./drawing-json";
+import { assertDrawingJson, EMPTY_DRAWING_CONTENT } from "./drawing-json";
 import { getDrawings } from "./drawings";
 
 export type FsMutationHooks = {
@@ -257,6 +257,47 @@ export const renameEntry = async (
 
   hooks?.beforeMutate?.([absPath, nextAbs]);
   await rename(absPath, nextAbs);
+  return entryFromAbs(root, nextAbs, kind);
+};
+
+export const createEntry = async (
+  parentId: string | null,
+  name: string,
+  kind: "file" | "directory",
+  hooks?: FsMutationHooks,
+): Promise<FileEntry> => {
+  const leaf = name.trim();
+  if (!leaf) throw new Error("Name cannot be empty");
+  if (leaf.includes("/") || leaf.includes("\\")) {
+    throw new Error("Name cannot contain path separators");
+  }
+
+  const root = await requireDrawingsRoot();
+
+  let parentAbs = root;
+  if (parentId !== null) {
+    parentAbs = path.resolve(root, ...parentId.split("/"));
+    assertInsideRoot(root, parentAbs);
+    const parentStats = await stat(parentAbs).catch(() => null);
+    if (!parentStats || !parentStats.isDirectory()) {
+      throw errorWithCode("Parent folder not found", "NOT_FOUND");
+    }
+  }
+
+  const nameForFs = kind === "file" && !isExcalidrawFileName(leaf) ? `${leaf}.excalidraw` : leaf;
+  const nextAbs = path.join(parentAbs, nameForFs);
+  assertInsideRoot(root, nextAbs);
+
+  const exists = await stat(nextAbs).catch(() => null);
+  if (exists) throw new Error("A file or folder with that name already exists");
+
+  if (kind === "directory") {
+    hooks?.beforeMutate?.([nextAbs]);
+    await mkdir(nextAbs);
+  } else {
+    await atomicWriteFile(nextAbs, `${EMPTY_DRAWING_CONTENT}\n`, hooks);
+  }
+
   return entryFromAbs(root, nextAbs, kind);
 };
 

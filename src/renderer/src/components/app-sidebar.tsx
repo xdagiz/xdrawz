@@ -1,7 +1,7 @@
 import type { FileDeleteMode } from "@shared/ipc";
 import { isAncestorId } from "@shared/ipc";
-import { formatForDisplay } from "@tanstack/react-hotkeys";
-import { SettingsIcon } from "lucide-react";
+import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
+import { PlusIcon, SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -52,6 +52,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const dirtyById = useStore((s) => s.dirtyById);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
   const renameEntry = useStore((s) => s.renameEntry);
+  const createEntry = useStore((s) => s.createEntry);
   const deleteEntry = useStore((s) => s.deleteEntry);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -146,6 +147,48 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     setRenamingId(fileId);
   }, []);
 
+  const freshDrawingIdRef = useRef<string | null>(null);
+
+  const clearFreshMarker = useCallback((fileId: string) => {
+    if (freshDrawingIdRef.current === fileId) freshDrawingIdRef.current = null;
+  }, []);
+
+  const handleCreate = useCallback(
+    async (parentId: string | null, kind: "file" | "directory") => {
+      try {
+        const newId = await createEntry(parentId, kind);
+        if (!newId) return;
+        if (kind === "file") freshDrawingIdRef.current = newId;
+        expandIds(ancestorIdsOf(newId));
+        setRenameError(null);
+        setRenamingId(newId);
+      } catch (error) {
+        const appError = toAppError(error, "create");
+        toast.add({ title: appError.title, description: appError.message, type: "error" });
+      }
+    },
+    [createEntry, expandIds],
+  );
+
+  const openRootMenu = useCallback(
+    async (x: number, y: number) => {
+      const id = await window.api.contextMenu.show(
+        [
+          { id: "new-drawing", label: "New drawing" },
+          { id: "new-folder", label: "New folder" },
+        ],
+        x,
+        y,
+      );
+      if (id === "new-drawing") void handleCreate(null, "file");
+      if (id === "new-folder") void handleCreate(null, "directory");
+    },
+    [handleCreate],
+  );
+
+  useHotkey("Mod+N", () => void handleCreate(null, "file"));
+  useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"));
+
   const openDelete = useCallback((id: string, name: string, mode: FileDeleteMode) => {
     const state = useStore.getState();
     const currentOpenId = state.openFileId;
@@ -217,16 +260,28 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
       event.preventDefault();
 
-      const id = await window.api.contextMenu.show(
-        [
-          { id: "rename", label: "Rename" },
-          { id: "delete", label: "Delete" },
-        ],
-        event.clientX,
-        event.clientY,
-      );
+      const items =
+        entry.kind === "directory"
+          ? [
+              { id: "new-drawing", label: "New drawing" },
+              { id: "new-folder", label: "New folder" },
+              { id: "rename", label: "Rename" },
+              { id: "delete", label: "Delete" },
+            ]
+          : [
+              { id: "rename", label: "Rename" },
+              { id: "delete", label: "Delete" },
+            ];
+
+      const id = await window.api.contextMenu.show(items, event.clientX, event.clientY);
 
       switch (id) {
+        case "new-drawing":
+          void handleCreate(fileId, "file");
+          break;
+        case "new-folder":
+          void handleCreate(fileId, "directory");
+          break;
         case "rename":
           startRename(fileId);
           break;
@@ -237,27 +292,39 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         }
       }
     },
-    [entriesById, startRename, openDelete],
+    [entriesById, startRename, openDelete, handleCreate],
   );
 
   const handleRename = useCallback(
     async (fileId: string, newName: string) => {
+      const isFresh = freshDrawingIdRef.current === fileId;
+      const entry = entriesById.get(fileId);
+      const changed = entry ? newName !== stripExcalidraw(entry.name) : true;
+
       try {
-        const ok = await renameEntry(fileId, newName);
-        if (!ok) {
-          setRenameError(null);
-          setRenamingId(null);
-          return;
+        if (changed) {
+          const ok = await renameEntry(fileId, newName);
+          if (!ok) {
+            setRenameError(null);
+            setRenamingId(null);
+            return;
+          }
+
+          toast.add({ title: "Drawing renamed", type: "success" });
         }
 
-        toast.add({ title: "Drawing renamed", type: "success" });
         setRenameError(null);
         setRenamingId(null);
+
+        if (isFresh) {
+          clearFreshMarker(fileId);
+          await setOpenFileId(fileId);
+        }
       } catch (error) {
         setRenameError(toAppError(error, "rename", false));
       }
     },
-    [renameEntry],
+    [renameEntry, clearFreshMarker, setOpenFileId, entriesById],
   );
 
   return (
@@ -265,15 +332,31 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       <Sidebar side="left">
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Drawings</SidebarGroupLabel>
+            <SidebarGroupLabel className="flex items-center justify-between">
+              Drawings
+              <button
+                type="button"
+                aria-label="New drawing or folder"
+                title="New drawing or folder"
+                className="text-muted-foreground hover:text-foreground -mr-1 rounded p-0.5 transition-colors"
+                onClick={(e) => void openRootMenu(e.clientX, e.clientY)}
+              >
+                <PlusIcon className="size-3.5" />
+              </button>
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               {entries.length === 0 ? (
                 <p className="text-muted-foreground px-2 py-1.5 text-xs leading-relaxed">
-                  Drawings are .excalidraw files inside your drawings folder. Create folders in your
-                  file manager to organize them.
+                  No drawings yet. Use + to create your first one.
                 </p>
               ) : (
-                <TreeContainer tree={tree} onKeyDown={handleContainerKeyDown}>
+                <TreeContainer
+                  tree={tree}
+                  onKeyDown={handleContainerKeyDown}
+                  onContextMenu={(e) => {
+                    if (e.target === e.currentTarget) void openRootMenu(e.clientX, e.clientY);
+                  }}
+                >
                   {tree.getItems().map((item) => {
                     const entry = item.getItemData();
                     if (!entry || !entry.name) return null;
@@ -290,8 +373,10 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                             <RenameInput
                               initial={stripExcalidraw(entry.name)}
                               error={renameError}
+                              treatUnchangedAsCommit={freshDrawingIdRef.current === entry.id}
                               onCommit={(v) => handleRename(entry.id, v)}
                               onCancel={() => {
+                                clearFreshMarker(entry.id);
                                 setRenameError(null);
                                 setRenamingId(null);
                               }}
@@ -366,11 +451,13 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 const RenameInput = ({
   initial,
   error,
+  treatUnchangedAsCommit = false,
   onCommit,
   onCancel,
 }: {
   initial: string;
   error: AppError | null;
+  treatUnchangedAsCommit?: boolean;
   onCommit: (value: string) => void;
   onCancel: () => void;
 }) => {
@@ -396,7 +483,7 @@ const RenameInput = ({
       finished.current = true;
       if (action === "commit") {
         const trimmed = value.trim();
-        if (!trimmed || trimmed === initial) {
+        if (!trimmed || (trimmed === initial && !treatUnchangedAsCommit)) {
           onCancel();
         } else {
           lastCommitted.current = trimmed;
@@ -406,7 +493,7 @@ const RenameInput = ({
         onCancel();
       }
     },
-    [value, initial, onCommit, onCancel],
+    [value, initial, onCommit, onCancel, treatUnchangedAsCommit],
   );
 
   return (

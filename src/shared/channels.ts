@@ -5,6 +5,7 @@ export const FILES_LIST = "files:list";
 export const FILES_READ = "files:read";
 export const FILES_WRITE = "files:write";
 export const FILES_RENAME = "files:rename";
+export const FILES_CREATE = "files:create";
 export const FILES_DELETE = "files:delete";
 export const FILES_CHANGED = "files:changed";
 export const FILES_WRITE_RECOVER = "files:write-recover";
