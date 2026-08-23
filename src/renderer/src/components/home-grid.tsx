@@ -1,12 +1,17 @@
 import type { FileEntry } from "@shared/ipc";
 import { ArrowLeftIcon, FilePlus2Icon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { useTheme } from "@/hooks/use-theme";
+import {
+  resolveThumbnailPreview,
+  useThumbnailHydration,
+  useThumbnailRefresh,
+} from "@/hooks/use-thumbnails";
 import { toAppError } from "@/lib/app-error";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { useStore } from "@/lib/store";
-import { pickThumbnailVariant, THUMBNAIL_CANVAS_BG, thumbnails } from "@/lib/thumbnails";
+import { THUMBNAIL_CANVAS_BG } from "@/lib/thumbnails";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { Button } from "./ui/button";
@@ -22,7 +27,6 @@ import { Skeleton } from "./ui/skeleton";
 import { toast } from "./ui/toast";
 
 const RECENT_LIMIT = 12;
-const REFRESH_INTERVAL_MS = 60_000;
 
 const pickRecentFiles = (entries: FileEntry[]): FileEntry[] =>
   entries
@@ -50,33 +54,8 @@ export const HomeGrid = () => {
     [homeReturnFileId, entries],
   );
 
-  const recentFingerprint = useMemo(
-    () => recentFiles.map((entry) => `${entry.id}?${entry.modifiedAt}:${entry.size}`).join("|"),
-    [recentFiles],
-  );
-
-  const [, setTick] = useState(0);
-
-  useEffect(() => thumbnails.subscribe(() => setTick((tick) => tick + 1)), []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((tick) => tick + 1), REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    const recent = pickRecentFiles(useStore.getState().entries);
-    if (recent.length === 0) return undefined;
-
-    void thumbnails
-      .hydrate(recent)
-      .then(() => {
-        thumbnails.syncWithEntries(recent);
-      })
-      .catch((error) => console.error("thumbnail hydration failed", error));
-
-    return () => thumbnails.cancelPending();
-  }, [recentFingerprint]);
+  useThumbnailRefresh();
+  useThumbnailHydration(recentFiles);
 
   const handleCreate = async () => {
     try {
@@ -139,9 +118,7 @@ export const HomeGrid = () => {
 
         <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-5 gap-y-7">
           {recentFiles.map((file) => {
-            const record = thumbnails.getRecord(file.id);
-            const pending = !record && thumbnails.isPending(file.id);
-            const image = record ? pickThumbnailVariant(record, resolvedTheme) : undefined;
+            const { image, pending } = resolveThumbnailPreview(file.id, resolvedTheme);
             const label = stripExcalidraw(file.name);
             const fallbackLetter = label.charAt(0).toUpperCase();
 

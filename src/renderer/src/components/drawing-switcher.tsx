@@ -1,10 +1,15 @@
 import type { FileEntry } from "@shared/ipc";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { useTheme } from "@/hooks/use-theme";
+import {
+  resolveThumbnailPreview,
+  useThumbnailHydration,
+  useThumbnailRefresh,
+} from "@/hooks/use-thumbnails";
 import { selectRecentFiles } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
-import { pickThumbnailVariant, THUMBNAIL_CANVAS_BG, thumbnails } from "@/lib/thumbnails";
+import { THUMBNAIL_CANVAS_BG } from "@/lib/thumbnails";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { Skeleton } from "./ui/skeleton";
@@ -21,9 +26,11 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
   const resolvedTheme = useTheme();
   const entries = useStore((s) => s.entries);
   const recentFileIds = useStore((s) => s.recentFileIds);
-  const [, setTick] = useState(0);
 
-  useEffect(() => thumbnails.subscribe(() => setTick((tick) => tick + 1)), []);
+  const candidates = selectRecentFiles(recentFileIds, entries);
+
+  useThumbnailRefresh();
+  useThumbnailHydration(candidates);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -36,16 +43,13 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [onCancel]);
 
-  const candidates = selectRecentFiles(recentFileIds, entries);
   const highlighted = Math.min(Math.max(index, 0), candidates.length - 1);
   const focusEntry = candidates[highlighted];
   if (!focusEntry) return null;
 
   const canvasBg = resolvedTheme === "dark" ? THUMBNAIL_CANVAS_BG.dark : THUMBNAIL_CANVAS_BG.light;
 
-  const focusRecord = thumbnails.getRecord(focusEntry.id);
-  const focusImage = focusRecord ? pickThumbnailVariant(focusRecord, resolvedTheme) : undefined;
-  const focusPending = !focusRecord && thumbnails.isPending(focusEntry.id);
+  const focusPreview = resolveThumbnailPreview(focusEntry.id, resolvedTheme);
 
   return (
     <div
@@ -63,14 +67,14 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
             className="border-border/60 flex aspect-[4/3] max-h-52 w-full items-center justify-center overflow-hidden rounded-lg border"
             style={{ backgroundColor: canvasBg }}
           >
-            {focusImage ? (
+            {focusPreview.image ? (
               <img
-                src={focusImage}
+                src={focusPreview.image}
                 alt=""
                 draggable={false}
                 className="size-full object-contain p-2"
               />
-            ) : focusPending ? (
+            ) : focusPreview.pending ? (
               <Skeleton className="bg-muted size-full rounded-lg" />
             ) : (
               <span className="text-foreground/40 text-4xl font-medium">
@@ -82,8 +86,7 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
 
           <div className="flex flex-wrap justify-center gap-1.5">
             {candidates.map((entry, tileIndex) => {
-              const record = thumbnails.getRecord(entry.id);
-              const image = record ? pickThumbnailVariant(record, resolvedTheme) : undefined;
+              const preview = resolveThumbnailPreview(entry.id, resolvedTheme);
               const activeTile = tileIndex === highlighted;
 
               return (
@@ -102,9 +105,9 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
                     className="flex h-9 items-center justify-center overflow-hidden rounded-sm"
                     style={{ backgroundColor: canvasBg }}
                   >
-                    {image ? (
+                    {preview.image ? (
                       <img
-                        src={image}
+                        src={preview.image}
                         alt=""
                         draggable={false}
                         className="max-h-full max-w-full object-contain p-0.5"
