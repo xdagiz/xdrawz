@@ -2,10 +2,10 @@ import type { DrawingsSnapshot, FileEntry, FilesChangedEvent } from "@shared/ipc
 import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
-import { type BoundDrawingSession, sessionOwner } from "./session-owner";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 import { toAppError } from "./app-error";
+import { type BoundDrawingSession, sessionOwner } from "./session-owner";
 import { useStore } from "./store";
 
 const mockEntries: FileEntry[] = [
@@ -678,5 +678,68 @@ describe("settings theme sync", () => {
     expect(useStore.getState().settings.theme).toBe("light");
     // oxlint-disable-next-line typescript/unbound-method -- localStorage methods keep `this` through the member call
     expect(window.localStorage.setItem).toHaveBeenLastCalledWith(THEME_STORAGE_KEY, "light");
+  });
+});
+
+describe("overwriteOpenFileFromSession", () => {
+  beforeEach(() => {
+    resetStore();
+    useStore.setState({ entries: mockEntries, openFileId: "file-1" });
+  });
+
+  it("persists through the active session", async () => {
+    const saveNow = vi.fn(async () => true);
+    sessionOwner.setActiveForTest({
+      ensureCleanOrConfirm: async () => true,
+      getSerializedContent: () => "{}",
+      saveNow,
+    } as unknown as BoundDrawingSession);
+
+    await expect(useStore.getState().overwriteOpenFileFromSession()).resolves.toBe(true);
+    expect(saveNow).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().error).toBeNull();
+  });
+
+  it("surfaces an error when the session write fails", async () => {
+    const saveNow = vi.fn(async () => false);
+    sessionOwner.setActiveForTest({
+      ensureCleanOrConfirm: async () => true,
+      getSerializedContent: () => "{}",
+      saveNow,
+    } as unknown as BoundDrawingSession);
+
+    await expect(useStore.getState().overwriteOpenFileFromSession()).resolves.toBe(false);
+    expect(useStore.getState().error?.operation).toBe("save");
+  });
+
+  it("is a no-op without an active session", async () => {
+    await expect(useStore.getState().overwriteOpenFileFromSession()).resolves.toBe(false);
+    expect(useStore.getState().error).toBeNull();
+  });
+});
+
+describe("ensureCleanOrConfirm without a session", () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it("blocks when the open file is dirty", async () => {
+    useStore.setState({
+      entries: mockEntries,
+      openFileId: "file-1",
+      dirtyById: { "file-1": true },
+    });
+
+    await expect(useStore.getState().ensureCleanOrConfirm("switch")).resolves.toBe(false);
+  });
+
+  it("allows switching when only unrelated keys are marked dirty", async () => {
+    useStore.setState({
+      entries: mockEntries,
+      openFileId: "file-1",
+      dirtyById: { ghost: true },
+    });
+
+    await expect(useStore.getState().ensureCleanOrConfirm("switch")).resolves.toBe(true);
   });
 });

@@ -3,7 +3,6 @@ import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
 import { conflictKeyOf, fileNameOf } from "@/lib/conflicts";
-import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 
@@ -25,6 +24,7 @@ const App = () => {
   const applyEntries = useStore((s) => s.applyEntries);
   const resolveChangedConflict = useStore((s) => s.resolveChangedConflict);
   const resolveMissingConflict = useStore((s) => s.resolveMissingConflict);
+  const overwriteOpenFileFromSession = useStore((s) => s.overwriteOpenFileFromSession);
   const themePreference = useStore((s) => s.settings.theme);
   const drawings = useStore((s) => s.drawings);
   const entries = useStore((s) => s.entries);
@@ -170,7 +170,7 @@ const App = () => {
         const choice = await resolveChangedConflict();
         if (choice === "cancel") return;
 
-        if (choice === "overwrite") await sessionOwner.getSession()?.saveNow();
+        if (choice === "overwrite") await overwriteOpenFileFromSession();
         return;
       }
 
@@ -178,7 +178,12 @@ const App = () => {
         await resolveMissingConflict();
       }
     })();
-  }, [externalConflict, resolveChangedConflict, resolveMissingConflict]);
+  }, [
+    externalConflict,
+    resolveChangedConflict,
+    resolveMissingConflict,
+    overwriteOpenFileFromSession,
+  ]);
 
   return (
     <ThemeProvider preference={themePreference}>

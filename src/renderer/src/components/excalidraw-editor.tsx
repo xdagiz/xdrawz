@@ -15,12 +15,12 @@ import { PanelLeftIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useDrawingSession } from "@/hooks/use-drawing-session";
 import { useTheme } from "@/hooks/use-theme";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { drawingSignature } from "@/lib/drawing-session";
 import type { BoundDrawingSession } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
-import { useDrawingSession } from "@/hooks/use-drawing-session";
 
 import { ErrorBoundary } from "./error-boundary";
 import { Button } from "./ui/button";

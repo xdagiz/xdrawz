@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { type BoundDrawingSession, sessionOwner } from "@/lib/session-owner";
+
 import { useDrawingSession } from "./use-drawing-session";
 
 const h = vi.hoisted(() => {
@@ -69,7 +70,10 @@ const onDirtyChange = vi.fn();
 const newRef = (): RefObject<BoundDrawingSession | null> => ({ current: null });
 
 const depsEqual = (a?: unknown[], b?: unknown[]) =>
-  a !== undefined && b !== undefined && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
+  a !== undefined &&
+  b !== undefined &&
+  a.length === b.length &&
+  a.every((v, i) => Object.is(v, b[i]));
 
 const useMount = (...args: HookArgs) => {
   const [fileId, , , ref] = args;
@@ -105,7 +109,7 @@ const unmount = () => {
 const listenerFor = (
   target: { addEventListener: ReturnType<typeof vi.fn> },
   event: string,
-): (...args: unknown[]) => void => {
+): ((...args: unknown[]) => void) => {
   const entry = target.addEventListener.mock.calls.find(([name]) => name === event);
   if (!entry) throw new Error(`no ${event} listener registered`);
   return entry[1] as (...args: unknown[]) => void;
@@ -227,5 +231,15 @@ describe("useDrawingSession", () => {
 
     expect(first.dispose).toHaveBeenCalledTimes(1);
     expect(ref.current).toBe(sessionOwner.getSession());
+  });
+
+  it("clears its fileId's dirty flag on unmount", () => {
+    useMount("f1", save, onDirtyChange, newRef());
+    onDirtyChange.mockClear();
+
+    unmount();
+
+    expect(onDirtyChange).toHaveBeenCalledTimes(1);
+    expect(onDirtyChange).toHaveBeenCalledWith("f1", false);
   });
 });

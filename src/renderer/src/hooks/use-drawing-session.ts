@@ -22,6 +22,7 @@ export const useDrawingSession = (
 
     return () => {
       sessionOwner.release(fileId);
+      onDirtyChange(fileId, false);
       if (live.current === session) live.current = null;
       if (sessionRef.current === session) sessionRef.current = null;
     };

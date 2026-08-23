@@ -22,11 +22,7 @@ import { create } from "zustand";
 import { toast } from "@/components/ui/toast";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { conflictKeyOf, createSingleFlight, fileNameOf, reduceEntries } from "@/lib/conflicts";
-import {
-  applySubtreeDelete,
-  applySubtreeRemap,
-  isInsideSubtree,
-} from "@/lib/entry-tree";
+import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree } from "@/lib/entry-tree";
 import { sessionOwner } from "@/lib/session-owner";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
@@ -131,6 +127,7 @@ type State = {
   renameEntry: (id: string, newName: string) => Promise<boolean>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<boolean>;
   saveFile: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
+  overwriteOpenFileFromSession: () => Promise<boolean>;
   retryRecover: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
   clearError: () => void;
@@ -340,6 +337,20 @@ export const useStore = create<State>((set, get) => {
       return persistDrawingToDisk(id, content, origin);
     },
 
+    overwriteOpenFileFromSession: async () => {
+      const { openFileId, externalConflict } = get();
+      if (!openFileId || externalConflict) return false;
+
+      const session = sessionOwner.getSession();
+      if (!session) return false;
+
+      const saved = await session.saveNow();
+      if (!saved) {
+        set({ error: toAppError(new Error("Your changes couldn't be written to disk"), "save") });
+      }
+      return saved;
+    },
+
     setFileDirty: (id, dirty) => {
       if (!id) return;
 
@@ -435,7 +446,8 @@ export const useStore = create<State>((set, get) => {
             return "discard";
           }
 
-          const body = pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
+          const body =
+            pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
 
           if (!body) {
             set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
@@ -457,7 +469,8 @@ export const useStore = create<State>((set, get) => {
       const fileId = conflict?.type === "missing" ? conflict.fileId : (state.openFileId ?? null);
       if (!fileId) return false;
 
-      const body = pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
+      const body =
+        pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
       if (!body) {
         set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
         return false;
@@ -495,7 +508,8 @@ export const useStore = create<State>((set, get) => {
     ensureCleanOrConfirm: async (reason = "switch") => {
       const session = sessionOwner.getSession();
       if (!session) {
-        return Object.keys(get().dirtyById).length === 0;
+        const id = get().openFileId;
+        return !id || !get().dirtyById[id];
       }
 
       return session.ensureCleanOrConfirm(reason);

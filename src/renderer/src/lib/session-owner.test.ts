@@ -26,9 +26,7 @@ type FakeSession = ReturnType<typeof makeSession>;
 const asSession = (fake: FakeSession): DrawingSessionControls => fake;
 
 const setup = () => {
-  const confirmUnsaved = vi.fn(
-    async (_reason: UnsavedReason): Promise<UnsavedChoice> => "save",
-  );
+  const confirmUnsaved = vi.fn(async (_reason: UnsavedReason): Promise<UnsavedChoice> => "save");
   return { owner: createSessionOwner({ confirmUnsaved }), confirmUnsaved };
 };
 
