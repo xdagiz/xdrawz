@@ -2,6 +2,12 @@ import type { ExternalConflict, FileEntry, FilesChangedEvent } from "@shared/ipc
 
 export type ConflictKey = string;
 
+export const removeKey = (obj: Record<string, true>, key: string): Record<string, true> => {
+  const next = { ...obj };
+  delete next[key];
+  return next;
+};
+
 export const conflictKeyOf = (conflict: NonNullable<ExternalConflict>): ConflictKey =>
   conflict.type === "changed"
     ? `changed:${conflict.fileId}:${conflict.diskModifiedAt}`

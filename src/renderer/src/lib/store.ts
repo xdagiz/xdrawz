@@ -21,7 +21,8 @@ import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
 import { toAppError, type AppError } from "@/lib/app-error";
-import { conflictKeyOf, createSingleFlight, fileNameOf, reduceEntries } from "@/lib/conflicts";
+import { createConflictResolver } from "@/lib/conflict-resolution";
+import { reduceEntries, removeKey } from "@/lib/conflicts";
 import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree } from "@/lib/entry-tree";
 import {
   parseRecentIdsJson,
@@ -40,12 +41,6 @@ const isOpenableFile = (
   typeof fileId === "string" &&
   fileId.length > 0 &&
   entries.some((entry) => entry.id === fileId && entry.kind === "file");
-
-const removeKey = (obj: Record<string, true>, key: string): Record<string, true> => {
-  const next = { ...obj };
-  delete next[key];
-  return next;
-};
 
 const isFileNotFoundMessage = (message: string) => {
   return message === FILE_NOT_FOUND_MESSAGE || message.includes(FILE_NOT_FOUND_MESSAGE);
@@ -103,10 +98,6 @@ export const nextDefaultName = (
   return candidate;
 };
 
-const runChangedDialog = createSingleFlight<"reload" | "overwrite" | "cancel">();
-const runRecoverDialog = createSingleFlight<"recover" | "discard" | "cancel">();
-let pendingRecoverContent: string | undefined;
-
 const savedAfterDisk = (diskModifiedAt: number, savedAt: number) =>
   Math.max(diskModifiedAt + 1, savedAt);
 
@@ -132,24 +123,7 @@ const entryAfterWrite = (id: string, content: string, entries: FileEntry[]): Fil
   };
 };
 
-const performRecover = async (fileId: string, body: string) => {
-  try {
-    await window.api.files.writeRecover(fileId, body);
-    const entries = await window.api.files.list();
-    useStore.setState({
-      error: null,
-      externalConflict: null,
-      entries,
-      dirtyById: removeKey(useStore.getState().dirtyById, fileId),
-    });
-    return true;
-  } catch (err) {
-    useStore.setState({ error: toAppError(err, "recover") });
-    return false;
-  }
-};
-
-type State = {
+export type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
   openFileId: string | null;
@@ -175,7 +149,6 @@ type State = {
   createEntry: (parentId: string | null, kind: "file" | "directory") => Promise<string | null>;
   saveFile: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   overwriteOpenFileFromSession: () => Promise<boolean>;
-  retryRecover: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
   clearError: () => void;
@@ -196,30 +169,14 @@ type State = {
   changeDrawingsFolder: () => Promise<boolean>;
 };
 
-type SaveGate = { action: "proceed" } | { action: "stop"; result: boolean };
-
 export const useStore = create<State>((set, get) => {
-  const gateConflictedSave = async (
-    id: string,
-    content: string,
-    origin: SaveOrigin,
-  ): Promise<SaveGate> => {
-    const conflict = get().externalConflict;
-    if (!conflict || conflict.fileId !== id) return { action: "proceed" };
-    if (origin !== "explicit") return { action: "stop", result: false };
-
-    if (conflict.type === "changed") {
-      const choice = await get().resolveChangedConflict({ force: true });
-      return choice === "overwrite" ? { action: "proceed" } : { action: "stop", result: false };
-    }
-
-    if (conflict.type === "missing") {
-      const choice = await get().resolveMissingConflict(content, { force: true });
-      return { action: "stop", result: choice !== "cancel" };
-    }
-
-    return { action: "proceed" };
-  };
+  const { gateConflictedSave, resolveChangedConflict, resolveMissingConflict } =
+    createConflictResolver({
+      get,
+      set,
+      reloadOpenFileFromDisk: () => get().reloadOpenFileFromDisk(),
+      discardMissingOpenFile: () => get().discardMissingOpenFile(),
+    });
 
   const persistDrawingToDisk = async (
     id: string,
@@ -381,9 +338,6 @@ export const useStore = create<State>((set, get) => {
       return true;
     },
 
-    renameFile: (id, newName) => get().renameEntry(id, newName),
-    deleteFile: (id) => get().deleteEntry(id, "trash"),
-
     deleteEntry: async (id, mode) => {
       const { openFileId, dirtyById } = get();
 
@@ -486,105 +440,9 @@ export const useStore = create<State>((set, get) => {
 
     clearExternalConflict: () => set({ externalConflict: null }),
 
-    resolveChangedConflict: async (opts) => {
-      const force = opts?.force === true;
-      const state = get();
-      const conflict = state.externalConflict;
-      if (!conflict || conflict.type !== "changed") return "cancel";
+    resolveChangedConflict,
 
-      const key = conflictKeyOf(conflict);
-      if (!force && state.dismissedConflictKey === key) return "cancel";
-
-      const fileName = fileNameOf(state.entries, conflict.fileId);
-      const expectedFileId = conflict.fileId;
-
-      return runChangedDialog(async () => {
-        const choice = await window.api.dialog.fileChanged(fileName);
-
-        const current = get().externalConflict;
-        if (!current || current.type !== "changed" || current.fileId !== expectedFileId) {
-          return "cancel" as const;
-        }
-
-        if (choice === "reload") {
-          set({ dismissedConflictKey: null });
-          get().reloadOpenFileFromDisk();
-        } else if (choice === "overwrite") {
-          set({ externalConflict: null, dismissedConflictKey: null });
-        } else {
-          set({ dismissedConflictKey: conflictKeyOf(current) });
-        }
-
-        return choice;
-      });
-    },
-
-    resolveMissingConflict: async (content, opts) => {
-      if (content !== undefined) pendingRecoverContent = content;
-
-      const force = opts?.force === true;
-      const state = get();
-      const conflict = state.externalConflict;
-      if (!conflict || conflict.type !== "missing") return "cancel";
-
-      const key = conflictKeyOf(conflict);
-      if (!force && state.dismissedConflictKey === key) return "cancel";
-
-      const fileName = fileNameOf(state.entries, conflict.fileId);
-      const expectedFileId = conflict.fileId;
-
-      return runRecoverDialog(async () => {
-        try {
-          const choice = await window.api.dialog.fileRecover(fileName);
-
-          const current = get().externalConflict;
-          if (!current || current.type !== "missing" || current.fileId !== expectedFileId) {
-            return "cancel" as const;
-          }
-
-          if (choice === "cancel") {
-            set({ dismissedConflictKey: conflictKeyOf(current) });
-            return "cancel";
-          }
-
-          if (choice === "discard") {
-            set({ dismissedConflictKey: null });
-            get().discardMissingOpenFile();
-            return "discard";
-          }
-
-          const body =
-            pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
-
-          if (!body) {
-            set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
-            return "cancel";
-          }
-
-          set({ dismissedConflictKey: null });
-          const ok = await performRecover(expectedFileId, body);
-          return ok ? ("recover" as const) : ("cancel" as const);
-        } finally {
-          pendingRecoverContent = undefined;
-        }
-      });
-    },
-
-    retryRecover: async () => {
-      const state = get();
-      const conflict = state.externalConflict;
-      const fileId = conflict?.type === "missing" ? conflict.fileId : (state.openFileId ?? null);
-      if (!fileId) return false;
-
-      const body =
-        pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
-      if (!body) {
-        set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
-        return false;
-      }
-
-      return performRecover(fileId, body);
-    },
+    resolveMissingConflict,
 
     reloadOpenFileFromDisk: () => {
       const { openFileId, dirtyById, editorEpoch } = get();

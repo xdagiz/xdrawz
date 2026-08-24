@@ -1,5 +1,4 @@
 import type { FileDeleteMode } from "@shared/ipc";
-import { isAncestorId } from "@shared/ipc";
 import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
 import { PlusIcon, SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -72,24 +71,14 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const expandedItems = useMemo(() => Array.from(expandedIds), [expandedIds]);
   const selectedItems = useMemo(() => (openFileId ? [openFileId] : []), [openFileId]);
 
-  const openDrawing = useCallback(
-    async (fileId: string) => {
-      if (fileId !== useStore.getState().openFileId) {
-        await setOpenFileId(fileId);
-        if (useStore.getState().openFileId !== fileId) return;
-      }
-    },
-    [setOpenFileId],
-  );
-
   const handlePrimaryAction = useCallback(
     (item: FileTreeItem) => {
       const entry = item.getItemData();
       if (entry && entry.kind === "file") {
-        void openDrawing(entry.id);
+        void setOpenFileId(entry.id);
       }
     },
-    [openDrawing],
+    [setOpenFileId],
   );
 
   const ignoreSelectionChange = useCallback(() => {}, []);
@@ -199,22 +188,6 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
   const openDelete = useCallback(
     (id: string, name: string, mode: FileDeleteMode) => {
-      const state = useStore.getState();
-      const currentOpenId = state.openFileId;
-      const containsOpenDirty =
-        currentOpenId !== null &&
-        state.dirtyById[currentOpenId] !== undefined &&
-        (id === currentOpenId || isAncestorId(id, currentOpenId));
-
-      if (containsOpenDirty) {
-        toast.add({
-          title: "Couldn’t delete",
-          description: "The folder contains the open drawing with unsaved changes. Close it first.",
-          type: "error",
-        });
-        return;
-      }
-
       if (mode !== "permanent") {
         void performDelete({ id, name, mode });
         return;

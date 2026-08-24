@@ -59,14 +59,6 @@ const registerSession = (allowed: boolean) => {
   } as unknown as BoundDrawingSession);
 };
 
-const registerSessionWithContent = (content: string | null) => {
-  sessionOwner.setActiveForTest({
-    ensureCleanOrConfirm: async () => true,
-    getSerializedContent: () => content,
-    saveNow: async () => {},
-  } as unknown as BoundDrawingSession);
-};
-
 describe("lastOpenedFileId", () => {
   beforeEach(() => {
     vi.stubGlobal("window", {
@@ -596,68 +588,6 @@ describe("renameEntry/deleteEntry cancellation", () => {
     expect(window.api.files.delete).toHaveBeenCalledWith("file-2", "trash");
     expect(window.api.files.list).not.toHaveBeenCalled();
     expect(useStore.getState().entries.some((e) => e.id === "file-2")).toBe(false);
-  });
-});
-
-describe("retryRecover", () => {
-  beforeEach(() => {
-    vi.stubGlobal("window", {
-      api: {
-        store: { set: vi.fn(), get: vi.fn() },
-        dialog: {
-          unsavedChanges: vi.fn(),
-          fileRecover: vi.fn(),
-          fileChanged: vi.fn(),
-        },
-        files: {
-          write: vi.fn(),
-          writeRecover: vi.fn(),
-          list: vi.fn().mockResolvedValue(mockEntries),
-        },
-      },
-    });
-    resetStore();
-    useStore.setState({
-      entries: mockEntries,
-      openFileId: "file-1",
-      dirtyById: { "file-1": true },
-      externalConflict: { type: "missing", fileId: "file-1" },
-      error: toAppError(new Error("recovery boom"), "recover"),
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("retries writeRecover without re-opening the recovery dialog", async () => {
-    registerSessionWithContent('{"recovered":true}');
-    vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
-
-    const ok = await useStore.getState().retryRecover();
-
-    expect(ok).toBe(true);
-    expect(window.api.files.writeRecover).toHaveBeenCalledWith("file-1", '{"recovered":true}');
-    expect(window.api.dialog.fileRecover).not.toHaveBeenCalled();
-    expect(useStore.getState().externalConflict).toBeNull();
-    expect(useStore.getState().error).toBeNull();
-    expect(useStore.getState().dirtyById["file-1"]).toBeUndefined();
-  });
-
-  it("keeps the conflict and error when writeRecover fails again", async () => {
-    registerSessionWithContent("{}");
-    vi.mocked(window.api.files.writeRecover).mockRejectedValue(new Error("still boom"));
-
-    const ok = await useStore.getState().retryRecover();
-
-    expect(ok).toBe(false);
-    expect(useStore.getState().externalConflict).toEqual({ type: "missing", fileId: "file-1" });
-    expect(useStore.getState().error?.operation).toBe("recover");
-
-    registerSessionWithContent(null);
-    expect(await useStore.getState().retryRecover()).toBe(false);
-    expect(window.api.files.writeRecover).toHaveBeenCalledTimes(1);
-    expect(useStore.getState().error?.retryable).toBe(false);
   });
 });
 
