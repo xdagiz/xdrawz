@@ -258,6 +258,14 @@ describe("registerIpcHandlers wiring", () => {
     await expect(handlers.get(THUMBNAILS_PUT)!(eventFor(), "nope")).resolves.toEqual(
       expect.objectContaining({ ok: false }),
     );
+
+    const oversizedLight = {
+      ...thumbnailRecord,
+      light: `data:image/png;base64,${"A".repeat(512 * 1024 + 1)}`,
+    };
+    await expect(handlers.get(THUMBNAILS_PUT)!(eventFor(), oversizedLight)).resolves.toEqual(
+      expect.objectContaining({ ok: false }),
+    );
   });
 
   it("validates the close request id before destroying the window", async () => {

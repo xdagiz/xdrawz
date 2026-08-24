@@ -11,6 +11,13 @@ export const THUMBNAIL_CACHE_DIR_NAME = "thumbnails";
 
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 
+export const MAX_THUMBNAIL_DATA_URL_CHARS = 512 * 1024;
+
+const isValidThumbnailDataUrl = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.startsWith(PNG_DATA_URL_PREFIX) &&
+  value.length <= MAX_THUMBNAIL_DATA_URL_CHARS;
+
 export type ThumbnailCacheOptions = {
   cacheDir?: string;
 };
@@ -49,10 +56,8 @@ export const isValidThumbnailRecord = (value: unknown): value is ThumbnailRecord
     Number.isFinite(record.mtimeMs) &&
     typeof record.size === "number" &&
     Number.isFinite(record.size) &&
-    typeof record.light === "string" &&
-    record.light.startsWith(PNG_DATA_URL_PREFIX) &&
-    typeof record.dark === "string" &&
-    record.dark.startsWith(PNG_DATA_URL_PREFIX)
+    isValidThumbnailDataUrl(record.light) &&
+    isValidThumbnailDataUrl(record.dark)
   );
 };
 

@@ -17,11 +17,17 @@ vi.mock("./drawings", () => ({
 import {
   decodeThumbnailKey,
   getThumbnailCacheDir,
+  isValidThumbnailRecord,
+  MAX_THUMBNAIL_DATA_URL_CHARS,
   pruneThumbnailCache,
   readThumbnailRecords,
   thumbnailKey,
   writeThumbnailRecord,
 } from "./thumbnails";
+
+const PNG_PREFIX = "data:image/png;base64,";
+
+const oversizedDataUrl = (prefix: string) => `${prefix}${"A".repeat(MAX_THUMBNAIL_DATA_URL_CHARS)}`;
 
 const record = (fileId: string) => ({
   fileId,
@@ -76,6 +82,28 @@ describe("thumbnails cache", () => {
       { cacheDir: dir },
     );
     expect(hits.map((r) => r.fileId)).toEqual(["good.excalidraw"]);
+  });
+
+  describe("isValidThumbnailRecord", () => {
+    it("accepts records whose data urls are within the cap", () => {
+      expect(isValidThumbnailRecord(record("a.excalidraw"))).toBe(true);
+    });
+
+    it("rejects records with a missing or wrong png prefix", () => {
+      expect(
+        isValidThumbnailRecord({ ...record("a.excalidraw"), light: "data:image/jpeg;base64,AA" }),
+      ).toBe(false);
+      expect(isValidThumbnailRecord({ ...record("a.excalidraw"), dark: 42 })).toBe(false);
+    });
+
+    it("rejects oversized light and dark payloads", () => {
+      expect(
+        isValidThumbnailRecord({ ...record("a.excalidraw"), light: oversizedDataUrl(PNG_PREFIX) }),
+      ).toBe(false);
+      expect(
+        isValidThumbnailRecord({ ...record("a.excalidraw"), dark: oversizedDataUrl(PNG_PREFIX) }),
+      ).toBe(false);
+    });
   });
 
   it("prunes records whose ids are no longer valid and keeps the rest", async () => {
