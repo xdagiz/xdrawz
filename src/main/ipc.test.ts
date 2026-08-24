@@ -323,18 +323,19 @@ describe("registerIpcHandlers wiring", () => {
     );
   });
 
-  it("allows recentFileIds store access and keeps the wire format string-only", async () => {
+  it("allows recentFileIds store access and rejects non-string values", async () => {
     mocks.store.set.mockClear();
     await expect(
       handlers.get(STORE_SET)!(eventFor(), "recentFileIds", '["b","a"]'),
     ).resolves.toEqual({ ok: true, value: undefined });
     expect(mocks.store.set).toHaveBeenCalledWith("recentFileIds", '["b","a"]');
 
+    mocks.store.set.mockClear();
     await expect(handlers.get(STORE_SET)!(eventFor(), "recentFileIds", ["b"])).resolves.toEqual({
-      ok: true,
-      value: undefined,
+      ok: false,
+      error: expect.objectContaining({ message: "value must be a non-empty string" }),
     });
-    expect(mocks.store.set).toHaveBeenLastCalledWith("recentFileIds", null);
+    expect(mocks.store.set).not.toHaveBeenCalled();
 
     await expect(handlers.get(STORE_GET)!(eventFor(), "recentFileIds")).resolves.toEqual({
       ok: true,
@@ -354,6 +355,42 @@ describe("registerIpcHandlers wiring", () => {
         error: expect.objectContaining({ message: "Store key is not allowed" }),
       }),
     );
+  });
+
+  it("rejects invalid store values across allowed keys", async () => {
+    for (const key of ["lastOpenedFileId", "recentFileIds"] as const) {
+      for (const bad of [42, ["x"], {}, true, ""]) {
+        await expect(handlers.get(STORE_SET)!(eventFor(), key, bad)).resolves.toEqual(
+          expect.objectContaining({ ok: false }),
+        );
+      }
+    }
+    expect(mocks.store.set).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed context menu items", async () => {
+    const handler = handlers.get(CONTEXT_MENU_SHOW)!;
+
+    const badRequests: unknown[] = [
+      { items: [], x: 0, y: 0 },
+      { items: ["rename"], x: 0, y: 0 },
+      { items: [{ id: "rename" }], x: 0, y: 0 },
+      { items: [{ id: "rename", label: "" }], x: 0, y: 0 },
+      { items: [{ id: 7, label: "Rename" }], x: 0, y: 0 },
+      {
+        items: Array.from({ length: 33 }, (_, index) => ({ id: `m${index}`, label: `M${index}` })),
+        x: 0,
+        y: 0,
+      },
+    ];
+
+    for (const request of badRequests) {
+      await expect(handler(eventFor(), request)).resolves.toEqual(
+        expect.objectContaining({ ok: false }),
+      );
+    }
+
+    expect(mocks.menuPopup).not.toHaveBeenCalled();
   });
 
   it("resolves the context menu with the clicked item id", async () => {
@@ -394,7 +431,11 @@ describe("registerIpcHandlers wiring", () => {
     );
     expect(mocks.menuPopup).not.toHaveBeenCalled();
 
-    const negative = handler(eventFor(), { items: [], x: -5, y: 0 });
+    const negative = handler(eventFor(), {
+      items: [{ id: "rename", label: "Rename" }],
+      x: -5,
+      y: 0,
+    });
     const popupOptions = mocks.menuPopup.mock.lastCall?.[0] as
       | { callback?: () => void }
       | undefined;

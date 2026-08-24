@@ -15,6 +15,10 @@ export const store = new Store<StoreType>({
     lastOpenedFileId: {
       type: ["string", "null"],
     },
+    recentFileIds: {
+      type: ["string", "null"],
+      default: null,
+    },
     theme: {
       type: "string",
       enum: ["light", "dark", "system"],

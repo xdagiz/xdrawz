@@ -55,6 +55,8 @@ export const APP_HOST = "renderer";
 export const APP_INDEX_URL = `${APP_ORIGIN}/index.html`;
 export const APP_GREETING_URL = `${APP_ORIGIN}/greeting.html`;
 
+const MAX_CONTEXT_MENU_ITEMS = 32;
+
 export const registerAppScheme = () => {
   protocol.registerSchemesAsPrivileged([
     {
@@ -193,6 +195,11 @@ const requireString = (value: unknown, field: string) => {
   return value;
 };
 
+const requireOptionalString = (value: unknown, field: string): string | null => {
+  if (value === null) return null;
+  return requireString(value, field);
+};
+
 const requireIdArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     throw errorWithCode("ids must be an array", "INVALID");
@@ -256,19 +263,13 @@ export const registerIpcHandlers = (deps: Deps) => {
     const key = args[0];
     assertRendererStoreKey(key);
     const value = store.get(key);
-    if (value === undefined || value === null) return null;
-    return typeof value === "string" ? value : JSON.stringify(value);
+    return typeof value === "string" ? value : null;
   });
 
   handle(STORE_SET, "unexpected", (_event, ...args) => {
     const key = args[0];
-    const value = args[1];
     assertRendererStoreKey(key);
-    let normalized: string | null = null;
-    if (value === null) normalized = null;
-    else if (typeof value === "string") normalized = value;
-    else normalized = null;
-    store.set(key, normalized);
+    store.set(key, requireOptionalString(args[1], "value"));
   });
 
   handle(STORE_DELETE, "unexpected", (_event, ...args) => {
@@ -325,12 +326,30 @@ export const registerIpcHandlers = (deps: Deps) => {
     const itemsRaw = request.items;
     const xRaw = request.x;
     const yRaw = request.y;
-    if (!Array.isArray(itemsRaw)) {
-      throw errorWithCode("Context menu items must be an array", "INVALID");
+    if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
+      throw errorWithCode("Context menu items must be a non-empty array", "INVALID");
+    }
+    if (itemsRaw.length > MAX_CONTEXT_MENU_ITEMS) {
+      throw errorWithCode("Too many context menu items", "INVALID");
     }
     if (typeof xRaw !== "number" || typeof yRaw !== "number") {
       throw errorWithCode("Context menu position must be numbers", "INVALID");
     }
+
+    const items = itemsRaw.map((item) => {
+      if (!isRecord(item)) {
+        throw errorWithCode("Context menu item must be an object", "INVALID");
+      }
+      const id = item.id;
+      const label = item.label;
+      if (typeof id !== "string" || id.length === 0) {
+        throw errorWithCode("Context menu item id must be a non-empty string", "INVALID");
+      }
+      if (typeof label !== "string" || label.length === 0) {
+        throw errorWithCode("Context menu item label must be a non-empty string", "INVALID");
+      }
+      return { id, label };
+    });
 
     return new Promise<string | null>((resolveSelection) => {
       let resolved = false;
@@ -340,19 +359,11 @@ export const registerIpcHandlers = (deps: Deps) => {
         resolveSelection(value);
       };
 
-      const template = itemsRaw.map((item) => {
-        const record = isRecord(item) ? item : null;
-        const rawId = record ? record.id : "";
-        const id =
-          typeof rawId === "string" ? rawId : typeof rawId === "number" ? String(rawId) : "";
-        const rawLabel = record ? record.label : "";
-        const label = typeof rawLabel === "string" ? rawLabel : "";
-        return {
-          label,
-          enabled: true,
-          click: () => settle(id),
-        };
-      });
+      const template = items.map((item) => ({
+        label: item.label,
+        enabled: true,
+        click: () => settle(item.id),
+      }));
 
       const menu = Menu.buildFromTemplate(template);
       const zoomFactor = win.webContents.getZoomFactor();
