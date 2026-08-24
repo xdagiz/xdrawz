@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -192,8 +193,12 @@ export const normalizeContextMenuPos = (
   };
 };
 
-function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId" | "recentFileIds" {
-  if (key !== "lastOpenedFileId" && key !== "recentFileIds") {
+export const MAX_LIBRARY_STORE_BYTES = 20 * 1024 * 1024;
+
+function assertRendererStoreKey(
+  key: unknown,
+): asserts key is "lastOpenedFileId" | "recentFileIds" | "libraryItems" {
+  if (key !== "lastOpenedFileId" && key !== "recentFileIds" && key !== "libraryItems") {
     throw new Error("Store key is not allowed");
   }
 }
@@ -301,7 +306,15 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(STORE_SET, "unexpected", (_event, ...args) => {
     const key = args[0];
     assertRendererStoreKey(key);
-    store.set(key, requireOptionalString(args[1], "value"));
+    const value = requireOptionalString(args[1], "value");
+    if (
+      key === "libraryItems" &&
+      value !== null &&
+      Buffer.byteLength(value, "utf8") > MAX_LIBRARY_STORE_BYTES
+    ) {
+      throw errorWithCode("Library is too large to store", "TOO_LARGE");
+    }
+    store.set(key, value);
   });
 
   handle(STORE_DELETE, "unexpected", (_event, ...args) => {

@@ -1,8 +1,13 @@
 import { join } from "path";
 
 import { is } from "@electron-toolkit/utils";
-import { WINDOW_CLOSE_CANCELLED, WINDOW_WILL_CLOSE } from "@shared/channels";
-import type { UnsavedChoice, UnsavedReason, WindowCloseRequest } from "@shared/ipc";
+import { LIBRARY_RETURNED, WINDOW_CLOSE_CANCELLED, WINDOW_WILL_CLOSE } from "@shared/channels";
+import type {
+  LibraryReturnedEvent,
+  UnsavedChoice,
+  UnsavedReason,
+  WindowCloseRequest,
+} from "@shared/ipc";
 import { app, BrowserWindow, dialog, shell } from "electron";
 
 import icon from "../../assets/icon.png?asset";
@@ -320,6 +325,148 @@ export function ensureMainWindow(): BrowserWindow {
   return mainWindow;
 }
 
+export const LIBRARY_BROWSE_HOST = "libraries.excalidraw.com";
+export const LIBRARY_PARTITION = "xdrawz-library";
+
+export const isLibraryBrowseUrl = (urlString: string): boolean => {
+  try {
+    const url = new URL(urlString);
+    return url.protocol === "https:" && url.host === LIBRARY_BROWSE_HOST;
+  } catch {
+    return false;
+  }
+};
+
+export const parseLibraryReturnHash = (urlString: string): string | null => {
+  let url: URL;
+  try {
+    url = new URL(urlString);
+  } catch {
+    return null;
+  }
+
+  if (url.pathname !== "/" && url.pathname !== "/index.html") return null;
+
+  const rawHash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  if (!rawHash) return null;
+
+  const params = new URLSearchParams(rawHash);
+  if (!params.get("addLibrary")) return null;
+
+  return url.hash;
+};
+
+const MAX_LIBRARY_HASH_LENGTH = 2048;
+
+const isAllowedLibraryUrl = (urlString: string) => {
+  let url: URL;
+  try {
+    url = new URL(urlString);
+  } catch {
+    return false;
+  }
+
+  return url.protocol === "https:" && url.host === LIBRARY_BROWSE_HOST;
+};
+
+export const validateLibraryReturnHash = (urlString: string) => {
+  const hash = parseLibraryReturnHash(urlString);
+  if (!hash) return null;
+  if (hash.length > MAX_LIBRARY_HASH_LENGTH) return null;
+
+  const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+  const libraryUrl = params.get("addLibrary");
+  if (!libraryUrl) return null;
+
+  try {
+    return isAllowedLibraryUrl(decodeURIComponent(libraryUrl)) ? hash : null;
+  } catch {
+    return null;
+  }
+};
+
+let libraryBrowserWindow: BrowserWindow | null = null;
+
+const closeLibraryBrowserWindow = () => {
+  if (libraryBrowserWindow && !libraryBrowserWindow.isDestroyed()) {
+    libraryBrowserWindow.destroy();
+  }
+  libraryBrowserWindow = null;
+};
+
+const forwardLibraryReturn = (hash: string) => {
+  const target = getMainWindow();
+  if (
+    !target ||
+    target.isDestroyed() ||
+    target.webContents.isDestroyed() ||
+    target.webContents.isCrashed()
+  )
+    return;
+  const event: LibraryReturnedEvent = { hash };
+  target.webContents.send(LIBRARY_RETURNED, event);
+};
+
+function openLibraryBrowserWindow(url: string) {
+  const child = new BrowserWindow({
+    width: 1024,
+    height: 800,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: windowBgColor(),
+    ...(process.platform === "linux" ? { icon } : {}),
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      partition: LIBRARY_PARTITION,
+    },
+  });
+
+  libraryBrowserWindow = child;
+  child.once("closed", () => {
+    if (libraryBrowserWindow === child) libraryBrowserWindow = null;
+  });
+
+  showWhenReady(child);
+  wireRendererDiagnostics(child);
+
+  child.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
+    if (isTrustedRendererUrl(popupUrl)) {
+      const hash = validateLibraryReturnHash(popupUrl);
+      if (hash) {
+        forwardLibraryReturn(hash);
+        child.close();
+      }
+      return { action: "deny" };
+    }
+
+    const external = isSafeExternalUrl(popupUrl);
+    if (external) void shell.openExternal(external);
+    return { action: "deny" };
+  });
+
+  child.webContents.on("will-navigate", (event, target) => {
+    if (isLibraryBrowseUrl(target)) return;
+
+    event.preventDefault();
+
+    if (isTrustedRendererUrl(target)) {
+      const hash = validateLibraryReturnHash(target);
+      if (hash) {
+        forwardLibraryReturn(hash);
+        child.close();
+      }
+      return;
+    }
+
+    const external = isSafeExternalUrl(target);
+    if (external) void shell.openExternal(external);
+  });
+
+  void child.loadURL(url);
+}
+
 // https://github.com/electron/electron/issues/48859
 function showWhenReady(win: BrowserWindow) {
   let shown = false;
@@ -346,6 +493,16 @@ const isSafeExternalUrl = (value: string): string | null => {
 
 function wireNavigationPolicy(win: BrowserWindow) {
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isLibraryBrowseUrl(url)) {
+      if (libraryBrowserWindow && !libraryBrowserWindow.isDestroyed()) {
+        libraryBrowserWindow.show();
+        libraryBrowserWindow.focus();
+      } else {
+        openLibraryBrowserWindow(url);
+      }
+      return { action: "deny" };
+    }
+
     const external = isSafeExternalUrl(url);
     if (external) void shell.openExternal(external);
     return { action: "deny" };
@@ -402,6 +559,9 @@ export function createMainWindow() {
 
   showWhenReady(win);
   installCloseGuard(win);
+
+  win.once("closed", closeLibraryBrowserWindow);
+
   wireNavigationPolicy(win);
   wireRendererDiagnostics(win);
   loadRendererPage(win, "", APP_INDEX_URL);

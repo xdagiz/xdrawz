@@ -49,6 +49,7 @@ export type StoreType = {
   drawingsPath?: string;
   lastOpenedFileId?: string | null;
   recentFileIds?: string | null;
+  libraryItems?: string | null;
   theme?: ThemePreference;
   autosaveIntervalMs?: number;
   reopenLastDrawing?: boolean;
@@ -94,4 +95,8 @@ export type ThumbnailRecord = {
   size: number;
   light: string;
   dark: string;
+};
+
+export type LibraryReturnedEvent = {
+  hash: string;
 };

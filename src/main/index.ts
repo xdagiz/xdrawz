@@ -11,6 +11,7 @@ import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
 import {
   app,
   dialog,
+  session,
   shell,
   nativeTheme,
   BrowserWindow,
@@ -31,6 +32,7 @@ import {
 } from "./files";
 import {
   installAppProtocolHandler,
+  isTrustedRendererUrl,
   registerAppScheme,
   registerIpcHandlers,
   shouldQuitAfterFatal,
@@ -41,6 +43,7 @@ import { getLastOpenedFileId } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 import {
+  LIBRARY_PARTITION,
   cancelQuit,
   createGreetingWindow,
   destroyWindow,
@@ -223,11 +226,79 @@ const surfacePrimaryUi = async (): Promise<void> => {
   }
 };
 
+const LIBRARY_CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://www.googletagmanager.com",
+  "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net",
+  "img-src 'self' data:",
+  "font-src 'self' data: https://excalidraw.com",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+].join("; ");
+
+const APP_ALLOWED_PERMISSIONS = new Set([
+  "fullscreen",
+  "clipboard-read",
+  "clipboard-sanitized-write",
+]);
+
+const installPermissionHandlers = () => {
+  const handlePermissionRequest = (
+    webContents: Electron.WebContents,
+    permission: string,
+    callback: (granted: boolean) => void,
+  ) => {
+    if (!APP_ALLOWED_PERMISSIONS.has(permission)) {
+      callback(false);
+      return;
+    }
+
+    callback(isTrustedRendererUrl(webContents.getURL()));
+  };
+
+  const handlePermissionCheck = (webContents: Electron.WebContents | null, permission: string) => {
+    if (!APP_ALLOWED_PERMISSIONS.has(permission)) return false;
+    return webContents !== null && isTrustedRendererUrl(webContents.getURL());
+  };
+
+  for (const ses of [session.defaultSession, session.fromPartition(LIBRARY_PARTITION)]) {
+    ses.setPermissionRequestHandler(handlePermissionRequest);
+    ses.setPermissionCheckHandler(handlePermissionCheck);
+  }
+};
+
+const installLibraryCsp = () => {
+  session.fromPartition(LIBRARY_PARTITION).webRequest.onHeadersReceived((details, callback) => {
+    let url: URL;
+    try {
+      url = new URL(details.url);
+    } catch {
+      callback({});
+      return;
+    }
+
+    if (url.protocol !== "https:" || url.host !== "libraries.excalidraw.com") {
+      callback({});
+      return;
+    }
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [LIBRARY_CSP],
+      },
+    });
+  });
+};
+
 void app.whenReady().then(async () => {
   if (!gotTheLock) return;
 
   electronApp.setAppUserModelId("com.xdrawz");
   initLogger();
+  installLibraryCsp();
+  installPermissionHandlers();
   installAppProtocolHandler();
 
   Menu.setApplicationMenu(

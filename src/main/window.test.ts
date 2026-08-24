@@ -445,3 +445,54 @@ describe("close guard", () => {
     expect(mocks.quit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("library url helpers", () => {
+  let windowModule: typeof import("./window");
+
+  beforeEach(async () => {
+    vi.resetModules();
+    windowModule = await import("./window");
+  });
+
+  const hash =
+    "#addLibrary=https%3A%2F%2Flibraries.excalidraw.com%2Flibraries%2Fyouritjang%2Fstick-figures.excalidrawlib&token=abc";
+
+  it("accepts https urls on the libraries host", () => {
+    expect(
+      windowModule.isLibraryBrowseUrl(
+        "https://libraries.excalidraw.com?target=_blank&referrer=app%3A%2F%2Frenderer%2Findex.html&useHash=true&token=abc",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects other protocols and hosts", () => {
+    expect(windowModule.isLibraryBrowseUrl("http://libraries.excalidraw.com")).toBe(false);
+    expect(windowModule.isLibraryBrowseUrl("https://evil.excalidraw.com")).toBe(false);
+    expect(windowModule.isLibraryBrowseUrl("https://libraries.excalidraw.com.evil.com")).toBe(
+      false,
+    );
+    expect(windowModule.isLibraryBrowseUrl("file:///etc/passwd")).toBe(false);
+    expect(windowModule.isLibraryBrowseUrl("not a url")).toBe(false);
+  });
+
+  it("parses the production app protocol return url", () => {
+    expect(windowModule.parseLibraryReturnHash(`app://renderer/index.html${hash}`)).toBe(hash);
+  });
+
+  it("parses the dev server return url", () => {
+    expect(windowModule.parseLibraryReturnHash(`http://localhost:5173/${hash}`)).toBe(hash);
+  });
+
+  it("rejects urls without an addLibrary hash", () => {
+    expect(windowModule.parseLibraryReturnHash("app://renderer/index.html")).toBe(null);
+    expect(windowModule.parseLibraryReturnHash("app://renderer/index.html#token=abc")).toBe(null);
+  });
+
+  it("rejects non-index paths", () => {
+    expect(windowModule.parseLibraryReturnHash(`app://renderer/greeting.html${hash}`)).toBe(null);
+  });
+
+  it("rejects malformed urls", () => {
+    expect(windowModule.parseLibraryReturnHash("not a url")).toBe(null);
+  });
+});

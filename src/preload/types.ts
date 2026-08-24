@@ -6,6 +6,7 @@ import type {
   FileDeleteMode,
   FileEntry,
   FilesChangedEvent,
+  LibraryReturnedEvent,
   SettingsUpdate,
   StoreType,
   ThumbnailRecord,
@@ -53,6 +54,9 @@ export interface NativeApi {
   thumbnails: {
     get: (ids: string[]) => Promise<ThumbnailRecord[]>;
     put: (record: ThumbnailRecord) => Promise<void>;
+  };
+  library: {
+    onReturned: (cb: (event: LibraryReturnedEvent) => void) => () => void;
   };
   contextMenu: {
     show: (items: ContextMenuItem[], x: number, y: number) => Promise<string | null>;

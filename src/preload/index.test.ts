@@ -22,7 +22,13 @@ vi.mock("electron", () => ({
 // contextBridge instead of the (absent) window global.
 Object.defineProperty(process, "contextIsolated", { value: true, configurable: true });
 
-import { FILES_READ, FILES_WRITE, WINDOW_CLOSE, WINDOW_WILL_CLOSE } from "@shared/channels";
+import {
+  FILES_READ,
+  FILES_WRITE,
+  LIBRARY_RETURNED,
+  WINDOW_CLOSE,
+  WINDOW_WILL_CLOSE,
+} from "@shared/channels";
 import { isSerializedAppError } from "@shared/errors";
 
 import type { NativeApi } from "./types";
@@ -59,6 +65,24 @@ describe("preload window api", () => {
 
     unsubscribe();
     expect(mocks.removeListener).toHaveBeenCalledWith(WINDOW_WILL_CLOSE, listener);
+  });
+
+  it("forwards the library return event to the callback", () => {
+    const cb = vi.fn();
+    const unsubscribe = api.library.onReturned(cb);
+
+    const registration = mocks.on.mock.calls.find(([channel]) => channel === LIBRARY_RETURNED);
+    expect(registration).toBeDefined();
+    const [, listener] = registration as [
+      string,
+      (event: unknown, payload: { hash: string }) => void,
+    ];
+
+    listener({}, { hash: "#addLibrary=x" });
+    expect(cb).toHaveBeenCalledWith({ hash: "#addLibrary=x" });
+
+    unsubscribe();
+    expect(mocks.removeListener).toHaveBeenCalledWith(LIBRARY_RETURNED, listener);
   });
 
   it("passes the request id back on close and rejections through unchanged", async () => {

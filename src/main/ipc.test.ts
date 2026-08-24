@@ -54,6 +54,7 @@ import {
   WINDOW_READY,
 } from "@shared/channels";
 
+import { MAX_LIBRARY_STORE_BYTES } from "./ipc";
 import {
   APP_ORIGIN,
   installAppProtocolHandler,
@@ -322,6 +323,21 @@ describe("registerIpcHandlers wiring", () => {
         error: expect.objectContaining({ message: "Store key is not allowed" }),
       }),
     );
+  });
+
+  it("allows libraryItems store access with a size cap", async () => {
+    mocks.store.set.mockClear();
+    await expect(handlers.get(STORE_SET)!(eventFor(), "libraryItems", "[]")).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(mocks.store.set).toHaveBeenCalledWith("libraryItems", "[]");
+
+    mocks.store.set.mockClear();
+    await expect(
+      handlers.get(STORE_SET)!(eventFor(), "libraryItems", "x".repeat(MAX_LIBRARY_STORE_BYTES + 1)),
+    ).resolves.toEqual(expect.objectContaining({ ok: false }));
+    expect(mocks.store.set).not.toHaveBeenCalled();
   });
 
   it("allows recentFileIds store access and rejects non-string values", async () => {

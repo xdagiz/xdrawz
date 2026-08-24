@@ -1,4 +1,9 @@
-import { Excalidraw, restoreAppState, restoreElements } from "@excalidraw/excalidraw";
+import {
+  Excalidraw,
+  restoreAppState,
+  restoreElements,
+  useHandleLibrary,
+} from "@excalidraw/excalidraw";
 
 import "@excalidraw/excalidraw/index.css";
 import type {
@@ -8,6 +13,7 @@ import type {
 import type {
   AppState,
   BinaryFiles,
+  ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 import { useHotkey } from "@tanstack/react-hotkeys";
@@ -18,6 +24,7 @@ import { useDrawingSession } from "@/hooks/use-drawing-session";
 import { useTheme } from "@/hooks/use-theme";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { drawingSignature } from "@/lib/drawing-session";
+import { createLibraryPersistenceAdapter, defaultLibraryStorage } from "@/lib/library-persistence";
 import type { BoundDrawingSession } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
@@ -85,6 +92,25 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawImperativeAPI | null>(null);
+
+  const libraryAdapter = useMemo(
+    () => createLibraryPersistenceAdapter(defaultLibraryStorage()),
+    [],
+  );
+
+  useHandleLibrary({ excalidrawAPI: excalidrawApi, adapter: libraryAdapter });
+
+  const handleExcalidrawApi = useCallback((api: ExcalidrawImperativeAPI) => {
+    setExcalidrawApi(api);
+  }, []);
+
+  useEffect(() => {
+    return window.api.library.onReturned((event) => {
+      if (!event.hash || window.location.hash === event.hash) return;
+      window.location.hash = event.hash;
+    });
+  }, []);
 
   useEffect(() => {
     const root = editorRef.current;
@@ -248,6 +274,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         <Excalidraw
           key={loadAttempt}
           theme={theme}
+          excalidrawAPI={handleExcalidrawApi}
           initialData={initialData}
           onChange={handleChange}
           UIOptions={{

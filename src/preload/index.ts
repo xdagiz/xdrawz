@@ -14,6 +14,7 @@ import {
   FILES_RENAME,
   FILES_WRITE,
   FILES_WRITE_RECOVER,
+  LIBRARY_RETURNED,
   SETTINGS_GET,
   SETTINGS_SET,
   STORE_DELETE,
@@ -33,7 +34,12 @@ import {
 } from "@shared/channels";
 import { isRecord, isSerializedAppError } from "@shared/errors";
 import type { SerializedAppError } from "@shared/errors";
-import type { FilesChangedEvent, WatcherErrorEvent, WindowCloseRequest } from "@shared/ipc";
+import type {
+  FilesChangedEvent,
+  LibraryReturnedEvent,
+  WatcherErrorEvent,
+  WindowCloseRequest,
+} from "@shared/ipc";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
@@ -123,6 +129,14 @@ const api: NativeApi = {
   thumbnails: {
     get: (ids) => invoke(THUMBNAILS_GET, ids),
     put: (record) => invoke(THUMBNAILS_PUT, record),
+  },
+  library: {
+    onReturned: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: LibraryReturnedEvent) =>
+        cb(payload);
+      ipcRenderer.on(LIBRARY_RETURNED, listener);
+      return () => ipcRenderer.removeListener(LIBRARY_RETURNED, listener);
+    },
   },
   contextMenu: {
     show: (items, x, y) => invoke(CONTEXT_MENU_SHOW, { items, x, y }),

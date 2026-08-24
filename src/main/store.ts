@@ -23,6 +23,10 @@ const schema = {
     type: ["string", "null"],
     default: null,
   },
+  libraryItems: {
+    type: ["string", "null"],
+    default: null,
+  },
   theme: {
     type: "string",
     enum: ["light", "dark", "system"],

@@ -29,3 +29,4 @@ export const SETTINGS_GET = "settings:get";
 export const SETTINGS_SET = "settings:set";
 export const THUMBNAILS_GET = "thumbnails:get";
 export const THUMBNAILS_PUT = "thumbnails:put";
+export const LIBRARY_RETURNED = "library:returned";
