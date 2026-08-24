@@ -134,9 +134,9 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
-
-    await performDelete(deleteTarget);
+    const target = deleteTarget;
     setDeleteOpen(false);
+    await performDelete(target);
   }, [deleteTarget, performDelete]);
 
   const startRename = useCallback((fileId: string) => {
@@ -186,18 +186,10 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   useHotkey("Mod+N", () => void handleCreate(null, "file"));
   useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"));
 
-  const openDelete = useCallback(
-    (id: string, name: string, mode: FileDeleteMode) => {
-      if (mode !== "permanent") {
-        void performDelete({ id, name, mode });
-        return;
-      }
-
-      setDeleteTarget({ id, name, mode });
-      setDeleteOpen(true);
-    },
-    [performDelete],
-  );
+  const openDelete = useCallback((id: string, name: string, mode: FileDeleteMode) => {
+    setDeleteTarget({ id, name, mode });
+    setDeleteOpen(true);
+  }, []);
 
   const handleContainerKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
