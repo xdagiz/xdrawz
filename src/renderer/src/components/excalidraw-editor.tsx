@@ -21,6 +21,8 @@ import { drawingSignature } from "@/lib/drawing-session";
 import type { BoundDrawingSession } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 
+import { toast } from "./ui/toast";
+
 import { ErrorBoundary } from "./error-boundary";
 import { Button } from "./ui/button";
 import {
@@ -103,7 +105,10 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }, [fileId]);
 
   useHotkey("Mod+S", () => {
-    void sessionRef.current?.saveNow();
+    void (async () => {
+      const saved = await sessionRef.current?.saveNow();
+      if (saved) toast.add({ title: "Saved", type: "success" });
+    })();
   });
 
   const handleChange = useCallback(
