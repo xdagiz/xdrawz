@@ -39,6 +39,7 @@ type FakeSession = BoundDrawingSession & {
   setAutosavePaused: ReturnType<typeof vi.fn>;
   flush: ReturnType<typeof vi.fn>;
   isDirty: ReturnType<typeof vi.fn>;
+  evaluateNow: ReturnType<typeof vi.fn>;
 };
 
 const fakeSession = (): FakeSession => {
@@ -46,6 +47,7 @@ const fakeSession = (): FakeSession => {
     setAutosavePaused: vi.fn(),
     flush: vi.fn().mockResolvedValue(undefined),
     isDirty: vi.fn().mockReturnValue(false),
+    evaluateNow: vi.fn(),
   };
   return session as unknown as FakeSession;
 };
@@ -82,6 +84,16 @@ describe("window close flow (renderer)", () => {
     sessionOwner.setActiveForTest(null);
     useStore.setState({ dirtyById: {} });
     for (const mock of Object.values(hoisted.api.window)) mock.mockClear();
+  });
+
+  it("runs pending evaluation before reporting the check", () => {
+    const session = fakeSession();
+    sessionOwner.setActiveForTest(session);
+
+    onWillClose({ requestId: 3, kind: "check" });
+
+    expect(session.evaluateNow).toHaveBeenCalledTimes(1);
+    expect(hoisted.api.window.reportDirtyState).toHaveBeenCalledWith(3, false);
   });
 
   it("reports clean without pausing autosave", () => {

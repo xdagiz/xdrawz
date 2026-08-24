@@ -19,6 +19,7 @@ window.api.window.onWillClose((request) => {
 
   if (request.kind === "check") {
     const session = sessionOwner.getSession();
+    session?.evaluateNow();
     const dirty = Object.keys(useStore.getState().dirtyById).length > 0;
     if (dirty) session?.setAutosavePaused(true);
     window.api.window.reportDirtyState(request.requestId, dirty);

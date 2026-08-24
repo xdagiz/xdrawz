@@ -18,6 +18,7 @@ const makeSession = () => ({
       confirm ? (await confirm(reason)) !== "cancel" : true,
   ),
   isDirty: vi.fn(() => false),
+  evaluateNow: vi.fn(),
   setAutosaveInterval: vi.fn(),
   dispose: vi.fn(),
 });

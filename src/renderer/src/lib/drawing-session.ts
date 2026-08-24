@@ -44,6 +44,7 @@ export type DrawingSessionControls = {
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
   ) => Promise<boolean>;
   isDirty: () => boolean;
+  evaluateNow: () => void;
   setAutosaveInterval: (nextMs: number) => void;
   dispose: () => void;
 };
@@ -374,6 +375,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     getSerializedContent,
     ensureCleanOrConfirm,
     isDirty: () => dirty,
+    evaluateNow: runPendingEvaluation,
     setAutosaveInterval,
     setInitialBaseline: (signature: string | null) => {
       if (disposed || baseline !== null) return;

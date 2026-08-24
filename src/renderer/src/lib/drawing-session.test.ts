@@ -499,6 +499,20 @@ describe("createDrawingSession", () => {
       expect(allowed).toBe(false);
     });
 
+    it("evaluateNow resolves fresh dirty state without a frame", () => {
+      const frame = manualScheduler();
+      const { session, dirty } = makeBaselineSession(frame);
+
+      session.onChange([el("a")], appState(), emptyFiles);
+      session.onChange([el("a"), el("b")], appState(), emptyFiles);
+      expect(frame.hasPending()).toBe(true);
+
+      session.evaluateNow();
+
+      expect(dirty).toHaveBeenCalledWith("f1", true);
+      expect(frame.hasPending()).toBe(false);
+    });
+
     it("dispose drops the pending evaluation without saving", async () => {
       const frame = manualScheduler();
       const { session, dirty, save } = makeBaselineSession(frame);
