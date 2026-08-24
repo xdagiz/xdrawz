@@ -57,16 +57,21 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
   };
 };
 
+export const saveErrorToastId = (fileId: string): string => `save:${fileId}`;
+
 export const toAppError = (
   error: unknown,
   operation: ErrorOperation = "unexpected",
   retryable = true,
+  resourceId?: string,
 ): AppError => {
+  const detail = cleanErrorMessage(error);
+
   return {
-    id: `${operation}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: resourceId ? `${operation}:${resourceId}` : `${operation}:${detail}`,
     operation,
     retryable,
-    detail: cleanErrorMessage(error),
+    detail,
     ...messageFor(operation),
   };
 };

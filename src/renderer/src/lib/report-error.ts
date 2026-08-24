@@ -1,5 +1,4 @@
 import {
-  cleanErrorMessage,
   isCancellationError,
   isResizeObserverLoopError,
   isSigPipeError,
@@ -9,10 +8,6 @@ import {
 
 import { toast } from "@/components/ui/toast";
 import { toAppError } from "@/lib/app-error";
-
-const DEDUP_WINDOW_MS = 1000;
-
-let lastError: { key: string; at: number } | null = null;
 
 let installed = false;
 
@@ -30,18 +25,12 @@ export const reportRendererError = (
 ): void => {
   if (shouldSilence(error)) return;
 
-  const message = cleanErrorMessage(error);
-  const key = `${operation}:${message}`;
-  const now = Date.now();
-
-  if (lastError && lastError.key === key && now - lastError.at < DEDUP_WINDOW_MS) return;
-  lastError = { key, at: now };
-
   console.error(`${operation} error:`, error);
 
   const appError = toAppError(error, operation);
 
   toast.add({
+    id: appError.id,
     title: appError.title,
     description: appError.detail,
     type: "error",
@@ -68,7 +57,3 @@ export const installRendererErrorHandlers = (): void => {
 };
 
 installRendererErrorHandlers();
-
-export const clearReportDedup = (): void => {
-  lastError = null;
-};

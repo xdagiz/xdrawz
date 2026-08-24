@@ -20,7 +20,7 @@ import {
 import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
-import { toAppError, type AppError } from "@/lib/app-error";
+import { saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createConflictResolver } from "@/lib/conflict-resolution";
 import { reduceEntries, removeKey } from "@/lib/conflicts";
 import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree } from "@/lib/entry-tree";
@@ -192,10 +192,11 @@ export const useStore = create<State>((set, get) => {
         dismissedConflictKey: null,
         entries: upsertSorted(latest.entries, entryAfterWrite(id, content, latest.entries)),
       });
+      toast.close(saveErrorToastId(id));
       return true;
     } catch (error) {
       if (!isFileNotFoundMessage(cleanErrorMessage(error))) {
-        set({ error: toAppError(error, "save") });
+        set({ error: toAppError(error, "save", true, id) });
         return false;
       }
 
@@ -405,7 +406,14 @@ export const useStore = create<State>((set, get) => {
 
       const saved = await session.saveNow();
       if (!saved) {
-        set({ error: toAppError(new Error("Your changes couldn't be written to disk"), "save") });
+        set({
+          error: toAppError(
+            new Error("Your changes couldn't be written to disk"),
+            "save",
+            true,
+            openFileId,
+          ),
+        });
       }
       return saved;
     },

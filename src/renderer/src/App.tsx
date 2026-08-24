@@ -45,9 +45,6 @@ const App = () => {
   const switcher = useSwitcher({ paletteOpen });
 
   const folderMissing = drawings?.missing === true && entries.length === 0;
-  const lastToastRef = useRef<string | null>(null);
-  const lastWatcherRef = useRef<{ key: string; at: number } | null>(null);
-  const lastFolderMissingRef = useRef<number | null>(null);
 
   const pickFolder = useCallback(async () => {
     setPickingFolder(true);
@@ -85,12 +82,8 @@ const App = () => {
 
   useEffect(() => {
     if (!error) return;
-    const key = error.id;
-
-    if (lastToastRef.current === key) return;
-
-    lastToastRef.current = key;
     toast.add({
+      id: error.id,
       title: error.title,
       description: error.detail,
       type: "error",
@@ -99,19 +92,8 @@ const App = () => {
 
   useEffect(() => {
     if (!watcherDown) return;
-    const now = Date.now();
-    const key = watcherDown;
-
-    if (
-      lastWatcherRef.current &&
-      lastWatcherRef.current.key === key &&
-      now - lastWatcherRef.current.at < 1000
-    ) {
-      return;
-    }
-
-    lastWatcherRef.current = { key, at: now };
     toast.add({
+      id: "watcher-down",
       title: "Changes on disk may not appear",
       description: watcherDown,
       type: "warning",
@@ -120,12 +102,8 @@ const App = () => {
 
   useEffect(() => {
     if (!folderMissing) return;
-    const now = Date.now();
-
-    if (lastFolderMissingRef.current && now - lastFolderMissingRef.current < 1000) return;
-    lastFolderMissingRef.current = now;
-
     toast.add({
+      id: "folder-missing",
       title: "Drawings folder is unavailable",
       description: "The folder holding your drawings can’t be found. Choose the folder again.",
       type: "error",

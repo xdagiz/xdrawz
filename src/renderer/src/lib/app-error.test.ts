@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { toAppError } from "./app-error";
+import { saveErrorToastId, toAppError } from "./app-error";
 
 describe("toAppError", () => {
   it("maps each operation to its user-facing copy", () => {
@@ -31,10 +31,11 @@ describe("toAppError", () => {
     expect(error.message).not.toContain("files:rename");
   });
 
-  it("builds a unique id per incident and handles non-Error payloads", () => {
-    const a = toAppError(new Error("x"), "rename");
-    const b = toAppError(new Error("x"), "rename");
-    expect(a.id).not.toBe(b.id);
+  it("derives a stable toast id and handles non-Error payloads", () => {
+    expect(toAppError(new Error("x"), "rename").id).toBe("rename:x");
+    expect(toAppError(new Error("x"), "save", true, "a/b.excalidraw").id).toBe(
+      saveErrorToastId("a/b.excalidraw"),
+    );
 
     expect(toAppError({ code: 42 }, "delete").detail).toBe("Unknown error");
   });
