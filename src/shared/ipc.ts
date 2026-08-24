@@ -77,7 +77,6 @@ export type StoreType = {
   lastOpenedFileId?: string | null;
   recentFileIds?: string[] | null;
   theme?: ThemePreference;
-  zoomLevel?: number;
   autosaveIntervalMs?: number;
   reopenLastDrawing?: boolean;
 };

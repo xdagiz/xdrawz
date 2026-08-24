@@ -20,10 +20,6 @@ export const store = new Store<StoreType>({
       enum: ["light", "dark", "system"],
       default: DEFAULT_THEME,
     },
-    zoomLevel: {
-      type: "number",
-      default: 0,
-    },
     autosaveIntervalMs: {
       type: "number",
       enum: [...AUTOSAVE_PRESETS_MS],
@@ -41,9 +37,5 @@ export const getDrawingPath = () => nonEmptyString(store.get("drawingsPath"));
 export const setDrawingPath = (newPath: string) => store.set("drawingsPath", newPath);
 
 export const getLastOpenedFileId = () => nonEmptyString(store.get("lastOpenedFileId"));
-
-export const getZoomLevel = () => store.get("zoomLevel") ?? 0;
-
-export const setZoomLevel = (newLevel: number) => store.set("zoomLevel", newLevel);
 
 const nonEmptyString = (val: unknown) => (typeof val === "string" && val.length > 0 ? val : null);

@@ -10,7 +10,15 @@ import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
 import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
-import { app, dialog, shell, nativeTheme, BrowserWindow } from "electron";
+import {
+  app,
+  dialog,
+  shell,
+  nativeTheme,
+  BrowserWindow,
+  Menu,
+  type MenuItemConstructorOptions,
+} from "electron";
 
 import icon from "../../assets/icon.png?asset";
 import {
@@ -52,7 +60,7 @@ import {
   windowBgColor,
   applyWindowBgColor,
 } from "./settings";
-import { getLastOpenedFileId, getZoomLevel, setZoomLevel } from "./store";
+import { getLastOpenedFileId } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 
@@ -317,35 +325,38 @@ void app.whenReady().then(async () => {
   initLogger();
   installAppProtocolHandler();
 
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(process.platform === "darwin"
+        ? ([{ role: "appMenu" }] as MenuItemConstructorOptions[])
+        : []),
+      { role: "fileMenu" },
+      { role: "editMenu" },
+      {
+        label: "View",
+        submenu: [
+          { role: "resetZoom", label: "Actual Size", accelerator: "Alt+0" },
+          { role: "zoomIn", label: "Zoom In", accelerator: "Alt+=" },
+          { role: "zoomOut", label: "Zoom Out", accelerator: "Alt+-" },
+          ...(is.dev
+            ? ([
+                { type: "separator" },
+                { role: "reload" },
+                { role: "forceReload" },
+                { role: "toggleDevTools" },
+              ] as MenuItemConstructorOptions[])
+            : []),
+        ],
+      },
+      { role: "windowMenu" },
+    ]),
+  );
+
   applyTheme();
   nativeTheme.on("updated", applyWindowBgColor);
 
   app.on("browser-window-created", (_, win) => {
-    optimizer.watchWindowShortcuts(win);
-
-    const restoreZoom = () => {
-      win.webContents.setZoomLevel(getZoomLevel());
-    };
-
-    win.webContents.on("did-finish-load", restoreZoom);
-    win.webContents.on("did-navigate-in-page", restoreZoom);
-
-    win.webContents.on("before-input-event", (event, input) => {
-      if (input.type !== "keyDown") return;
-      if (!(input.control || input.meta)) return;
-
-      const zoomIn = input.code === "Equal" || input.code === "NumpadAdd";
-      const zoomOut = input.code === "Minus" || input.code === "NumpadSubtract";
-      const zoomReset = input.code === "Digit0" || input.code === "Numpad0";
-
-      if (!zoomIn && !zoomOut && !zoomReset) return;
-      event.preventDefault();
-
-      const level = win.webContents.getZoomLevel();
-      const next = zoomIn ? level + 0.5 : zoomOut ? level - 0.5 : 0;
-      win.webContents.setZoomLevel(next);
-      setZoomLevel(win.webContents.getZoomLevel());
-    });
+    optimizer.watchWindowShortcuts(win, { zoom: true });
   });
 
   const writeDrawingFileWatched = withWatchIgnore(writeDrawingFile);
