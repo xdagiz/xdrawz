@@ -250,7 +250,7 @@ function wireNavigationPolicy(win: BrowserWindow) {
 }
 
 const baseWebPreferences = () => ({
-  preload: join(__dirname, "../preload/index.cjs"),
+  preload: join(import.meta.dirname, "../preload/index.cjs"),
   sandbox: true,
   contextIsolation: true,
   nodeIntegration: false,

@@ -11,21 +11,6 @@ export default defineConfig({
         "@shared": resolve("src/shared"),
       },
     },
-    build: {
-      rollupOptions: {
-        // Match electron-vite's Node 20.11+ ESM shims
-        // Banner is safer than regex injection for __dirname/__filename/require.
-        output: {
-          banner: `
-// -- CommonJS Shims --
-import __cjs_mod__ from 'node:module';
-const __filename = import.meta.filename;
-const __dirname = import.meta.dirname;
-const require = __cjs_mod__.createRequire(import.meta.url);
-`,
-        },
-      },
-    },
   },
   preload: {
     resolve: {

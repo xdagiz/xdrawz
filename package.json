@@ -2,6 +2,7 @@
   "name": "xdrawz",
   "version": "0.1.0",
   "type": "module",
+  "private": true,
   "main": "./out/main/index.js",
   "scripts": {
     "fmt": "vp fmt",
