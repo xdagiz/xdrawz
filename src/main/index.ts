@@ -101,6 +101,12 @@ app.on("child-process-gone", (_event, details) => {
 let mainWindow: BrowserWindow | null = null;
 let watcher: DrawingsWatcher | null = null;
 
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+}
+
 registerAppScheme();
 
 function broadcastFilesChanged(event: FilesChangedEvent) {
@@ -320,7 +326,29 @@ function createGreetingWindow() {
   return greetingWindow;
 }
 
+const surfacePrimaryUi = async (): Promise<void> => {
+  const existing = BrowserWindow.getAllWindows();
+  if (existing.length > 0) {
+    const win = existing[0];
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    return;
+  }
+
+  const info = await getDrawings();
+  if (info.configured && info.path) {
+    const w = ensureWatcher();
+    void w.start(info.path);
+    ensureMainWindow();
+  } else {
+    createGreetingWindow();
+  }
+};
+
 void app.whenReady().then(async () => {
+  if (!gotTheLock) return;
+
   electronApp.setAppUserModelId("com.xdrawz");
   initLogger();
   installAppProtocolHandler();
@@ -431,25 +459,12 @@ void app.whenReady().then(async () => {
     createGreetingWindow();
   }
 
-  app.on("activate", () => {
-    const existing = BrowserWindow.getAllWindows();
-    if (existing.length > 0) {
-      const win = existing[0];
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-      return;
-    }
+  app.on("second-instance", () => {
+    void surfacePrimaryUi();
+  });
 
-    void getDrawings().then((i) => {
-      if (i.configured && i.path) {
-        const w = ensureWatcher();
-        void w.start(i.path);
-        ensureMainWindow();
-      } else {
-        createGreetingWindow();
-      }
-    });
+  app.on("activate", () => {
+    void surfacePrimaryUi();
   });
 });
 

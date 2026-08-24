@@ -30,6 +30,8 @@ nsis:
 mac:
   icon: assets/icon.icns
   notarize: false
+  extendInfo:
+    LSMultipleInstancesProhibited: true
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
