@@ -1,7 +1,6 @@
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
-import { toAppError } from "@/lib/app-error";
 import { conflictKeyOf, fileNameOf } from "@/lib/conflicts";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
@@ -38,6 +37,7 @@ const App = () => {
   const editorEpoch = useStore((s) => s.editorEpoch);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
+  const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
 
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
@@ -49,18 +49,11 @@ const App = () => {
   const pickFolder = useCallback(async () => {
     setPickingFolder(true);
     try {
-      await window.api.drawings.pick();
-    } catch (err) {
-      const appError = toAppError(err, "unexpected", false);
-      toast.add({
-        title: "Couldn’t choose the drawings folder",
-        description: appError.message,
-        type: "error",
-      });
+      await pickAndSwitchFolder();
     } finally {
       setPickingFolder(false);
     }
-  }, []);
+  }, [pickAndSwitchFolder]);
 
   useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
   useHotkey("Mod+K", () => setPaletteOpen((current) => !current));

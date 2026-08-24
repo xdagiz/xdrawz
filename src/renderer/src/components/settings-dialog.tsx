@@ -101,7 +101,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
   const drawings = useStore((s) => s.drawings);
-  const changeDrawingsFolder = useStore((s) => s.changeDrawingsFolder);
+  const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
   const [pickingFolder, setPickingFolder] = useState(false);
 
   const handleThemeChange = async (value: ThemePreference) => {
@@ -131,7 +131,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
   const handleChangeFolder = async () => {
     setPickingFolder(true);
     try {
-      const switched = await changeDrawingsFolder();
+      const switched = await pickAndSwitchFolder();
       if (switched) onOpenChange(false);
     } finally {
       setPickingFolder(false);

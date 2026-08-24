@@ -166,7 +166,7 @@ export type State = {
   ensureCleanOrConfirm: (reason?: UnsavedReason) => Promise<boolean>;
   initSettings: () => Promise<void>;
   updateSettings: (updated: SettingsUpdate) => Promise<boolean>;
-  changeDrawingsFolder: () => Promise<boolean>;
+  pickAndSwitchFolder: () => Promise<boolean>;
 };
 
 export const useStore = create<State>((set, get) => {
@@ -519,17 +519,15 @@ export const useStore = create<State>((set, get) => {
       return true;
     },
 
-    changeDrawingsFolder: async () => {
+    pickAndSwitchFolder: async () => {
       const ok = await get().ensureCleanOrConfirm("switch");
       if (!ok) return false;
 
       const previousPath = get().drawings?.path ?? null;
 
-      let picked: DrawingInfo;
+      let info: DrawingInfo | null = null;
       try {
-        const info = await window.api.drawings.pick();
-        if (!info) return false;
-        picked = info;
+        info = await window.api.drawings.pick();
       } catch (error) {
         toast.add({
           title: "Couldn’t choose the drawings folder",
@@ -539,12 +537,19 @@ export const useStore = create<State>((set, get) => {
         return false;
       }
 
-      if (picked.path !== null && picked.path === previousPath) return true;
+      if (info === null) return false;
+
+      if (info.path !== null && info.path === previousPath && info.configured) {
+        return true;
+      }
+
+      sessionOwner.getSession()?.setAutosavePaused(true);
 
       set({
-        drawings: picked,
+        drawings: info,
         entries: [],
         openFileId: null,
+        homeReturnFileId: null,
         dirtyById: {},
         error: null,
         watcherDown: null,

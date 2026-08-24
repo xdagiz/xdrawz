@@ -216,12 +216,8 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
     icon: Folder,
     group: "app",
     keywords: ["storage", "location", "pick"],
-    perform: async () => {
-      try {
-        await window.api.drawings.pick();
-      } catch (error) {
-        reportFailure(error, "load", "Couldn’t choose the drawings folder");
-      }
+    perform: async (ctx) => {
+      await ctx.store.pickAndSwitchFolder();
     },
   },
 ];
