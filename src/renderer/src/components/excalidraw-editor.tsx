@@ -20,6 +20,7 @@ import { toAppError, type AppError } from "@/lib/app-error";
 import { drawingSignature } from "@/lib/drawing-session";
 import type { BoundDrawingSession } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
+import { stripExcalidraw } from "@/lib/utils";
 
 import { ErrorBoundary } from "./error-boundary";
 import { Button } from "./ui/button";
@@ -84,6 +85,50 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [loadError, setLoadError] = useState<AppError | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
+
+  useEffect(() => {
+    const root = editorRef.current;
+
+    const handleDrop = (event: DragEvent) => {
+      const sceneFiles = [...(event.dataTransfer?.files ?? [])].filter((file) =>
+        file.name.toLowerCase().endsWith(".excalidraw"),
+      );
+      if (sceneFiles.length === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      void (async () => {
+        const opened: string[] = [];
+        for (const file of sceneFiles) {
+          try {
+            const content = await file.text();
+            const parsed: unknown = JSON.parse(content);
+            if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+              throw new Error("Drawing must be a JSON object");
+            }
+            const record = parsed as { elements?: unknown; files?: unknown };
+            if ("elements" in record && !Array.isArray(record.elements)) {
+              throw new Error("Drawing elements must be an array");
+            }
+            const created = await window.api.files.create(null, stripExcalidraw(file.name), "file");
+            const saved = await useStore.getState().saveFile(created.id, content, "explicit");
+            if (saved) opened.push(created.id);
+          } catch (error) {
+            toast.add({
+              title: `Couldn’t import ${file.name}`,
+              description: toAppError(error, "create").message,
+              type: "error",
+            });
+          }
+        }
+        if (opened.length > 0) await useStore.getState().setOpenFileId(opened[0]);
+      })();
+    };
+
+    root?.addEventListener("drop", handleDrop, true);
+    return () => root?.removeEventListener("drop", handleDrop, true);
+  }, []);
 
   const toggleSidebarRef = useRef(toggleSidebar);
   toggleSidebarRef.current = toggleSidebar;
