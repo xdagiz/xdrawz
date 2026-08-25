@@ -27,7 +27,6 @@ type Props = {
 };
 
 const MAX_HITS_PER_SOURCE = 8;
-const CONFLICT_REASON = "Resolve the file conflict first";
 
 export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const [query, setQuery] = useState("");
@@ -74,9 +73,9 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     session: sessionOwner.getSession(),
   };
 
-  const visibleCommands = conflictActive
-    ? commands
-    : commands.filter((command) => command.enabled?.(ctx) !== false);
+  const visibleCommands = commands.filter(
+    (command) => !(conflictActive && command.gatedOnConflict) && command.enabled?.(ctx) !== false,
+  );
 
   const commandHits =
     trimmedQuery.length === 0
@@ -141,7 +140,9 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
             }`}
           >
             {conflictActive && (
-              <p className="text-destructive px-3 pb-2 text-xs font-medium">{CONFLICT_REASON}</p>
+              <p className="text-destructive px-3 pb-2 text-xs font-medium">
+                File commands are limited until the conflict is resolved (see the banner)
+              </p>
             )}
             {commandHits.length > 0 && (
               <CommandGroup heading="Actions">
@@ -149,15 +150,15 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
                   <CommandItem
                     key={command.id}
                     value={`command:${command.id}`}
-                    disabled={conflictActive}
+                    disabled={conflictActive && command.gatedOnConflict === true}
                     onSelect={() => void runCommand(command)}
                   >
                     <command.icon className="text-muted-foreground" />
                     <span>
                       {command.title}
-                      {conflictActive ? "" : (command.titleSuffix?.(ctx) ?? "")}
+                      {command.titleSuffix?.(ctx) ?? ""}
                     </span>
-                    {command.shortcut && !conflictActive && (
+                    {command.shortcut && (
                       <CommandShortcut>{formatForDisplay(command.shortcut)}</CommandShortcut>
                     )}
                   </CommandItem>
@@ -170,7 +171,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
                   <CommandItem
                     key={file.id}
                     value={`entry:${file.id}`}
-                    disabled={conflictActive}
+                    disabled={conflictActive && file.id === (externalConflict?.fileId ?? null)}
                     onSelect={() => void chooseDrawing(file.id)}
                   >
                     <span>{stripExcalidraw(file.name)}</span>

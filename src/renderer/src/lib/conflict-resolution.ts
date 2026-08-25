@@ -164,8 +164,20 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     return { action: "proceed" };
   };
 
+  const recoverMissingOpenFile = async (): Promise<boolean> => {
+    const conflict = get().externalConflict;
+    if (!conflict || conflict.type !== "missing") return false;
+    const body = sessionOwner.getSession()?.getSerializedContent();
+    if (!body) {
+      set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
+      return false;
+    }
+    return performRecover(conflict.fileId, body);
+  };
+
   return {
     gateConflictedSave,
+    recoverMissingOpenFile,
     resolveChangedConflict,
     resolveMissingConflict,
   };

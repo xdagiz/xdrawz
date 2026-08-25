@@ -7,6 +7,7 @@ import { stripExcalidraw } from "@/lib/utils";
 
 import { AppSidebar } from "./components/app-sidebar";
 import { CommandPalette } from "./components/command-palette";
+import { ConflictBanner } from "./components/conflict-banner";
 import { DrawingSwitcher } from "./components/drawing-switcher";
 import { EditorView } from "./components/editor-view";
 import { ErrorBoundary } from "./components/error-boundary";
@@ -187,6 +188,7 @@ const App = () => {
       >
         <AppSidebar onOpenSettings={() => setSettingsDialogOpen(true)} />
         <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
+          <ConflictBanner />
           <div className="relative min-h-0 flex-1 overflow-hidden">
             <ErrorBoundary resetKeys={[openFileId, editorEpoch]}>
               <EditorView />

@@ -35,6 +35,7 @@ export type CommandDef = {
   icon: LucideIcon;
   keywords?: string[];
   shortcut?: string;
+  gatedOnConflict?: boolean;
   enabled?: (ctx: CommandContext) => boolean;
   disabledReason?: (ctx: CommandContext) => string;
   titleSuffix?: (ctx: CommandContext) => string;
@@ -100,6 +101,7 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
   },
   {
     id: "save-now",
+    gatedOnConflict: true,
     title: "Save now",
     icon: Save,
     group: "current",
@@ -119,6 +121,7 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
   },
   {
     id: "rename-drawing",
+    gatedOnConflict: true,
     title: "Rename drawing",
     icon: Pencil,
     group: "current",
@@ -131,6 +134,7 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
   },
   {
     id: "move-to-trash",
+    gatedOnConflict: true,
     title: "Move to trash",
     icon: Trash2,
     group: "current",
@@ -143,6 +147,7 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
   },
   {
     id: "reload-from-disk",
+    gatedOnConflict: true,
     title: "Reload from disk",
     icon: RotateCcw,
     group: "current",

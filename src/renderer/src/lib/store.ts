@@ -159,6 +159,7 @@ export type State = {
   resolveChangedConflict: (opts?: {
     force?: boolean;
   }) => Promise<"reload" | "overwrite" | "cancel">;
+  recoverMissingOpenFile: () => Promise<boolean>;
   resolveMissingConflict: (
     content?: string,
     opts?: { force?: boolean },
@@ -170,13 +171,17 @@ export type State = {
 };
 
 export const useStore = create<State>((set, get) => {
-  const { gateConflictedSave, resolveChangedConflict, resolveMissingConflict } =
-    createConflictResolver({
-      get,
-      set,
-      reloadOpenFileFromDisk: () => get().reloadOpenFileFromDisk(),
-      discardMissingOpenFile: () => get().discardMissingOpenFile(),
-    });
+  const {
+    gateConflictedSave,
+    recoverMissingOpenFile,
+    resolveChangedConflict,
+    resolveMissingConflict,
+  } = createConflictResolver({
+    get,
+    set,
+    reloadOpenFileFromDisk: () => get().reloadOpenFileFromDisk(),
+    discardMissingOpenFile: () => get().discardMissingOpenFile(),
+  });
 
   const persistDrawingToDisk = async (
     id: string,
@@ -451,6 +456,8 @@ export const useStore = create<State>((set, get) => {
     resolveChangedConflict,
 
     resolveMissingConflict,
+
+    recoverMissingOpenFile,
 
     reloadOpenFileFromDisk: () => {
       const { openFileId, dirtyById, editorEpoch } = get();
