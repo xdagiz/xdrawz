@@ -33,6 +33,7 @@ import {
 } from "@shared/channels";
 import { isRecord, isSerializedAppError, toSerialized } from "@shared/errors";
 import type { ErrorOperation, SerializedAppError } from "@shared/errors";
+import { MAX_THUMBNAIL_BATCH } from "@shared/ipc";
 import type {
   AppSettings,
   DrawingInfo,
@@ -219,8 +220,8 @@ const requireIdArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     throw errorWithCode("ids must be an array", "INVALID");
   }
-  if (value.length > 500) {
-    throw errorWithCode("Too many ids", "INVALID");
+  if (value.length > MAX_THUMBNAIL_BATCH) {
+    throw errorWithCode(`Too many ids, max ${MAX_THUMBNAIL_BATCH}`, "INVALID");
   }
   return [...new Set(value.map((item) => requireString(item, "id")))];
 };

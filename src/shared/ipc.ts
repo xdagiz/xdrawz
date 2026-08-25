@@ -97,6 +97,8 @@ export type ThumbnailRecord = {
   dark: string;
 };
 
+export const MAX_THUMBNAIL_BATCH = 5000;
+
 export type LibraryReturnedEvent = {
   hash: string;
 };

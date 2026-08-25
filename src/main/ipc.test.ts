@@ -53,6 +53,7 @@ import {
   WINDOW_CLOSE,
   WINDOW_READY,
 } from "@shared/channels";
+import { MAX_THUMBNAIL_BATCH } from "@shared/ipc";
 
 import { MAX_LIBRARY_STORE_BYTES } from "./ipc";
 import {
@@ -239,7 +240,7 @@ describe("registerIpcHandlers wiring", () => {
     await expect(
       handlers.get(THUMBNAILS_GET)!(
         eventFor(),
-        Array.from({ length: 501 }, () => "x"),
+        Array.from({ length: MAX_THUMBNAIL_BATCH + 1 }, () => "x"),
       ),
     ).resolves.toEqual(expect.objectContaining({ ok: false }));
     await expect(handlers.get(THUMBNAILS_GET)!(eventFor(), [""])).resolves.toEqual(
