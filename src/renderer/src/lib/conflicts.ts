@@ -1,6 +1,11 @@
-import type { ExternalConflict, FileEntry, FilesChangedEvent } from "@shared/ipc";
+import type { FileEntry, FilesChangedEvent } from "@shared/ipc";
 
 export type ConflictKey = string;
+
+export type ExternalConflict =
+  | { type: "missing"; fileId: string }
+  | { type: "changed"; fileId: string; diskModifiedAt: number }
+  | null;
 
 export const removeKey = (obj: Record<string, true>, key: string): Record<string, true> => {
   const next = { ...obj };

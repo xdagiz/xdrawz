@@ -1,8 +1,15 @@
-import type { ExternalConflict, FileEntry, SaveOrigin } from "@shared/ipc";
+import type { FileEntry } from "@shared/ipc";
 
 import { toAppError, type AppError } from "@/lib/app-error";
 import { isCloseHandshakeActive } from "@/lib/close-handshake";
-import { conflictKeyOf, createSingleFlight, fileNameOf, removeKey } from "@/lib/conflicts";
+import {
+  conflictKeyOf,
+  createSingleFlight,
+  type ExternalConflict,
+  fileNameOf,
+  removeKey,
+} from "@/lib/conflicts";
+import type { SaveOrigin } from "@/lib/drawing-session";
 import { sessionOwner } from "@/lib/session-owner";
 import type { State } from "@/lib/store";
 

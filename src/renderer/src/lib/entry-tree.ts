@@ -1,5 +1,7 @@
 import type { FileEntry } from "@shared/ipc";
-import { isAncestorId } from "@shared/ipc";
+
+const isAncestorId = (ancestorId: string, id: string): boolean =>
+  id !== ancestorId && id.startsWith(`${ancestorId}/`);
 
 export const remapId = (id: string, oldRoot: string, newRoot: string): string => {
   if (id === oldRoot) return newRoot;

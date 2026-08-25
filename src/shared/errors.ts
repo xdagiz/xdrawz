@@ -11,8 +11,6 @@ export type ErrorOperation =
 
 export type ErrorCode = "NOT_FOUND" | "TOO_LARGE" | "INVALID" | "CANCELLED" | "UNKNOWN";
 
-export type Result<T> = { ok: true; value: T } | { ok: false; error: SerializedAppError };
-
 export interface SerializedAppError {
   readonly $isAppError: true;
   readonly name: string;
@@ -48,12 +46,6 @@ const ERROR_OPERATIONS: ReadonlySet<string> = new Set([
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
-
-export const errorWithCode = (message: string, code: ErrorCode): Error => {
-  const error = new Error(message);
-  Object.assign(error, { code });
-  return error;
-};
 
 const normalizeMessage = (value: string): string => {
   const cleaned = value.replace(IPC_PREFIX_PATTERN, "");
@@ -207,55 +199,4 @@ export const toSerialized = (
     retryable: effectiveRetryable,
     cause,
   };
-};
-
-export const fromSerialized = (serialized: SerializedAppError): Error => {
-  const error = new Error(serialized.message);
-  error.name = serialized.name;
-  if (serialized.stack) error.stack = serialized.stack;
-  Object.assign(error, { code: serialized.code });
-  Object.assign(error, { operation: serialized.operation });
-  Object.assign(error, { retryable: serialized.retryable });
-  if (serialized.cause) Object.assign(error, { cause: fromSerialized(serialized.cause) });
-  return error;
-};
-
-export class CancellationError extends Error {
-  constructor() {
-    super("Canceled");
-    this.name = "Canceled";
-  }
-}
-
-export const isCancellationError = (error: unknown): boolean => {
-  if (error instanceof CancellationError) return true;
-  if (error instanceof Error && error.name === "Canceled" && error.message === "Canceled")
-    return true;
-  if (isSerializedAppError(error) && error.code === "CANCELLED") return true;
-  if (isSerializedAppError(error) && error.name === "Canceled" && error.message === "Canceled")
-    return true;
-  return false;
-};
-
-export const isResizeObserverLoopError = (error: unknown): boolean => {
-  let message = "";
-
-  if (typeof error === "string") message = error;
-  else if (error instanceof Error) message = error.message;
-  else if (isSerializedAppError(error)) message = error.message;
-  else if (isRecord(error) && typeof error.message === "string") message = error.message;
-
-  return (
-    message.includes("ResizeObserver loop completed with undelivered notifications") ||
-    message.includes("ResizeObserver loop limit exceeded")
-  );
-};
-
-export const isSigPipeError = (error: unknown): boolean => {
-  if (!isRecord(error)) return false;
-  if (!("code" in error)) return false;
-  if (!("syscall" in error)) return false;
-  const code = error.code;
-  const syscall = error.syscall;
-  return code === "EPIPE" && typeof syscall === "string" && syscall.toUpperCase() === "WRITE";
 };

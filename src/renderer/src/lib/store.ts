@@ -3,7 +3,6 @@ import type {
   AppSettings,
   DrawingInfo,
   DrawingsSnapshot,
-  ExternalConflict,
   FileEntry,
   FilesChangedEvent,
   SettingsUpdate,
@@ -15,14 +14,14 @@ import {
   FILE_NOT_FOUND_MESSAGE,
   parentIdOf,
   type FileDeleteMode,
-  type SaveOrigin,
 } from "@shared/ipc";
 import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
 import { saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createConflictResolver } from "@/lib/conflict-resolution";
-import { reduceEntries, removeKey } from "@/lib/conflicts";
+import { reduceEntries, removeKey, type ExternalConflict } from "@/lib/conflicts";
+import type { SaveOrigin } from "@/lib/drawing-session";
 import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree } from "@/lib/entry-tree";
 import {
   parseRecentIdsJson,

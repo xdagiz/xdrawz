@@ -3,16 +3,23 @@ import { Dirent, Stats } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { errorWithCode } from "@shared/errors";
+import type { ErrorCode } from "@shared/errors";
 import {
   FILE_NOT_FOUND_MESSAGE,
-  MAX_FILE_CONTENT_BYTES,
   parentIdOf,
   type FileDeleteMode,
   type FileEntry,
 } from "@shared/ipc";
 
 import { getDrawings } from "./drawings";
+
+export const errorWithCode = (message: string, code: ErrorCode): Error => {
+  const error = new Error(message);
+  Object.assign(error, { code });
+  return error;
+};
+
+const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
 
 export type FsMutationHooks = {
   beforeMutate?: (absPaths: string[]) => void;

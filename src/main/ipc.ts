@@ -30,9 +30,8 @@ import {
   WINDOW_READY,
   WINDOW_REPORT_FATAL,
 } from "@shared/channels";
-import { errorWithCode, isRecord, isSerializedAppError, toSerialized } from "@shared/errors";
-import type { ErrorOperation, Result } from "@shared/errors";
-import { validateSettingsUpdate } from "@shared/ipc";
+import { isRecord, isSerializedAppError, toSerialized } from "@shared/errors";
+import type { ErrorOperation, SerializedAppError } from "@shared/errors";
 import type {
   AppSettings,
   DrawingInfo,
@@ -46,7 +45,9 @@ import type {
 } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
+import { errorWithCode } from "./files";
 import { log } from "./logger";
+import { validateSettingsUpdate } from "./settings";
 import { store } from "./store";
 import { isValidThumbnailRecord } from "./thumbnails";
 
@@ -240,6 +241,8 @@ const requireInteger = (value: unknown, field: string) => {
   }
   return value;
 };
+
+type Result<T> = { ok: true; value: T } | { ok: false; error: SerializedAppError };
 
 const withIpcResult = async <T>(
   operation: ErrorOperation,

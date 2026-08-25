@@ -1,9 +1,8 @@
-import type { SaveOrigin } from "@shared/ipc";
 import { useEffect, useRef, type RefObject } from "react";
 
 import { toast } from "@/components/ui/toast";
 import { saveErrorToastId } from "@/lib/app-error";
-import { createDrawingSession } from "@/lib/drawing-session";
+import { createDrawingSession, type SaveOrigin } from "@/lib/drawing-session";
 import { type BoundDrawingSession, sessionOwner } from "@/lib/session-owner";
 
 export const useDrawingSession = (

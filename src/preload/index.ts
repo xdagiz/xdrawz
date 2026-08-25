@@ -31,13 +31,25 @@ import {
   WINDOW_REPORT_FATAL,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
-import { fromSerialized, isRecord, isSerializedAppError } from "@shared/errors";
+import { isRecord, isSerializedAppError } from "@shared/errors";
+import type { SerializedAppError } from "@shared/errors";
 import type { FilesChangedEvent, WatcherErrorEvent, WindowCloseRequest } from "@shared/ipc";
 import { contextBridge, ipcRenderer } from "electron";
 
 import { NativeApi } from "./types";
 
 type InvokeReturn = ReturnType<typeof ipcRenderer.invoke>;
+
+const fromSerialized = (serialized: SerializedAppError): Error => {
+  const error = new Error(serialized.message);
+  error.name = serialized.name;
+  if (serialized.stack) error.stack = serialized.stack;
+  Object.assign(error, { code: serialized.code });
+  Object.assign(error, { operation: serialized.operation });
+  Object.assign(error, { retryable: serialized.retryable });
+  if (serialized.cause) Object.assign(error, { cause: fromSerialized(serialized.cause) });
+  return error;
+};
 
 const isResult = (
   value: unknown,

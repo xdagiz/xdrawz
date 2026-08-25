@@ -2,12 +2,14 @@ import { serializeAsJSON } from "@excalidraw/excalidraw";
 import { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
-import type { SaveOrigin, UnsavedChoice, UnsavedReason } from "@shared/ipc";
+import type { UnsavedChoice, UnsavedReason } from "@shared/ipc";
 import { DEFAULT_AUTOSAVE_INTERVAL_MS } from "@shared/ipc";
 
 import { debounceAsync } from "@/lib/debounce";
 
 export const MAX_SAVE_RETRIES = 3;
+
+export type SaveOrigin = "auto" | "explicit";
 
 type DrawingSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFiles];
 

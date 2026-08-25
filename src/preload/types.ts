@@ -1,22 +1,24 @@
 import type { SerializedAppError } from "@shared/errors";
 import type {
   AppSettings,
-  ContextMenuItem,
   DrawingInfo,
   DrawingsSnapshot,
-  FileChangedChoice,
   FileDeleteMode,
   FileEntry,
-  FileRecoverChoice,
   FilesChangedEvent,
   SettingsUpdate,
-  StoreKey,
+  StoreType,
   ThumbnailRecord,
   UnsavedChoice,
   UnsavedReason,
   WatcherErrorEvent,
   WindowCloseRequest,
 } from "@shared/ipc";
+
+export type ContextMenuItem = { id: string; label: string };
+export type FileRecoverChoice = "recover" | "discard" | "cancel";
+export type FileChangedChoice = "reload" | "overwrite" | "cancel";
+export type StoreKey = keyof StoreType;
 
 export interface NativeApi {
   drawings: {
