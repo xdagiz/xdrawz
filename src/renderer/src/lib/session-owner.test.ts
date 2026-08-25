@@ -20,6 +20,7 @@ const makeSession = () => ({
   isDirty: vi.fn(() => false),
   evaluateNow: vi.fn(),
   setAutosaveInterval: vi.fn(),
+  retarget: vi.fn(),
   dispose: vi.fn(),
 });
 
@@ -106,5 +107,22 @@ describe("session-owner", () => {
     owner.setActiveForTest(null);
 
     expect(owner.getSession()).toBeNull();
+  });
+
+  it("retargetActive moves ownership and forwards retarget only on matching id", () => {
+    const { owner } = setup();
+    const raw = makeSession();
+    owner.acquire("f1", asSession(raw));
+
+    owner.retargetActive("f2", "f9");
+    expect(raw.retarget).not.toHaveBeenCalled();
+    expect(owner.getActiveFileId()).toBe("f1");
+
+    owner.retargetActive("f1", "f2");
+    expect(raw.retarget).toHaveBeenCalledTimes(1);
+    expect(raw.retarget).toHaveBeenCalledWith("f2");
+    expect(owner.getActiveFileId()).toBe("f2");
+    expect(owner.getSession("f2")).toBe(owner.getSession());
+    expect(owner.getSession("f1")).toBeNull();
   });
 });

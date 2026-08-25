@@ -13,7 +13,10 @@ export type SessionOwnerDeps = {
 export type SessionOwner = {
   acquire: (fileId: string, session: DrawingSessionControls) => BoundDrawingSession;
   release: (fileId: string) => void;
+  releaseActive: () => void;
   getSession: (fileId?: string) => BoundDrawingSession | null;
+  getActiveFileId: () => string | null;
+  retargetActive: (from: string, to: string) => void;
   setActiveForTest: (session: BoundDrawingSession | null) => void;
 };
 
@@ -41,8 +44,19 @@ export const createSessionOwner = (deps: SessionOwnerDeps): SessionOwner => {
       active.session.dispose();
       active = null;
     },
+    releaseActive: () => {
+      if (!active) return;
+      active.session.dispose();
+      active = null;
+    },
     getSession: (fileId) =>
       !active || (fileId !== undefined && active.fileId !== fileId) ? null : active.session,
+    getActiveFileId: () => active?.fileId ?? null,
+    retargetActive: (from, to) => {
+      if (!active || active.fileId !== from) return;
+      active.fileId = to;
+      active.session.retarget(to);
+    },
     setActiveForTest: (session) => {
       active = session ? { fileId: "", session } : null;
     },

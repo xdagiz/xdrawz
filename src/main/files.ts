@@ -202,13 +202,17 @@ const ensureNotDirectory = async (absPath: string) => {
   if (existing?.isDirectory()) throw new Error("Cannot write over a directory");
 };
 
-export const writeDrawingFile = async (id: string, content: string, hooks?: FsMutationHooks) => {
+export const writeDrawingFile = async (
+  id: string,
+  content: string,
+  hooks?: FsMutationHooks,
+): Promise<FileEntry> => {
   if (typeof content !== "string") throw new Error("Content must be a string");
 
   assertContentSize(content);
   assertDrawingJson(content);
 
-  const { absPath } = await resolveInsideRoot(id);
+  const { root, absPath } = await resolveInsideRoot(id);
 
   if (!isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be written");
@@ -219,19 +223,20 @@ export const writeDrawingFile = async (id: string, content: string, hooks?: FsMu
   if (existing.isDirectory()) throw new Error("Cannot write over a directory");
 
   await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);
+  return entryFromAbs(root, absPath, "file");
 };
 
 export const writeDrawingFileRecover = async (
   id: string,
   content: string,
   hooks?: FsMutationHooks,
-) => {
+): Promise<FileEntry> => {
   if (typeof content !== "string") throw new Error("Content must be a string");
 
   assertContentSize(content);
   assertDrawingJson(content);
 
-  const { absPath } = await resolveInsideRoot(id);
+  const { root, absPath } = await resolveInsideRoot(id);
 
   if (!isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be written");
@@ -240,6 +245,7 @@ export const writeDrawingFileRecover = async (
   await mkdir(path.dirname(absPath), { recursive: true });
   await ensureNotDirectory(absPath);
   await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);
+  return entryFromAbs(root, absPath, "file");
 };
 
 export const renameEntry = async (

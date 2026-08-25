@@ -365,6 +365,46 @@ describe("createDrawingSession", () => {
     expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
   });
 
+  it("retries a save whose target moved mid-flight under the new id without counting a failure", async () => {
+    const deferred: { resolve?: (ok: boolean) => void } = {};
+    const save = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            deferred.resolve = resolve;
+          }),
+      )
+      .mockResolvedValue(true);
+    const gaveUp = vi.fn();
+    const dirty = vi.fn();
+    const session = createDrawingSession({
+      fileId: "f1",
+      save,
+      onDirtyChange: dirty,
+      onSaveGaveUp: gaveUp,
+    });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0]).toBe("f1");
+
+    session.retarget("f2");
+    deferred.resolve?.(false);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(gaveUp).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1][0]).toBe("f2");
+    expect(dirty).toHaveBeenLastCalledWith("f2", false);
+  });
+
   it("setAutosaveInterval keeps a pending save on its original deadline", async () => {
     const { session, save } = makeSession();
 

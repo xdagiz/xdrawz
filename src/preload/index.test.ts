@@ -22,7 +22,8 @@ vi.mock("electron", () => ({
 // contextBridge instead of the (absent) window global.
 Object.defineProperty(process, "contextIsolated", { value: true, configurable: true });
 
-import { FILES_READ, WINDOW_CLOSE, WINDOW_WILL_CLOSE } from "@shared/channels";
+import { FILES_READ, FILES_WRITE, WINDOW_CLOSE, WINDOW_WILL_CLOSE } from "@shared/channels";
+import { isSerializedAppError } from "@shared/errors";
 
 import type { NativeApi } from "./types";
 
@@ -67,5 +68,29 @@ describe("preload window api", () => {
     mocks.invoke.mockRejectedValueOnce(new Error("boom"));
     await expect(api.files.read("big.excalidraw")).rejects.toThrow("boom");
     expect(mocks.invoke).toHaveBeenCalledWith(FILES_READ, "big.excalidraw");
+  });
+
+  it("reconstructs serialized app errors so renderer-side guards recognize them", async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        $isAppError: true,
+        name: "Error",
+        message: "Disk full",
+        code: "TOO_LARGE",
+        operation: "save",
+        retryable: true,
+      },
+    });
+
+    const error = await api.files.write("big.excalidraw", "{}").then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect(isSerializedAppError(error)).toBe(true);
+    expect((error as Error).message).toBe("Disk full");
+    expect(mocks.invoke).toHaveBeenCalledWith(FILES_WRITE, "big.excalidraw", "{}");
   });
 });

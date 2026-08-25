@@ -9,12 +9,7 @@ import type {
   UnsavedReason,
   WatcherErrorEvent,
 } from "@shared/ipc";
-import {
-  DEFAULT_SETTINGS,
-  FILE_NOT_FOUND_MESSAGE,
-  parentIdOf,
-  type FileDeleteMode,
-} from "@shared/ipc";
+import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE, type FileDeleteMode } from "@shared/ipc";
 import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
@@ -22,7 +17,7 @@ import { saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createConflictResolver } from "@/lib/conflict-resolution";
 import { reduceEntries, removeKey, type ExternalConflict } from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
-import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree } from "@/lib/entry-tree";
+import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree, remapId } from "@/lib/entry-tree";
 import {
   parseRecentIdsJson,
   pushRecentId,
@@ -97,31 +92,6 @@ export const nextDefaultName = (
   return candidate;
 };
 
-const savedAfterDisk = (diskModifiedAt: number, savedAt: number) =>
-  Math.max(diskModifiedAt + 1, savedAt);
-
-const entryAfterWrite = (id: string, content: string, entries: FileEntry[]): FileEntry => {
-  const existing = entries.find((e) => e.id === id);
-  const now = Date.now();
-  const normalized = content.endsWith("\n") ? content : `${content}\n`;
-  const size = new Blob([normalized]).size;
-  if (existing) {
-    return {
-      ...existing,
-      modifiedAt: savedAfterDisk(existing.modifiedAt, now),
-      size,
-    };
-  }
-  return {
-    id,
-    name: id.split("/").pop() ?? id,
-    kind: "file",
-    parentId: parentIdOf(id),
-    modifiedAt: now,
-    size,
-  };
-};
-
 export type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
@@ -134,6 +104,7 @@ export type State = {
   externalConflict: ExternalConflict;
   watcherDown: string | null;
   editorEpoch: number;
+  editorSessionId: number;
   dismissedConflictKey: string | null;
   settings: AppSettings;
   settingsDialogOpen: boolean;
@@ -188,13 +159,13 @@ export const useStore = create<State>((set, get) => {
     origin: SaveOrigin,
   ): Promise<boolean> => {
     try {
-      await window.api.files.write(id, content);
+      const savedEntry = await window.api.files.write(id, content);
       const latest = get();
       set({
         error: null,
         externalConflict: null,
         dismissedConflictKey: null,
-        entries: upsertSorted(latest.entries, entryAfterWrite(id, content, latest.entries)),
+        entries: upsertSorted(latest.entries, savedEntry),
       });
       toast.close(saveErrorToastId(id));
       return true;
@@ -228,6 +199,7 @@ export const useStore = create<State>((set, get) => {
     externalConflict: null,
     watcherDown: null,
     editorEpoch: 0,
+    editorSessionId: 0,
     dismissedConflictKey: null,
     settingsDialogOpen: false,
     settings:
@@ -260,6 +232,7 @@ export const useStore = create<State>((set, get) => {
           filesRevision: state.filesRevision,
           externalConflict: null,
           dismissedConflictKey: null,
+          editorSessionId: state.editorSessionId + 1,
         };
       }),
 
@@ -288,7 +261,13 @@ export const useStore = create<State>((set, get) => {
         void window.api.store.set("lastOpenedFileId", null);
       } else if (isOpenableFile(get().entries, fileId)) {
         const recentFileIds = pushRecentId(get().recentFileIds, fileId);
-        set({ openFileId: fileId, error: null, externalConflict: null, recentFileIds });
+        set({
+          openFileId: fileId,
+          error: null,
+          externalConflict: null,
+          recentFileIds,
+          editorSessionId: get().editorSessionId + 1,
+        });
         void window.api.store.set("lastOpenedFileId", fileId);
         void window.api.store.set("recentFileIds", JSON.stringify(recentFileIds));
       } else {
@@ -314,16 +293,24 @@ export const useStore = create<State>((set, get) => {
       }
 
       const entry = await window.api.files.rename(id, newName);
+      const activeSessionFileId = sessionOwner.getActiveFileId();
+      if (activeSessionFileId) {
+        const remappedActive = remapId(activeSessionFileId, id, entry.id);
+        if (remappedActive !== activeSessionFileId) {
+          sessionOwner.retargetActive(activeSessionFileId, remappedActive);
+        }
+      }
       const { entries, openFileId, dirtyById, recentFileIds } = get();
       const next = applySubtreeRemap({ entries, openFileId, dirtyById }, id, entry.id, {
         rootEntry: entry,
+        sort: true,
       });
 
       const pairs = new Map<string, string>();
-      entries.forEach((e, i) => {
-        const mapped = next.entries[i]?.id;
-        if (mapped && mapped !== e.id) pairs.set(e.id, mapped);
-      });
+      for (const e of entries) {
+        const mapped = remapId(e.id, id, entry.id);
+        if (mapped !== e.id) pairs.set(e.id, mapped);
+      }
       const nextRecentFileIds = remapRecentIds(recentFileIds, (rid) => pairs.get(rid) ?? rid);
       const recentChanged = !sameIdList(nextRecentFileIds, recentFileIds);
 

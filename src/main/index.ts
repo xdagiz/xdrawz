@@ -65,11 +65,20 @@ process.on("unhandledRejection", (reason) => {
   log.error("[main:unhandledRejection]", reason);
 });
 
-app.on("render-process-gone", (_event, _contents, details) => {
+app.on("render-process-gone", (_event, webContents, details) => {
   if (details.reason === "clean-exit") return;
   log.error("[render-process-gone]", details);
-  const shouldQuit = shouldQuitAfterFatal(Date.now());
-  if (shouldQuit) {
+
+  const win = BrowserWindow.fromWebContents(webContents);
+  if (win && !win.isDestroyed()) {
+    try {
+      win.webContents.reload();
+    } catch (error) {
+      log.error("[render-process-gone] reload failed", error);
+    }
+  }
+
+  if (shouldQuitAfterFatal(Date.now())) {
     void dialog
       .showMessageBox({
         type: "error",

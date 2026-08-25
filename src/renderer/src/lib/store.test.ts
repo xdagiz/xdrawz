@@ -47,6 +47,7 @@ const resetStore = () => {
     filesRevision: 0,
     externalConflict: null,
     editorEpoch: 0,
+    editorSessionId: 0,
     dismissedConflictKey: null,
   });
 };
@@ -163,6 +164,20 @@ describe("lastOpenedFileId", () => {
 
       expect(useStore.getState().openFileId).toBeNull();
       expect(window.api.store.set).toHaveBeenLastCalledWith("lastOpenedFileId", null);
+    });
+
+    it("bumps editorSessionId when a different drawing is opened but not when the switch is rejected", async () => {
+      useStore.setState({ entries: mockEntries });
+
+      await useStore.getState().setOpenFileId("file-1");
+      const afterFirst = useStore.getState().editorSessionId;
+      expect(afterFirst).toBe(1);
+
+      await useStore.getState().setOpenFileId("file-2");
+      expect(useStore.getState().editorSessionId).toBe(afterFirst + 1);
+
+      await useStore.getState().setOpenFileId("dir-1");
+      expect(useStore.getState().editorSessionId).toBe(afterFirst + 1);
     });
 
     it("rejects invalid, duplicate, and directory targets without persisting", async () => {
@@ -300,17 +315,20 @@ describe("saveFile recovery", () => {
     vi.unstubAllGlobals();
   });
 
-  it("records the write mtime so a later listing of our own save is not a conflict", async () => {
-    vi.mocked(window.api.files.write).mockResolvedValue(undefined);
+  it("records the disk mtime returned by write so a later listing of our own save is not a conflict", async () => {
+    vi.mocked(window.api.files.write).mockResolvedValue({
+      ...mockEntries[0],
+      modifiedAt: 500,
+      size: 3,
+    });
 
     const ok = await useStore.getState().saveFile("file-1", "{}");
     expect(ok).toBe(true);
 
-    const savedAt = useStore.getState().entries.find((e) => e.id === "file-1")!.modifiedAt;
-    expect(savedAt).toBeGreaterThanOrEqual(100);
+    expect(useStore.getState().entries.find((e) => e.id === "file-1")?.modifiedAt).toBe(500);
 
     useStore.setState({ dirtyById: { "file-1": true } });
-    const listed = mockEntries.map((e) => (e.id === "file-1" ? { ...e, modifiedAt: savedAt } : e));
+    const listed = mockEntries.map((e) => (e.id === "file-1" ? { ...e, modifiedAt: 500 } : e));
     useStore.getState().applyEntries({
       entries: listed,
       revision: 1,
@@ -320,9 +338,7 @@ describe("saveFile recovery", () => {
 
     expect(useStore.getState().externalConflict).toBeNull();
 
-    const later = mockEntries.map((e) =>
-      e.id === "file-1" ? { ...e, modifiedAt: savedAt + 1000 } : e,
-    );
+    const later = mockEntries.map((e) => (e.id === "file-1" ? { ...e, modifiedAt: 1500 } : e));
     useStore.getState().applyEntries({
       entries: later,
       revision: 2,
@@ -333,7 +349,7 @@ describe("saveFile recovery", () => {
     expect(useStore.getState().externalConflict).toEqual({
       type: "changed",
       fileId: "file-1",
-      diskModifiedAt: savedAt + 1000,
+      diskModifiedAt: 1500,
     });
   });
 
@@ -353,7 +369,7 @@ describe("saveFile recovery", () => {
       new Error(`Error invoking remote method 'files:write': Error: ${FILE_NOT_FOUND_MESSAGE}`),
     );
     vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("recover");
-    vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
+    vi.mocked(window.api.files.writeRecover).mockResolvedValue(mockEntries[0]);
 
     const ok = await useStore.getState().saveFile("file-1", "{}", "explicit");
 
@@ -400,7 +416,7 @@ describe("saveFile recovery", () => {
       externalConflict: { type: "changed", fileId: "file-1", diskModifiedAt: 999 },
     });
     vi.mocked(window.api.dialog.fileChanged).mockResolvedValue("overwrite");
-    vi.mocked(window.api.files.write).mockResolvedValue(undefined);
+    vi.mocked(window.api.files.write).mockResolvedValue(mockEntries[0]);
 
     const ok = await useStore.getState().saveFile("file-1", "{}", "explicit");
 
@@ -431,7 +447,7 @@ describe("saveFile recovery", () => {
       externalConflict: { type: "missing", fileId: "file-1" },
     });
     vi.mocked(window.api.dialog.fileRecover).mockResolvedValue("recover");
-    vi.mocked(window.api.files.writeRecover).mockResolvedValue(undefined);
+    vi.mocked(window.api.files.writeRecover).mockResolvedValue(mockEntries[0]);
 
     const choice = await useStore.getState().resolveMissingConflict('{"recovered":true}');
 
@@ -525,6 +541,93 @@ describe("renameEntry/deleteEntry cancellation", () => {
     const renamed = useStore.getState().entries.find((e) => e.id === "renamed.excalidraw");
     expect(renamed?.name).toBe("renamed.excalidraw");
     expect(renamed?.modifiedAt).toBe(400);
+  });
+
+  it("renameEntry retargets an open descendant when an ancestor folder is renamed", async () => {
+    registerSession(true);
+    const activeFileIdSpy = vi
+      .spyOn(sessionOwner, "getActiveFileId")
+      .mockReturnValue("folder/old.excalidraw");
+    const retargetSpy = vi.spyOn(sessionOwner, "retargetActive");
+    useStore.setState({
+      entries: [
+        {
+          id: "folder",
+          name: "folder",
+          kind: "directory",
+          parentId: null,
+          modifiedAt: 10,
+          size: 0,
+        },
+        {
+          id: "folder/old.excalidraw",
+          name: "old.excalidraw",
+          kind: "file",
+          parentId: "folder",
+          modifiedAt: 20,
+          size: 5,
+        },
+      ],
+      openFileId: "folder/old.excalidraw",
+      dirtyById: {},
+    });
+    vi.mocked(window.api.files.rename).mockResolvedValue({
+      id: "renamed",
+      name: "renamed",
+      kind: "directory",
+      parentId: null,
+      modifiedAt: 30,
+      size: 0,
+    });
+
+    const ok = await useStore.getState().renameEntry("folder", "renamed");
+
+    expect(ok).toBe(true);
+    expect(retargetSpy).toHaveBeenCalledWith("folder/old.excalidraw", "renamed/old.excalidraw");
+    activeFileIdSpy.mockRestore();
+    retargetSpy.mockRestore();
+  });
+
+  it("renameEntry re-sorts entries when a rename changes lexicographic order", async () => {
+    registerSession(true);
+    useStore.setState({
+      entries: [
+        {
+          id: "a/b.excalidraw",
+          name: "b.excalidraw",
+          kind: "file",
+          parentId: "a",
+          modifiedAt: 10,
+          size: 1,
+        },
+        {
+          id: "a/z.excalidraw",
+          name: "z.excalidraw",
+          kind: "file",
+          parentId: "a",
+          modifiedAt: 20,
+          size: 2,
+        },
+      ],
+      openFileId: null,
+      dirtyById: {},
+    });
+    vi.mocked(window.api.files.rename).mockResolvedValue({
+      id: "a/a.excalidraw",
+      name: "a.excalidraw",
+      kind: "file",
+      parentId: "a",
+      modifiedAt: 30,
+      size: 2,
+    });
+
+    const ok = await useStore.getState().renameEntry("a/z.excalidraw", "a");
+
+    expect(ok).toBe(true);
+    expect(useStore.getState().entries.map((e) => e.id)).toEqual([
+      "a/a.excalidraw",
+      "a/b.excalidraw",
+    ]);
   });
 
   it("renameEntry renames the folder entry itself while remapping descendants", async () => {

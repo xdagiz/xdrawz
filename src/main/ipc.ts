@@ -118,8 +118,8 @@ type Deps = {
   listEntries: (root?: string) => Promise<FileEntry[]>;
   pickDrawings: (parentWindow: BrowserWindow | null) => Promise<DrawingInfo | null>;
   readDrawingFile: (id: string) => Promise<string>;
-  writeDrawingFile: (id: string, content: string) => Promise<void>;
-  writeDrawingFileRecover: (id: string, content: string) => Promise<void>;
+  writeDrawingFile: (id: string, content: string) => Promise<FileEntry>;
+  writeDrawingFileRecover: (id: string, content: string) => Promise<FileEntry>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
   createEntry: (
     parentId: string | null,

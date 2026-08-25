@@ -12,34 +12,39 @@ export const useDrawingSession = (
   sessionRef: RefObject<BoundDrawingSession | null>,
 ) => {
   const live = useRef<BoundDrawingSession | null>(null);
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
 
   useEffect(() => {
-    const session = sessionOwner.acquire(
-      fileId,
-      createDrawingSession({
-        fileId,
-        save,
-        onDirtyChange,
-        onSaveGaveUp: () => {
-          toast.add({
-            id: saveErrorToastId(fileId),
-            title: "Autosave stopped",
-            description: "Couldn't save after several attempts. Press Ctrl+S to retry.",
-            type: "error",
-            timeout: 0,
-          });
-        },
-      }),
-    );
-    live.current = session;
-    sessionRef.current = session;
+    const activeFileId = sessionOwner.getActiveFileId();
 
-    return () => {
-      sessionOwner.release(fileId);
-      onDirtyChange(fileId, false);
-      if (live.current === session) live.current = null;
-      if (sessionRef.current === session) sessionRef.current = null;
-    };
+    if (!live.current || !activeFileId) {
+      const session = sessionOwner.acquire(
+        fileId,
+        createDrawingSession({
+          fileId,
+          save,
+          onDirtyChange,
+          onSaveGaveUp: (failedFileId) => {
+            toast.add({
+              id: saveErrorToastId(failedFileId),
+              title: "Autosave stopped",
+              description: "Couldn't save after several attempts. Press Ctrl+S to retry.",
+              type: "error",
+              timeout: 0,
+            });
+          },
+        }),
+      );
+      live.current = session;
+      sessionRef.current = session;
+      return;
+    }
+
+    if (activeFileId !== fileId) {
+      sessionOwner.retargetActive(activeFileId, fileId);
+      sessionRef.current = live.current;
+    }
   }, [fileId, save, onDirtyChange, sessionRef]);
 
   useEffect(() => {
@@ -57,4 +62,15 @@ export const useDrawingSession = (
       window.removeEventListener("beforeunload", flushOnEdge);
     };
   }, []);
+
+  useEffect(
+    () => () => {
+      const releasedFileId = sessionOwner.getActiveFileId();
+      sessionOwner.releaseActive();
+      live.current = null;
+      sessionRef.current = null;
+      if (releasedFileId) onDirtyChangeRef.current(releasedFileId, false);
+    },
+    [sessionRef],
+  );
 };

@@ -12,13 +12,37 @@ const h = vi.hoisted(() => {
   const cleanups: Array<void | (() => void)> = [];
   const prevDeps: Array<unknown[] | undefined> = [];
 
+  const state: {
+    refSlots: Array<{ current: unknown } | undefined>;
+    nextSlot: number;
+    [key: string]: unknown;
+  } = { refSlots: [], nextSlot: 0 };
+
+  state.beginRender = () => {
+    state.nextSlot = 0;
+  };
+  state.resetRefs = () => {
+    state.refSlots = [];
+    state.nextSlot = 0;
+  };
+
   return {
     createdDeps,
     raws,
     queue,
     cleanups,
     prevDeps,
-    liveRef: null as null | { current: unknown },
+    beginRender: state.beginRender as () => void,
+    resetRefs: state.resetRefs as () => void,
+    useRefMock: (initial: unknown) => {
+      let slot = state.refSlots[state.nextSlot];
+      if (!slot) {
+        slot = { current: initial };
+        state.refSlots[state.nextSlot] = slot;
+      }
+      state.nextSlot += 1;
+      return slot;
+    },
     makeRaw: () => {
       const raw = {
         onChange: vi.fn(),
@@ -28,6 +52,7 @@ const h = vi.hoisted(() => {
         getSerializedContent: vi.fn(() => "{}"),
         setInitialBaseline: vi.fn(),
         resetBaseline: vi.fn(),
+        retarget: vi.fn(),
         ensureCleanOrConfirm: vi.fn(async () => true),
         isDirty: vi.fn(() => false),
         dispose: vi.fn(),
@@ -39,10 +64,7 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock("react", () => ({
-  useRef: (initial: unknown) => {
-    if (!h.liveRef) h.liveRef = { current: initial };
-    return h.liveRef;
-  },
+  useRef: (initial: unknown) => h.useRefMock(initial),
   useEffect: (run: () => void | (() => void), deps?: unknown[]) => {
     h.queue.push({ run, deps });
   },
@@ -76,20 +98,19 @@ const depsEqual = (a?: unknown[], b?: unknown[]) =>
   a.every((v, i) => Object.is(v, b[i]));
 
 const useMount = (...args: HookArgs) => {
-  const [fileId, , , ref] = args;
   h.queue.length = 0;
+  h.beginRender();
   useDrawingSession(...args);
   h.queue.forEach(({ run }, i) => {
     h.cleanups[i] = run();
   });
   h.prevDeps = h.queue.map(({ deps }) => deps);
-  void fileId;
-  return ref;
+  return args[3];
 };
 
 const useUpdate = (...args: HookArgs) => {
-  const [, , , ref] = args;
   h.queue.length = 0;
+  h.beginRender();
   useDrawingSession(...args);
   h.queue.forEach(({ run, deps }, i) => {
     if (depsEqual(deps, h.prevDeps[i])) return;
@@ -97,13 +118,14 @@ const useUpdate = (...args: HookArgs) => {
     h.cleanups[i] = run();
   });
   h.prevDeps = h.queue.map(({ deps }) => deps);
-  return ref;
+  return args[3];
 };
 
 const unmount = () => {
   h.cleanups.toReversed().forEach((cleanup) => cleanup?.());
   h.cleanups.length = 0;
   h.prevDeps.length = 0;
+  h.resetRefs();
 };
 
 const listenerFor = (
@@ -140,7 +162,7 @@ describe("useDrawingSession", () => {
     h.queue.length = 0;
     h.cleanups.length = 0;
     h.prevDeps.length = 0;
-    h.liveRef = null;
+    h.resetRefs();
     sessionOwner.setActiveForTest(null);
     windowTarget.addEventListener.mockClear();
     windowTarget.removeEventListener.mockClear();
@@ -162,8 +184,9 @@ describe("useDrawingSession", () => {
   });
 
   it("registers each edge listener once and keeps them across rerenders", () => {
-    useMount("f1", save, onDirtyChange, newRef());
-    useUpdate("f1", save, onDirtyChange, newRef());
+    const ref = newRef();
+    useMount("f1", save, onDirtyChange, ref);
+    useUpdate("f1", save, onDirtyChange, ref);
 
     expect(windowTarget.addEventListener).toHaveBeenCalledTimes(2);
     expect(documentTarget.addEventListener).toHaveBeenCalledTimes(1);
@@ -179,7 +202,8 @@ describe("useDrawingSession", () => {
   });
 
   it("flushes the live session without force on edge events", () => {
-    useMount("f1", save, onDirtyChange, newRef());
+    const ref = newRef();
+    useMount("f1", save, onDirtyChange, ref);
     const fake = currentFake();
     listenerFor(windowTarget, "blur")();
     listenerFor(documentTarget, "visibilitychange")();
@@ -188,16 +212,21 @@ describe("useDrawingSession", () => {
     expect(fake.flush).toHaveBeenCalledWith();
   });
 
-  it("releases the old session when the fileId changes without unmounting", () => {
-    useMount("f1", save, onDirtyChange, newRef());
+  it("retargets the live session when the fileId changes without unmounting", () => {
+    const retargetSpy = vi.spyOn(sessionOwner, "retargetActive");
+    const ref = newRef();
+    useMount("f1", save, onDirtyChange, ref);
     const first = currentFake();
 
-    const ref = useUpdate("f2", save, onDirtyChange, newRef());
+    useUpdate("f2", save, onDirtyChange, ref);
 
-    expect(first.dispose).toHaveBeenCalledTimes(1);
-    expect(sessionOwner.getSession("f1")).toBeNull();
+    expect(first.dispose).not.toHaveBeenCalled();
+    expect(retargetSpy).toHaveBeenCalledWith("f1", "f2");
+    expect(sessionOwner.getActiveFileId()).toBe("f2");
+    expect(sessionOwner.getSession("f2")).toBe(sessionOwner.getSession());
     expect(ref.current).toBe(sessionOwner.getSession());
-    expect(windowTarget.addEventListener).toHaveBeenCalledTimes(2);
+    expect(h.createdDeps.length).toBe(1);
+    retargetSpy.mockRestore();
   });
 
   it("unmount removes listeners, releases the session, and clears the ref", () => {
@@ -209,6 +238,7 @@ describe("useDrawingSession", () => {
 
     expect(fake.dispose).toHaveBeenCalledTimes(1);
     expect(sessionOwner.getSession()).toBeNull();
+    expect(sessionOwner.getActiveFileId()).toBeNull();
     expect(ref.current).toBeNull();
     expect(windowTarget.removeEventListener).toHaveBeenCalledWith("blur", blur);
     expect(documentTarget.removeEventListener).toHaveBeenCalledWith(
@@ -225,23 +255,26 @@ describe("useDrawingSession", () => {
   });
 
   it("supports an unmount then remount cycle like StrictMode", () => {
-    useMount("f1", save, onDirtyChange, newRef());
+    const ref = newRef();
+    useMount("f1", save, onDirtyChange, ref);
     const first = currentFake();
     unmount();
 
-    const ref = useMount("f1", save, onDirtyChange, newRef());
+    useMount("f1", save, onDirtyChange, ref);
 
     expect(first.dispose).toHaveBeenCalledTimes(1);
     expect(ref.current).toBe(sessionOwner.getSession());
   });
 
-  it("clears its fileId's dirty flag on unmount", () => {
-    useMount("f1", save, onDirtyChange, newRef());
+  it("clears the owned file id's dirty flag on unmount, including after a retarget", () => {
+    const ref = newRef();
+    useMount("f1", save, onDirtyChange, ref);
+    useUpdate("f2", save, onDirtyChange, ref);
     onDirtyChange.mockClear();
 
     unmount();
 
     expect(onDirtyChange).toHaveBeenCalledTimes(1);
-    expect(onDirtyChange).toHaveBeenCalledWith("f1", false);
+    expect(onDirtyChange).toHaveBeenCalledWith("f2", false);
   });
 });

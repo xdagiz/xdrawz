@@ -68,6 +68,13 @@ const sentRequestId = (win: FakeWindow, callIndex: number): number => {
   return payload.requestId;
 };
 
+const respondUnresponsiveWith = (response: number) => {
+  mocks.showMessageBox.mockImplementation(async (_win: unknown, options: { message: string }) => {
+    if (options.message === "xdrawz isn't responding") return { response };
+    return { response: 0 };
+  });
+};
+
 describe("close guard", () => {
   let closeGuard: typeof import("./window");
 
@@ -192,55 +199,148 @@ describe("close guard", () => {
     expect(win.webContents.send).toHaveBeenCalledTimes(1);
   });
 
-  it("force-closes when the renderer never answers the check", () => {
+  it("asks instead of force-closing when the renderer never answers the check", async () => {
     vi.useFakeTimers();
     const { win } = setupWindow();
+    respondUnresponsiveWith(1);
 
     win.emit("close", closeEvent());
-    expect(win.destroyed).toBe(false);
 
-    vi.advanceTimersByTime(4999);
-    expect(win.destroyed).toBe(false);
+    vi.advanceTimersByTime(5000);
+    await flushTicks();
 
-    vi.advanceTimersByTime(2);
+    expect(win.destroyed).toBe(false);
+    expect(mocks.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(mocks.showMessageBox.mock.calls[0][1]).toMatchObject({
+      message: "xdrawz isn't responding",
+      buttons: ["Close anyway", "Keep waiting"],
+    });
+
+    vi.advanceTimersByTime(5000);
+    await flushTicks();
+
+    expect(win.destroyed).toBe(false);
+    expect(mocks.showMessageBox).toHaveBeenCalledTimes(2);
+
+    respondUnresponsiveWith(0);
+    vi.advanceTimersByTime(5000);
+    await flushTicks();
+
     expect(win.destroyed).toBe(true);
-    expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("force-closing"));
   });
 
-  it("enforces the flush timeouts: short silence, longer acked envelope", async () => {
+  it("asks when the flush goes silent and enforces the acked flush envelope", async () => {
     vi.useFakeTimers();
     const { win, browserWindow } = setupWindow();
-    mocks.showMessageBox.mockResolvedValue({ response: 0 });
+    respondUnresponsiveWith(1);
 
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
     closeGuard.onDirtyState(browserWindow, requestId, true, false);
     await flushTicks();
 
-    vi.advanceTimersByTime(1999);
+    vi.advanceTimersByTime(2000);
+    await flushTicks();
+
+    expect(win.destroyed).toBe(false);
+    expect(mocks.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(mocks.showMessageBox.mock.calls[0][1]).toMatchObject({
+      message: "You have unsaved changes.",
+    });
+    expect(mocks.showMessageBox.mock.calls[1][1]).toMatchObject({
+      message: "xdrawz isn't responding",
+    });
+
+    closeGuard.onFlushStarted(browserWindow, requestId);
+
+    respondUnresponsiveWith(0);
+    vi.advanceTimersByTime(30_000);
+    await flushTicks();
+
+    expect(win.destroyed).toBe(true);
+  });
+
+  it("does not stack the unsaved-changes dialog over the unresponsive prompt", async () => {
+    vi.useFakeTimers();
+    const { win, browserWindow } = setupWindow();
+    const releaseUnresponsive: Array<(v: { response: number }) => void> = [];
+    const unresponsiveCalls = () =>
+      mocks.showMessageBox.mock.calls.filter(
+        ([, options]) => (options as { message: string }).message === "xdrawz isn't responding",
+      );
+    mocks.showMessageBox.mockImplementation(async (_win: unknown, options: { message: string }) => {
+      if (options.message === "xdrawz isn't responding") {
+        return new Promise((resolve) => {
+          releaseUnresponsive.push(resolve);
+        });
+      }
+      return { response: 0 };
+    });
+
+    win.emit("close", closeEvent());
+    const requestId = sentRequestId(win, 0);
+    vi.advanceTimersByTime(5000);
+    await flushTicks();
+    expect(unresponsiveCalls().length).toBe(1);
+
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
+    await flushTicks();
+    expect(unresponsiveCalls().length).toBe(1);
+    expect(mocks.showMessageBox).toHaveBeenCalledTimes(1);
     expect(win.destroyed).toBe(false);
 
-    vi.advanceTimersByTime(2);
-    expect(win.destroyed).toBe(true);
-    expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining("force-closing"));
-
-    const ackedWin = new FakeWindow();
-    const ackedBrowserWindow = ackedWin as unknown as Electron.BrowserWindow;
-    closeGuard.installCloseGuard(ackedBrowserWindow);
-    closeGuard.markWindowReady(ackedBrowserWindow);
-
-    ackedWin.emit("close", closeEvent());
-    const ackedId = sentRequestId(ackedWin, 0);
-    closeGuard.onDirtyState(ackedBrowserWindow, ackedId, true, false);
+    releaseUnresponsive[0]?.({ response: 1 });
     await flushTicks();
-    closeGuard.onFlushStarted(ackedBrowserWindow, ackedId);
 
-    vi.advanceTimersByTime(2000);
-    expect(ackedWin.destroyed).toBe(false);
-    vi.advanceTimersByTime(27_999);
-    expect(ackedWin.destroyed).toBe(false);
-    vi.advanceTimersByTime(2);
-    expect(ackedWin.destroyed).toBe(true);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
+    await flushTicks();
+    expect(mocks.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(mocks.showMessageBox.mock.calls[1][1]).toMatchObject({
+      message: "You have unsaved changes.",
+    });
+  });
+
+  it("re-arms the phase-appropriate envelope after keep-waiting during a flush", async () => {
+    vi.useFakeTimers();
+    const { win, browserWindow } = setupWindow();
+    const releaseUnresponsive: Array<(v: { response: number }) => void> = [];
+    const unresponsiveCalls = () =>
+      mocks.showMessageBox.mock.calls.filter(
+        ([, options]) => (options as { message: string }).message === "xdrawz isn't responding",
+      );
+    mocks.showMessageBox.mockImplementation(async (_win: unknown, options: { message: string }) => {
+      if (options.message === "xdrawz isn't responding") {
+        return new Promise((resolve) => {
+          releaseUnresponsive.push(resolve);
+        });
+      }
+      return { response: 0 };
+    });
+
+    win.emit("close", closeEvent());
+    const requestId = sentRequestId(win, 0);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
+    await flushTicks();
+    closeGuard.onFlushStarted(browserWindow, requestId);
+
+    vi.advanceTimersByTime(30_000);
+    await flushTicks();
+    expect(unresponsiveCalls().length).toBe(1);
+
+    releaseUnresponsive[0]?.({ response: 1 });
+    await flushTicks();
+
+    vi.advanceTimersByTime(5_000);
+    expect(win.destroyed).toBe(false);
+    expect(unresponsiveCalls().length).toBe(1);
+
+    vi.advanceTimersByTime(25_000);
+    await flushTicks();
+    expect(unresponsiveCalls().length).toBe(2);
+
+    releaseUnresponsive[1]?.({ response: 0 });
+    await flushTicks();
+    expect(win.destroyed).toBe(true);
   });
 
   it("force-closes when the renderer crashes or hangs during the close prompt", () => {

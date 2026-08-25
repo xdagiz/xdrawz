@@ -41,6 +41,7 @@ export type DrawingSessionControls = {
   getSerializedContent: () => string | null;
   setInitialBaseline: (signature: string | null) => void;
   resetBaseline: () => void;
+  retarget: (nextFileId: string) => void;
   ensureCleanOrConfirm: (
     reason: UnsavedReason,
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
@@ -55,7 +56,7 @@ type DrawingSessionDeps = {
   fileId: string;
   save: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
-  onSaveGaveUp?: () => void;
+  onSaveGaveUp?: (fileId: string) => void;
   initialBaseline?: string | null;
   scheduleFrame?: FrameScheduler;
 };
@@ -86,6 +87,8 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
   let baseline: string | null = null;
   let diskBaseline = initialBaseline;
+  let currentFileId = fileId;
+  let retargetEpoch = 0;
   let latestDrawing: DrawingSnapshot | null = null;
   let latestSignature: string | null = null;
   let latestRevision = 0;
@@ -100,7 +103,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   const setDirty = (next: boolean) => {
     if (dirty === next) return;
     dirty = next;
-    onDirtyChange?.(fileId, next);
+    onDirtyChange?.(currentFileId, next);
   };
 
   let cachedInputs: {
@@ -150,10 +153,11 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     origin: SaveOrigin = "auto",
   ) => {
     const json = serializeAsJSON(elements, appState, files, "local");
+    const epochAtStart = retargetEpoch;
     savesInFlight += 1;
 
     try {
-      const ok = await save(fileId, json, origin);
+      const ok = await save(currentFileId, json, origin);
       lastSaveOk = ok;
       if (ok) {
         saveFailures = 0;
@@ -165,10 +169,15 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
         }
       } else if (revision === latestRevision) {
         setDirty(true);
-        saveFailures += 1;
-        if (saveFailures === MAX_SAVE_RETRIES + 1) onSaveGaveUp?.();
-        if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
+        if (epochAtStart !== retargetEpoch) {
+          saveFailures = 0;
           debounced(elements, appState, files, revision);
+        } else {
+          saveFailures += 1;
+          if (saveFailures === MAX_SAVE_RETRIES + 1) onSaveGaveUp?.(currentFileId);
+          if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
+            debounced(elements, appState, files, revision);
+          }
         }
       }
 
@@ -388,6 +397,10 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     },
     resetBaseline: () => {
       baseline = null;
+    },
+    retarget: (nextFileId: string) => {
+      currentFileId = nextFileId;
+      retargetEpoch += 1;
     },
     dispose,
   };
