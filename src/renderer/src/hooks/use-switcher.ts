@@ -19,6 +19,7 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
   const paletteOpenRef = useRef(paletteOpen);
   paletteOpenRef.current = paletteOpen;
   const heldKeysRef = useRef<Set<string>>(new Set());
+  const detachReleaseRef = useRef<(() => void) | null>(null);
 
   const controllerRef = useRef<SwitcherController | null>(null);
   if (!controllerRef.current) {
@@ -43,40 +44,56 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
 
   useEffect(() => onCloseHandshakeStart(() => controller.cancel()), [controller]);
 
-  useHotkey("Control+Tab", () => controller.start(), { preventDefault: false });
+  const beginReleaseTracking = () => {
+    detachReleaseRef.current?.();
+    const onKeyUp = (event: KeyboardEvent) => {
+      const key = event.key;
+      if (key !== "Control" && key !== "Meta" && key !== "Tab") return;
+      heldKeysRef.current.delete(key);
+      if (heldKeysRef.current.size === 0) {
+        detachReleaseRef.current?.();
+        detachReleaseRef.current = null;
+        controller.commit();
+      }
+    };
+    window.addEventListener("keyup", onKeyUp, true);
+    detachReleaseRef.current = () => window.removeEventListener("keyup", onKeyUp, true);
+  };
+
+  useHotkey(
+    "Control+Tab",
+    () => {
+      if (controller.getState().phase === "cycling") {
+        controller.step(1);
+        return;
+      }
+      heldKeysRef.current = new Set(["Control", "Tab"]);
+      beginReleaseTracking();
+      controller.start();
+    },
+    { preventDefault: false },
+  );
   useHotkey("Control+Shift+Tab", () => controller.step(-1), { preventDefault: false });
 
   useEffect(() => {
     if (state.phase !== "cycling") return undefined;
 
-    const held = new Set(["Control", "Tab"]);
-    heldKeysRef.current = held;
-
-    const commitIfFullyReleased = () => {
-      if (held.size === 0) controller.commit();
-    };
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Control" || event.key === "Meta" || event.key === "Tab") {
-        held.add(event.key);
+        heldKeysRef.current.add(event.key);
       }
-    };
-
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (!held.delete(event.key)) return;
-      commitIfFullyReleased();
     };
 
     const onBlur = () => controller.cancel();
 
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
 
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      detachReleaseRef.current?.();
+      detachReleaseRef.current = null;
       heldKeysRef.current = new Set();
     };
   }, [state.phase, controller]);
