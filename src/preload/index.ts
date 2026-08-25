@@ -1,4 +1,5 @@
 import {
+  APP_QUIT,
   CONTEXT_MENU_SHOW,
   DIALOG_FILE_CHANGED,
   DIALOG_FILE_RECOVER,
@@ -91,6 +92,9 @@ const invoke = (channel: string, ...args: unknown[]): InvokeReturn =>
   unwrap(ipcRenderer.invoke(channel, ...args));
 
 const api: NativeApi = {
+  app: {
+    quit: () => invoke(APP_QUIT),
+  },
   drawings: {
     get: () => invoke(DRAWINGS_GET),
     load: () => invoke(DRAWINGS_LOAD),

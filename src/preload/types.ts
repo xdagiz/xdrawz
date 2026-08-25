@@ -22,6 +22,9 @@ export type FileChangedChoice = "reload" | "overwrite" | "cancel";
 export type StoreKey = keyof StoreType;
 
 export interface NativeApi {
+  app: {
+    quit: () => Promise<void>;
+  };
   drawings: {
     get: () => Promise<DrawingInfo>;
     load: () => Promise<DrawingsSnapshot>;

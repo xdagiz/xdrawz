@@ -10,6 +10,7 @@ export const FILES_DELETE = "files:delete";
 export const FILES_CHANGED = "files:changed";
 export const FILES_WRITE_RECOVER = "files:write-recover";
 export const WATCHER_ERROR = "watcher:error";
+export const APP_QUIT = "app:quit";
 export const CONTEXT_MENU_SHOW = "context-menu:show";
 export const WINDOW_WILL_CLOSE = "window:will-close";
 export const WINDOW_CLOSE_CANCELLED = "window:close-cancelled";

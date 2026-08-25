@@ -1,12 +1,22 @@
 import { cleanErrorMessage } from "@shared/errors";
 import { Folder, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+
+const handleQuit = () => void window.api.app.quit();
 
 export function Greeting() {
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") handleQuit();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const handlePick = async () => {
     setError(null);
@@ -31,7 +41,7 @@ export function Greeting() {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
-          onClick={() => window.close()}
+          onClick={handleQuit}
           className="text-muted-foreground size-7 [-webkit-app-region:no-drag]"
         >
           <X />
@@ -52,14 +62,15 @@ export function Greeting() {
           </p>
         </div>
 
-        <Button
-          onClick={handlePick}
-          disabled={picking}
-          className="mt-2 [-webkit-app-region:no-drag]"
-        >
-          <Folder />
-          {picking ? "Choosing…" : "Choose folder"}
-        </Button>
+        <div className="mt-2 flex items-center gap-2 [-webkit-app-region:no-drag]">
+          <Button onClick={handlePick} disabled={picking}>
+            <Folder />
+            {picking ? "Choosing…" : "Choose folder"}
+          </Button>
+          <Button variant="outline" onClick={handleQuit}>
+            Quit
+          </Button>
+        </div>
 
         {error && <p className="text-destructive max-w-xs text-sm break-words">{error}</p>}
       </main>

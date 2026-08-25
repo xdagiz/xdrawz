@@ -3,6 +3,7 @@ import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  APP_QUIT,
   CONTEXT_MENU_SHOW,
   DIALOG_FILE_CHANGED,
   DIALOG_FILE_RECOVER,
@@ -361,6 +362,10 @@ export const registerIpcHandlers = (deps: Deps) => {
   });
 
   handle(DRAWINGS_PICK, "load", (event) => deps.pickDrawings(windowFromEvent(event)));
+
+  handle(APP_QUIT, "unexpected", () => {
+    app.quit();
+  });
 
   handle(CONTEXT_MENU_SHOW, "unexpected", async (event, ...args) => {
     const win = windowFromEvent(event);
