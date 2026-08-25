@@ -145,46 +145,11 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   }, []);
 
   const freshDrawingIdRef = useRef<string | null>(null);
+  const renameValueRef = useRef<string>("");
 
   const clearFreshMarker = useCallback((fileId: string) => {
     if (freshDrawingIdRef.current === fileId) freshDrawingIdRef.current = null;
   }, []);
-
-  const handleCreate = useCallback(
-    async (parentId: string | null, kind: "file" | "directory") => {
-      try {
-        const newId = await createEntry(parentId, kind);
-        if (!newId) return;
-        if (kind === "file") freshDrawingIdRef.current = newId;
-        expandIds(ancestorIdsOf(newId));
-        setRenameError(null);
-        setRenamingId(newId);
-      } catch (error) {
-        const appError = toAppError(error, "create");
-        toast.add({ title: appError.title, description: appError.message, type: "error" });
-      }
-    },
-    [createEntry, expandIds],
-  );
-
-  const openRootMenu = useCallback(
-    async (x: number, y: number) => {
-      const id = await window.api.contextMenu.show(
-        [
-          { id: "new-drawing", label: "New drawing" },
-          { id: "new-folder", label: "New folder" },
-        ],
-        x,
-        y,
-      );
-      if (id === "new-drawing") void handleCreate(null, "file");
-      if (id === "new-folder") void handleCreate(null, "directory");
-    },
-    [handleCreate],
-  );
-
-  useHotkey("Mod+N", () => void handleCreate(null, "file"));
-  useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"));
 
   const openDelete = useCallback((id: string, name: string, mode: FileDeleteMode) => {
     setDeleteTarget({ id, name, mode });
@@ -235,6 +200,81 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     [tree, startRename, openDelete],
   );
 
+  const handleRename = useCallback(
+    async (fileId: string, newName: string) => {
+      const isFresh = freshDrawingIdRef.current === fileId;
+      const entry = entriesById.get(fileId);
+      const changed = entry ? newName !== stripExcalidraw(entry.name) : true;
+
+      try {
+        if (changed) {
+          const ok = await renameEntry(fileId, newName);
+          if (!ok) {
+            setRenameError(null);
+            setRenamingId(null);
+            return;
+          }
+
+          toast.add({ title: "Drawing renamed", type: "success" });
+        }
+
+        setRenameError(null);
+        setRenamingId(null);
+
+        if (isFresh) {
+          clearFreshMarker(fileId);
+          await setOpenFileId(fileId);
+        }
+      } catch (error) {
+        setRenameError(toAppError(error, "rename", false));
+      }
+    },
+    [renameEntry, clearFreshMarker, setOpenFileId, entriesById],
+  );
+
+  const handleCreate = useCallback(
+    async (parentId: string | null, kind: "file" | "directory") => {
+      if (renamingId !== null) {
+        const pendingId = renamingId;
+        const pendingValue = renameValueRef.current.trim();
+        setRenameError(null);
+        setRenamingId(null);
+        if (pendingValue) await handleRename(pendingId, pendingValue);
+      }
+      try {
+        const newId = await createEntry(parentId, kind);
+        if (!newId) return;
+        if (kind === "file") freshDrawingIdRef.current = newId;
+        expandIds(ancestorIdsOf(newId));
+        setRenameError(null);
+        setRenamingId(newId);
+      } catch (error) {
+        const appError = toAppError(error, "create");
+        toast.add({ title: appError.title, description: appError.message, type: "error" });
+      }
+    },
+    [createEntry, expandIds, handleRename, renamingId],
+  );
+
+  const openRootMenu = useCallback(
+    async (x: number, y: number) => {
+      const id = await window.api.contextMenu.show(
+        [
+          { id: "new-drawing", label: "New drawing" },
+          { id: "new-folder", label: "New folder" },
+        ],
+        x,
+        y,
+      );
+      if (id === "new-drawing") void handleCreate(null, "file");
+      if (id === "new-folder") void handleCreate(null, "directory");
+    },
+    [handleCreate],
+  );
+
+  useHotkey("Mod+N", () => void handleCreate(null, "file"));
+  useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"));
+
   const handleContextMenu = useCallback(
     async (event: React.MouseEvent, fileId: string) => {
       const entry = entriesById.get(fileId);
@@ -275,38 +315,6 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       }
     },
     [entriesById, startRename, openDelete, handleCreate],
-  );
-
-  const handleRename = useCallback(
-    async (fileId: string, newName: string) => {
-      const isFresh = freshDrawingIdRef.current === fileId;
-      const entry = entriesById.get(fileId);
-      const changed = entry ? newName !== stripExcalidraw(entry.name) : true;
-
-      try {
-        if (changed) {
-          const ok = await renameEntry(fileId, newName);
-          if (!ok) {
-            setRenameError(null);
-            setRenamingId(null);
-            return;
-          }
-
-          toast.add({ title: "Drawing renamed", type: "success" });
-        }
-
-        setRenameError(null);
-        setRenamingId(null);
-
-        if (isFresh) {
-          clearFreshMarker(fileId);
-          await setOpenFileId(fileId);
-        }
-      } catch (error) {
-        setRenameError(toAppError(error, "rename", false));
-      }
-    },
-    [renameEntry, clearFreshMarker, setOpenFileId, entriesById],
   );
 
   return (
@@ -364,6 +372,9 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                               initial={stripExcalidraw(entry.name)}
                               error={renameError}
                               treatUnchangedAsCommit={freshDrawingIdRef.current === entry.id}
+                              onValueChange={(v) => {
+                                renameValueRef.current = v;
+                              }}
                               onCommit={(v) => handleRename(entry.id, v)}
                               onCancel={() => {
                                 clearFreshMarker(entry.id);
@@ -446,12 +457,14 @@ const RenameInput = ({
   treatUnchangedAsCommit = false,
   onCommit,
   onCancel,
+  onValueChange,
 }: {
   initial: string;
   error: AppError | null;
   treatUnchangedAsCommit?: boolean;
   onCommit: (value: string) => void;
   onCancel: () => void;
+  onValueChange?: (value: string) => void;
 }) => {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
@@ -461,7 +474,8 @@ const RenameInput = ({
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
-  }, []);
+    onValueChange?.(initial);
+  }, [onValueChange, initial]);
 
   useEffect(() => {
     if (!error) return;
@@ -494,7 +508,10 @@ const RenameInput = ({
         ref={ref}
         value={value}
         aria-invalid={error ? true : undefined}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          onValueChange?.(e.target.value);
+        }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
