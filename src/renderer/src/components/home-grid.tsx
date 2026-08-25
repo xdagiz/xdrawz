@@ -1,4 +1,3 @@
-import type { FileEntry } from "@shared/ipc";
 import { ArrowLeftIcon, FilePlus2Icon } from "lucide-react";
 import { useMemo } from "react";
 
@@ -9,6 +8,7 @@ import {
   useThumbnailRefresh,
 } from "@/hooks/use-thumbnails";
 import { toAppError } from "@/lib/app-error";
+import { selectRecentLibrary } from "@/lib/recent-files";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { useStore } from "@/lib/store";
 import { THUMBNAIL_CANVAS_BG } from "@/lib/thumbnails";
@@ -26,22 +26,18 @@ import {
 import { Skeleton } from "./ui/skeleton";
 import { toast } from "./ui/toast";
 
-const RECENT_LIMIT = 12;
-
-const pickRecentFiles = (entries: FileEntry[]): FileEntry[] =>
-  entries
-    .filter((entry) => entry.kind === "file")
-    .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
-    .slice(0, RECENT_LIMIT);
-
 export const HomeGrid = () => {
   const resolvedTheme = useTheme();
   const entries = useStore((s) => s.entries);
+  const recentFileIds = useStore((s) => s.recentFileIds);
   const homeReturnFileId = useStore((s) => s.homeReturnFileId);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
   const createEntry = useStore((s) => s.createEntry);
 
-  const recentFiles = useMemo(() => pickRecentFiles(entries), [entries]);
+  const recentFiles = useMemo(
+    () => selectRecentLibrary(recentFileIds, entries),
+    [recentFileIds, entries],
+  );
   const totalDrawings = useMemo(
     () => entries.filter((entry) => entry.kind === "file").length,
     [entries],

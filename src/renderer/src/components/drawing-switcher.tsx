@@ -7,7 +7,7 @@ import {
   useThumbnailHydration,
   useThumbnailRefresh,
 } from "@/hooks/use-thumbnails";
-import { selectRecentFiles } from "@/lib/recent-files";
+import { selectRecentLibrary } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
 import { THUMBNAIL_CANVAS_BG } from "@/lib/thumbnails";
 import { stripExcalidraw } from "@/lib/utils";
@@ -27,7 +27,7 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
   const entries = useStore((s) => s.entries);
   const recentFileIds = useStore((s) => s.recentFileIds);
 
-  const candidates = selectRecentFiles(recentFileIds, entries);
+  const candidates = selectRecentLibrary(recentFileIds, entries);
 
   useThumbnailRefresh();
   useThumbnailHydration(candidates);

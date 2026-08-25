@@ -1,9 +1,9 @@
 import type { FileEntry } from "@shared/ipc";
 
-export const RECENT_FILE_IDS_LIMIT = 10;
+export const RECENTS_LIMIT = 12;
 
 export const pushRecentId = (ids: string[], id: string): string[] =>
-  [id, ...ids.filter((existing) => existing !== id)].slice(0, RECENT_FILE_IDS_LIMIT);
+  [id, ...ids.filter((existing) => existing !== id)].slice(0, RECENTS_LIMIT);
 
 export const removeRecentIds = (ids: string[], predicate: (id: string) => boolean): string[] =>
   ids.filter((id) => !predicate(id));
@@ -27,11 +27,27 @@ export const selectRecentFiles = (ids: string[], entries: FileEntry[]): FileEntr
 
   const selected: FileEntry[] = [];
   for (const id of ids) {
-    if (selected.length >= RECENT_FILE_IDS_LIMIT) break;
+    if (selected.length >= RECENTS_LIMIT) break;
     const entry = fileById.get(id);
     if (entry) selected.push(entry);
   }
   return selected;
+};
+
+export const selectRecentLibrary = (
+  ids: string[],
+  entries: FileEntry[],
+  limit: number = RECENTS_LIMIT,
+): FileEntry[] => {
+  const opened = selectRecentFiles(ids, entries);
+  if (opened.length >= limit) return opened.slice(0, limit);
+
+  const openedIds = new Set(opened.map((entry) => entry.id));
+  const rest = entries
+    .filter((entry) => entry.kind === "file" && !openedIds.has(entry.id))
+    .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
+    .slice(0, limit - opened.length);
+  return [...opened, ...rest];
 };
 
 export const parseRecentIdsJson = (json: string | null): string[] => {
