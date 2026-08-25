@@ -18,6 +18,15 @@ export const conflictKeyOf = (conflict: NonNullable<ExternalConflict>): Conflict
     ? `changed:${conflict.fileId}:${conflict.diskModifiedAt}`
     : `missing:${conflict.fileId}`;
 
+export const conflictBelongsTo = (
+  conflict: ExternalConflict,
+  dismissedKey: string | null,
+  fileId: string,
+): boolean =>
+  conflict?.fileId === fileId ||
+  dismissedKey === `missing:${fileId}` ||
+  (dismissedKey?.startsWith(`changed:${fileId}:`) ?? false);
+
 export const fileNameOf = (entries: FileEntry[], id: string) => {
   const entry = entries.find((e) => e.id === id);
   return entry?.name ?? id.split("/").pop() ?? id;

@@ -1,7 +1,7 @@
 import type { FileEntry } from "@shared/ipc";
 import { describe, expect, it } from "vite-plus/test";
 
-import { conflictKeyOf, reduceEntries } from "./conflicts";
+import { conflictBelongsTo, conflictKeyOf, reduceEntries } from "./conflicts";
 
 const entry = (id: string, modifiedAt: number, kind: "file" | "directory" = "file"): FileEntry => ({
   id,
@@ -159,5 +159,48 @@ describe("reduceEntries", () => {
     const next = reduceEntries(state, event([["a.excalidraw", 50]]));
 
     expect(next.externalConflict).toBeNull();
+  });
+});
+
+describe("conflictBelongsTo", () => {
+  it("matches an active conflict on the same file", () => {
+    expect(
+      conflictBelongsTo({ type: "missing", fileId: "a.excalidraw" }, null, "a.excalidraw"),
+    ).toBe(true);
+    expect(
+      conflictBelongsTo(
+        { type: "changed", fileId: "a.excalidraw", diskModifiedAt: 50 },
+        null,
+        "a.excalidraw",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not match an active conflict on another file", () => {
+    expect(
+      conflictBelongsTo({ type: "missing", fileId: "b.excalidraw" }, null, "a.excalidraw"),
+    ).toBe(false);
+  });
+
+  it("matches dismissed keys belonging to the file", () => {
+    expect(conflictBelongsTo(null, "missing:a.excalidraw", "a.excalidraw")).toBe(true);
+    expect(conflictBelongsTo(null, "changed:a.excalidraw:50", "a.excalidraw")).toBe(true);
+  });
+
+  it("does not match dismissed keys for another file or prefixes of it", () => {
+    expect(conflictBelongsTo(null, "missing:b.excalidraw", "a.excalidraw")).toBe(false);
+    expect(conflictBelongsTo(null, "changed:a.excalidraw2:50", "a.excalidraw")).toBe(false);
+    expect(conflictBelongsTo(null, null, "a.excalidraw")).toBe(false);
+  });
+
+  it("matches when both active conflict and dismissed key point at the file", () => {
+    const key = conflictKeyOf({ type: "changed", fileId: "a.excalidraw", diskModifiedAt: 50 });
+    expect(
+      conflictBelongsTo(
+        { type: "changed", fileId: "a.excalidraw", diskModifiedAt: 50 },
+        key,
+        "a.excalidraw",
+      ),
+    ).toBe(true);
   });
 });

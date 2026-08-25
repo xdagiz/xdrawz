@@ -15,7 +15,12 @@ import { create } from "zustand";
 import { toast } from "@/components/ui/toast";
 import { saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createConflictResolver } from "@/lib/conflict-resolution";
-import { reduceEntries, removeKey, type ExternalConflict } from "@/lib/conflicts";
+import {
+  conflictBelongsTo,
+  reduceEntries,
+  removeKey,
+  type ExternalConflict,
+} from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
 import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree, remapId } from "@/lib/entry-tree";
 import {
@@ -161,10 +166,14 @@ export const useStore = create<State>((set, get) => {
     try {
       const savedEntry = await window.api.files.write(id, content);
       const latest = get();
+      const ownsConflict = conflictBelongsTo(
+        latest.externalConflict,
+        latest.dismissedConflictKey,
+        id,
+      );
       set({
         error: null,
-        externalConflict: null,
-        dismissedConflictKey: null,
+        ...(ownsConflict ? { externalConflict: null, dismissedConflictKey: null } : {}),
         entries: upsertSorted(latest.entries, savedEntry),
       });
       toast.close(saveErrorToastId(id));
