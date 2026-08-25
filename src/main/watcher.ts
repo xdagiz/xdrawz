@@ -97,10 +97,17 @@ export const createDrawingsWatcher = (
     }
   };
 
+  const isHiddenWithinRoot = (absPath: string): boolean => {
+    const root = currentRoot;
+    if (!root) return DOT_FILE_RE.test(absPath);
+    const relative = absPath.startsWith(root) ? absPath.slice(root.length) : absPath;
+    return DOT_FILE_RE.test(relative);
+  };
+
   const shouldDrop = (event: string, rawPath: string) => {
     const absPath = eventAbsPath(rawPath);
     if (isIgnored(absPath)) return true;
-    if (DOT_FILE_RE.test(absPath)) return true;
+    if (isHiddenWithinRoot(absPath)) return true;
 
     if (DIR_EVENTS.has(event)) return false;
 
@@ -224,7 +231,13 @@ export const createDrawingsWatcher = (
         stabilityThreshold: 200,
         pollInterval: 50,
       },
-      ignored: (testPath: string) => DOT_FILE_RE.test(testPath),
+      ignored: (testPath: string) => {
+        if (testPath === resolvedRoot) return false;
+        const relative = testPath.startsWith(resolvedRoot)
+          ? testPath.slice(resolvedRoot.length)
+          : testPath;
+        return DOT_FILE_RE.test(relative);
+      },
       ignorePermissionErrors: true,
       atomic: true,
     });
