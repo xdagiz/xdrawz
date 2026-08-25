@@ -14,6 +14,11 @@ import { useStore } from "./lib/store";
 
 installRendererErrorHandlers();
 
+window.addEventListener("beforeunload", (event) => {
+  event.preventDefault();
+  event.returnValue = "";
+});
+
 window.api.window.onWillClose((request) => {
   setCloseHandshakeActive(true);
 
