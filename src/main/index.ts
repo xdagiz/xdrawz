@@ -358,7 +358,9 @@ void app.whenReady().then(async () => {
       ...(process.platform === "darwin"
         ? ([{ role: "appMenu" }] as MenuItemConstructorOptions[])
         : []),
-      { role: "fileMenu" },
+      ...(process.platform === "darwin"
+        ? []
+        : [{ label: "File", submenu: [{ role: "quit" }] as MenuItemConstructorOptions[] }]),
       { role: "editMenu" },
       {
         label: "View",

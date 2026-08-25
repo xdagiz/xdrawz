@@ -39,6 +39,7 @@ const App = () => {
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
   const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
+  const setOpenFileId = useStore((s) => s.setOpenFileId);
 
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
@@ -57,6 +58,7 @@ const App = () => {
   }, [pickAndSwitchFolder]);
 
   useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
+  useHotkey("Mod+W", () => void setOpenFileId(null));
   useHotkey("Mod+K", () => setPaletteOpen((current) => !current));
 
   useEffect(() => {
