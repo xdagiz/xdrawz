@@ -1,4 +1,5 @@
-import { cleanErrorMessage, type ErrorOperation } from "@shared/errors";
+import { cleanErrorMessage, isRecord, type ErrorOperation } from "@shared/errors";
+import { FILE_NOT_FOUND_MESSAGE } from "@shared/ipc";
 
 export type AppError = {
   id: string;
@@ -59,13 +60,32 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
 
 export const saveErrorToastId = (fileId: string): string => `save:${fileId}`;
 
+const friendlyDetail = (error: unknown): string | null => {
+  const raw = cleanErrorMessage(error);
+  const code = isRecord(error) && typeof error.code === "string" ? error.code.toUpperCase() : "";
+
+  if (code === "EACCES" || code === "EPERM" || /permission denied/i.test(raw)) {
+    return "The drawings folder or file is not writable.";
+  }
+  if (code === "ENOSPC") {
+    return "The disk is full. Free up space and try again.";
+  }
+  if (code === "EFBIG" || /Content exceeds \d+ bytes/.test(raw)) {
+    return "The drawing exceeds the 50 MB size limit.";
+  }
+  if (code === "ENOENT" || code === "NOT_FOUND" || raw.includes(FILE_NOT_FOUND_MESSAGE)) {
+    return "The file no longer exists on disk.";
+  }
+  return null;
+};
+
 export const toAppError = (
   error: unknown,
   operation: ErrorOperation = "unexpected",
   retryable = true,
   resourceId?: string,
 ): AppError => {
-  const detail = cleanErrorMessage(error);
+  const detail = friendlyDetail(error) ?? cleanErrorMessage(error);
 
   return {
     id: resourceId ? `${operation}:${resourceId}` : `${operation}:${detail}`,
