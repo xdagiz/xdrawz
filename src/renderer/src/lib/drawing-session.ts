@@ -53,6 +53,7 @@ type DrawingSessionDeps = {
   fileId: string;
   save: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
+  onSaveGaveUp?: () => void;
   initialBaseline?: string | null;
   scheduleFrame?: FrameScheduler;
 };
@@ -76,6 +77,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     fileId,
     save,
     onDirtyChange,
+    onSaveGaveUp,
     initialBaseline = null,
     scheduleFrame = requestFrame,
   } = deps;
@@ -162,6 +164,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       } else if (revision === latestRevision) {
         setDirty(true);
         saveFailures += 1;
+        if (saveFailures === MAX_SAVE_RETRIES + 1) onSaveGaveUp?.();
         if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
           debounced(elements, appState, files, revision);
         }

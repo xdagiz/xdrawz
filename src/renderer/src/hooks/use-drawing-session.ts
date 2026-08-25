@@ -1,6 +1,8 @@
 import type { SaveOrigin } from "@shared/ipc";
 import { useEffect, useRef, type RefObject } from "react";
 
+import { toast } from "@/components/ui/toast";
+import { saveErrorToastId } from "@/lib/app-error";
 import { createDrawingSession } from "@/lib/drawing-session";
 import { type BoundDrawingSession, sessionOwner } from "@/lib/session-owner";
 
@@ -15,7 +17,20 @@ export const useDrawingSession = (
   useEffect(() => {
     const session = sessionOwner.acquire(
       fileId,
-      createDrawingSession({ fileId, save, onDirtyChange }),
+      createDrawingSession({
+        fileId,
+        save,
+        onDirtyChange,
+        onSaveGaveUp: () => {
+          toast.add({
+            id: saveErrorToastId(fileId),
+            title: "Autosave stopped",
+            description: "Couldn't save after several attempts. Press Ctrl+S to retry.",
+            type: "error",
+            timeout: 0,
+          });
+        },
+      }),
     );
     live.current = session;
     sessionRef.current = session;

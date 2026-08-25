@@ -156,7 +156,9 @@ describe("useDrawingSession", () => {
     const ref = useMount("f1", save, onDirtyChange, newRef());
 
     expect(ref.current).toBe(sessionOwner.getSession());
-    expect(h.createdDeps).toEqual([{ fileId: "f1", save, onDirtyChange }]);
+    expect(h.createdDeps).toEqual([
+      { fileId: "f1", save, onDirtyChange, onSaveGaveUp: expect.any(Function) },
+    ]);
   });
 
   it("registers each edge listener once and keeps them across rerenders", () => {
