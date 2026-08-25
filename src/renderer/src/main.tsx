@@ -75,6 +75,7 @@ createRoot(document.getElementById("root")!).render(
     <ErrorBoundary
       title="xdrawz couldn’t start"
       description="Try again. If this keeps happening, copy the details for support."
+      fatal
     >
       <App />
     </ErrorBoundary>
