@@ -5,8 +5,6 @@ for (const stream of [process.stdout, process.stderr]) {
   });
 }
 
-import { join } from "path";
-
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import { FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
 import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
@@ -20,20 +18,7 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 
-import icon from "../../assets/icon.png?asset";
-import {
-  destroyWindow,
-  installCloseGuard,
-  isQuittingNow,
-  isWindowReady,
-  cancelQuit,
-  markWindowReady,
-  onDirtyState,
-  onFlushStarted,
-  requestQuitViaRenderer,
-} from "./close-guard";
 import { getDrawings, pickDrawings } from "./drawings";
-import { shouldQuitAfterFatal } from "./errors";
 import {
   createEntry,
   deleteEntry,
@@ -45,24 +30,30 @@ import {
   type FsMutationHooks,
 } from "./files";
 import {
-  APP_GREETING_URL,
-  APP_INDEX_URL,
   installAppProtocolHandler,
-  isTrustedRendererUrl,
   registerAppScheme,
   registerIpcHandlers,
+  shouldQuitAfterFatal,
 } from "./ipc";
 import { initLogger, log } from "./logger";
-import {
-  applyTheme,
-  getSettings,
-  setSettings,
-  windowBgColor,
-  applyWindowBgColor,
-} from "./settings";
+import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
 import { getLastOpenedFileId } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
+import {
+  cancelQuit,
+  createGreetingWindow,
+  destroyWindow,
+  ensureMainWindow,
+  getMainWindow,
+  isQuittingNow,
+  isWindowReady,
+  markWindowReady,
+  onDirtyState,
+  onFlushStarted,
+  requestQuitViaRenderer,
+  showUnsavedChangesDialog,
+} from "./window";
 
 process.on("uncaughtException", (error) => {
   log.error("[main:uncaughtException]", error);
@@ -98,7 +89,6 @@ app.on("child-process-gone", (_event, details) => {
   log.error("[child-process-gone]", details);
 });
 
-let mainWindow: BrowserWindow | null = null;
 let watcher: DrawingsWatcher | null = null;
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -204,128 +194,6 @@ function withWatchIgnore<TArgs extends unknown[], TRet>(
   };
 }
 
-function ensureMainWindow(): BrowserWindow {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    mainWindow = createMainWindow();
-  } else {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  }
-
-  return mainWindow;
-}
-
-// https://github.com/electron/electron/issues/48859
-function showWhenReady(win: BrowserWindow) {
-  let shown = false;
-  const show = () => {
-    if (shown || win.isDestroyed()) return;
-    shown = true;
-    win.show();
-  };
-
-  win.once("ready-to-show", show);
-  win.webContents.once("did-finish-load", show);
-}
-
-const isSafeExternalUrl = (value: string): string | null => {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:"
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
-};
-
-function wireNavigationPolicy(win: BrowserWindow) {
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    const external = isSafeExternalUrl(url);
-    if (external) void shell.openExternal(external);
-    return { action: "deny" };
-  });
-
-  win.webContents.on("will-navigate", (event, url) => {
-    if (isTrustedRendererUrl(url)) return;
-    event.preventDefault();
-    const external = isSafeExternalUrl(url);
-    if (external) void shell.openExternal(external);
-  });
-}
-
-const baseWebPreferences = () => ({
-  preload: join(import.meta.dirname, "../preload/index.cjs"),
-  sandbox: true,
-  contextIsolation: true,
-  nodeIntegration: false,
-});
-
-function wireRendererDiagnostics(win: BrowserWindow) {
-  win.webContents.on("preload-error", (_event, preloadPath, error) =>
-    log.error("Preload failed:", preloadPath, error),
-  );
-
-  win.webContents.on("unresponsive", () => {
-    log.warn("[webContents] unresponsive", win.id);
-  });
-}
-
-function loadRendererPage(win: BrowserWindow, devPath: string, prodUrl: string) {
-  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    const base = process.env["ELECTRON_RENDERER_URL"].replace(/\/$/, "");
-    void win.loadURL(devPath ? `${base}/${devPath}` : base);
-    return;
-  }
-
-  void win.loadURL(prodUrl);
-}
-
-function createMainWindow() {
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false,
-    backgroundColor: windowBgColor(),
-    ...(process.platform === "linux" ? { icon } : {}),
-    webPreferences: baseWebPreferences(),
-  });
-
-  if (process.platform !== "darwin") {
-    win.setMenuBarVisibility(false);
-  }
-
-  showWhenReady(win);
-  installCloseGuard(win);
-  wireNavigationPolicy(win);
-  wireRendererDiagnostics(win);
-  loadRendererPage(win, "", APP_INDEX_URL);
-
-  return win;
-}
-
-function createGreetingWindow() {
-  const greetingWindow = new BrowserWindow({
-    width: 600,
-    height: 400,
-    frame: false,
-    resizable: false,
-    center: true,
-    show: false,
-    backgroundColor: windowBgColor(),
-    ...(process.platform === "linux" ? { type: "splash" } : {}),
-    webPreferences: baseWebPreferences(),
-  });
-
-  showWhenReady(greetingWindow);
-  wireNavigationPolicy(greetingWindow);
-  wireRendererDiagnostics(greetingWindow);
-  loadRendererPage(greetingWindow, "greeting.html", APP_GREETING_URL);
-
-  return greetingWindow;
-}
-
 const surfacePrimaryUi = async (): Promise<void> => {
   const existing = BrowserWindow.getAllWindows();
   if (existing.length > 0) {
@@ -423,6 +291,7 @@ void app.whenReady().then(async () => {
     cancelQuit,
     onDirtyState,
     onFlushStarted,
+    showUnsavedChangesDialog,
     getSettings,
     updateSettings: setSettings,
     getThumbnails: readThumbnailRecords,
@@ -441,8 +310,8 @@ void app.whenReady().then(async () => {
           await w.stop();
         }
 
-        ensureMainWindow();
-        if (parentWindow && parentWindow !== mainWindow && !parentWindow.isDestroyed()) {
+        const active = ensureMainWindow();
+        if (parentWindow && parentWindow !== active && !parentWindow.isDestroyed()) {
           parentWindow.close();
         }
       }
@@ -471,19 +340,20 @@ void app.whenReady().then(async () => {
 });
 
 app.on("before-quit", (event) => {
+  const win = getMainWindow();
   if (
     isQuittingNow() ||
-    !mainWindow ||
-    mainWindow.isDestroyed() ||
-    mainWindow.webContents.isCrashed() ||
-    !isWindowReady(mainWindow)
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isCrashed() ||
+    !isWindowReady(win)
   ) {
     void watcher?.stop();
     return;
   }
 
   event.preventDefault();
-  requestQuitViaRenderer(mainWindow);
+  requestQuitViaRenderer(win);
 });
 
 app.on("window-all-closed", () => {

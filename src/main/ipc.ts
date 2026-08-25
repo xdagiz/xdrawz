@@ -30,8 +30,8 @@ import {
   WINDOW_READY,
   WINDOW_REPORT_FATAL,
 } from "@shared/channels";
-import { errorWithCode, isRecord, isSerializedAppError } from "@shared/errors";
-import type { ErrorOperation } from "@shared/errors";
+import { errorWithCode, isRecord, isSerializedAppError, toSerialized } from "@shared/errors";
+import type { ErrorOperation, Result } from "@shared/errors";
 import { validateSettingsUpdate } from "@shared/ipc";
 import type {
   AppSettings,
@@ -41,11 +41,11 @@ import type {
   FileEntry,
   SettingsUpdate,
   ThumbnailRecord,
+  UnsavedChoice,
+  UnsavedReason,
 } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
-import { showUnsavedChangesDialog } from "./close-guard";
-import { shouldQuitAfterFatal, withIpcResult } from "./errors";
 import { log } from "./logger";
 import { store } from "./store";
 import { isValidThumbnailRecord } from "./thumbnails";
@@ -136,6 +136,10 @@ type Deps = {
     skipPrompt: boolean,
   ) => void;
   onFlushStarted: (win: BrowserWindow, requestId: number) => void;
+  showUnsavedChangesDialog: (
+    win: BrowserWindow | null,
+    reason: UnsavedReason,
+  ) => Promise<UnsavedChoice>;
   getSettings: () => AppSettings;
   updateSettings: (update: SettingsUpdate) => AppSettings;
   getThumbnails: (ids: string[]) => Promise<ThumbnailRecord[]>;
@@ -235,6 +239,26 @@ const requireInteger = (value: unknown, field: string) => {
     throw errorWithCode(`${field} must be a finite integer`, "INVALID");
   }
   return value;
+};
+
+const withIpcResult = async <T>(
+  operation: ErrorOperation,
+  fn: () => Promise<T> | T,
+): Promise<Result<T>> => {
+  try {
+    const value = await fn();
+    return { ok: true, value };
+  } catch (error) {
+    return { ok: false, error: toSerialized(error, operation) };
+  }
+};
+
+let lastFatalAt = 0;
+
+export const shouldQuitAfterFatal = (now = Date.now()) => {
+  const previous = lastFatalAt;
+  lastFatalAt = now;
+  return previous === 0 || now - previous >= 60_000;
 };
 
 const handle = (
@@ -430,7 +454,7 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(DIALOG_UNSAVED_CHANGES, "unexpected", (event, ...args) => {
     const reason = args[0];
     const normalized = reason === "switch" ? "switch" : "quit";
-    return showUnsavedChangesDialog(windowFromEvent(event), normalized);
+    return deps.showUnsavedChangesDialog(windowFromEvent(event), normalized);
   });
 
   handle(FILES_WRITE_RECOVER, "recover", (_event, ...args) => {

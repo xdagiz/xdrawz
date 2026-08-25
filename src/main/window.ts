@@ -1,8 +1,14 @@
+import { join } from "path";
+
+import { is } from "@electron-toolkit/utils";
 import { WINDOW_CLOSE_CANCELLED, WINDOW_WILL_CLOSE } from "@shared/channels";
 import type { UnsavedChoice, UnsavedReason, WindowCloseRequest } from "@shared/ipc";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, shell } from "electron";
 
+import icon from "../../assets/icon.png?asset";
+import { APP_GREETING_URL, APP_INDEX_URL, isTrustedRendererUrl } from "./ipc";
 import { log } from "./logger";
+import { windowBgColor } from "./settings";
 
 const CHECK_TIMEOUT_MS = 5000;
 const FLUSH_SILENCE_TIMEOUT_MS = 2000;
@@ -236,3 +242,129 @@ export const destroyWindow = (win: BrowserWindow, requestId: number) => {
 
   closeWindow(win);
 };
+
+let mainWindow: BrowserWindow | null = null;
+
+export const getMainWindow = (): BrowserWindow | null => mainWindow;
+
+export function ensureMainWindow(): BrowserWindow {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createMainWindow();
+  } else {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+
+  return mainWindow;
+}
+
+// https://github.com/electron/electron/issues/48859
+function showWhenReady(win: BrowserWindow) {
+  let shown = false;
+  const show = () => {
+    if (shown || win.isDestroyed()) return;
+    shown = true;
+    win.show();
+  };
+
+  win.once("ready-to-show", show);
+  win.webContents.once("did-finish-load", show);
+}
+
+const isSafeExternalUrl = (value: string): string | null => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:"
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+function wireNavigationPolicy(win: BrowserWindow) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    const external = isSafeExternalUrl(url);
+    if (external) void shell.openExternal(external);
+    return { action: "deny" };
+  });
+
+  win.webContents.on("will-navigate", (event, url) => {
+    if (isTrustedRendererUrl(url)) return;
+    event.preventDefault();
+    const external = isSafeExternalUrl(url);
+    if (external) void shell.openExternal(external);
+  });
+}
+
+const baseWebPreferences = () => ({
+  preload: join(import.meta.dirname, "../preload/index.cjs"),
+  sandbox: true,
+  contextIsolation: true,
+  nodeIntegration: false,
+});
+
+function wireRendererDiagnostics(win: BrowserWindow) {
+  win.webContents.on("preload-error", (_event, preloadPath, error) =>
+    log.error("Preload failed:", preloadPath, error),
+  );
+
+  win.webContents.on("unresponsive", () => {
+    log.warn("[webContents] unresponsive", win.id);
+  });
+}
+
+function loadRendererPage(win: BrowserWindow, devPath: string, prodUrl: string) {
+  if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+    const base = process.env["ELECTRON_RENDERER_URL"].replace(/\/$/, "");
+    void win.loadURL(devPath ? `${base}/${devPath}` : base);
+    return;
+  }
+
+  void win.loadURL(prodUrl);
+}
+
+export function createMainWindow() {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: false,
+    backgroundColor: windowBgColor(),
+    ...(process.platform === "linux" ? { icon } : {}),
+    webPreferences: baseWebPreferences(),
+  });
+
+  if (process.platform !== "darwin") {
+    win.setMenuBarVisibility(false);
+  }
+
+  showWhenReady(win);
+  installCloseGuard(win);
+  wireNavigationPolicy(win);
+  wireRendererDiagnostics(win);
+  loadRendererPage(win, "", APP_INDEX_URL);
+
+  return win;
+}
+
+export function createGreetingWindow() {
+  const greetingWindow = new BrowserWindow({
+    width: 600,
+    height: 400,
+    frame: false,
+    resizable: false,
+    center: true,
+    show: false,
+    backgroundColor: windowBgColor(),
+    ...(process.platform === "linux" ? { type: "splash" } : {}),
+    webPreferences: baseWebPreferences(),
+  });
+
+  showWhenReady(greetingWindow);
+  wireNavigationPolicy(greetingWindow);
+  wireRendererDiagnostics(greetingWindow);
+  loadRendererPage(greetingWindow, "greeting.html", APP_GREETING_URL);
+
+  return greetingWindow;
+}

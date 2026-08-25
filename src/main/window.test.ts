@@ -14,10 +14,23 @@ vi.mock("electron", () => ({
   app: { quit: mocks.quit },
   BrowserWindow: {},
   dialog: { showMessageBox: mocks.showMessageBox },
+  shell: {},
+}));
+
+vi.mock("@electron-toolkit/utils", () => ({ is: { dev: false } }));
+
+vi.mock("./ipc", () => ({
+  APP_GREETING_URL: "app://renderer/greeting.html",
+  APP_INDEX_URL: "app://renderer/index.html",
+  isTrustedRendererUrl: () => true,
 }));
 
 vi.mock("./logger", () => ({
   log: { warn: mocks.warn, error: mocks.error },
+}));
+
+vi.mock("./settings", () => ({
+  windowBgColor: () => "#ffffff",
 }));
 
 import { WINDOW_CLOSE_CANCELLED, WINDOW_WILL_CLOSE } from "@shared/channels";
@@ -56,11 +69,11 @@ const sentRequestId = (win: FakeWindow, callIndex: number): number => {
 };
 
 describe("close guard", () => {
-  let closeGuard: typeof import("./close-guard");
+  let closeGuard: typeof import("./window");
 
   beforeEach(async () => {
     vi.resetModules();
-    closeGuard = await import("./close-guard");
+    closeGuard = await import("./window");
     mocks.quit.mockReset();
     mocks.warn.mockReset();
     mocks.error.mockReset();

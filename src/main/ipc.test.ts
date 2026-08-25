@@ -177,6 +177,7 @@ const deps = {
   cancelQuit: vi.fn(),
   onDirtyState: vi.fn(),
   onFlushStarted: vi.fn(),
+  showUnsavedChangesDialog: vi.fn(),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
   getThumbnails: vi.fn(),

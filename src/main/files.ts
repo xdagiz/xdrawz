@@ -12,7 +12,6 @@ import {
   type FileEntry,
 } from "@shared/ipc";
 
-import { assertDrawingJson, EMPTY_DRAWING_CONTENT } from "./drawing-json";
 import { getDrawings } from "./drawings";
 
 export type FsMutationHooks = {
@@ -137,6 +136,34 @@ const requireDrawingsRoot = async (): Promise<string> => {
   const info = await getDrawings();
   if (!info.configured || !info.path) throw new Error("Drawings folder not configured");
   return path.resolve(info.path);
+};
+
+const EMPTY_DRAWING_CONTENT =
+  '{"type":"excalidraw","version":2,"source":"xdrawz","elements":[],"appState":{},"files":{}}';
+
+const assertDrawingJson = (content: string) => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw errorWithCode("Drawing content is not valid JSON", "INVALID");
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw errorWithCode("Drawing must be a JSON object", "INVALID");
+  }
+
+  const drawing = parsed;
+  if ("elements" in drawing && !Array.isArray(drawing.elements)) {
+    throw errorWithCode("Drawing elements must be an array when present", "INVALID");
+  }
+
+  if (
+    "files" in drawing &&
+    (drawing.files === null || typeof drawing.files !== "object" || Array.isArray(drawing.files))
+  ) {
+    throw errorWithCode("Drawing files must be an object when present", "INVALID");
+  }
 };
 
 const assertContentSize = (content: string) => {
