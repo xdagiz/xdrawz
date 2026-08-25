@@ -28,6 +28,7 @@ import { createLibraryPersistenceAdapter, defaultLibraryStorage } from "@/lib/li
 import type { BoundDrawingSession } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
+import { applyViewport, createViewportCache, viewportOf } from "@/lib/viewport-cache";
 
 import { ErrorBoundary } from "./error-boundary";
 import { Button } from "./ui/button";
@@ -53,13 +54,16 @@ type LoadedDrawing = {
   baseline: string | null;
 };
 
+const viewportCache = createViewportCache();
+
 const loadDrawing = async (fileId: string): Promise<LoadedDrawing> => {
   const content = await window.api.files.read(fileId);
   const parsed: DrawingData = JSON.parse(content);
   const rawElements = Array.isArray(parsed.elements) ? parsed.elements : [];
   const files = parsed.files ?? undefined;
 
-  const appState = restoreAppState(parsed.appState ?? null, null);
+  const restored = restoreAppState(parsed.appState ?? null, null);
+  const appState = applyViewport(restored, viewportCache.get(fileId));
   const elements = restoreElements(rawElements, null, {
     repairBindings: true,
   });
@@ -183,10 +187,17 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const handleChange = useCallback(
     (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
+      viewportCache.set(fileId, viewportOf(appState));
       sessionRef.current?.onChange(elements, appState, files);
     },
-    [],
+    [fileId],
   );
+
+  useEffect(() => {
+    return () => {
+      if (useStore.getState().openFileId !== fileId) viewportCache.delete(fileId);
+    };
+  }, [fileId]);
 
   // TODO: update this with renderTopLeftUI when a new release includes it
   useEffect(() => {
