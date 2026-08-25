@@ -49,6 +49,7 @@ describe("thumbnail store", () => {
     await store.hydrate([entry("fresh.excalidraw")]);
     deps.generate.mockClear();
 
+    store.setVisible("stale.excalidraw", true);
     store.syncWithEntries([entry("fresh.excalidraw"), entry("stale.excalidraw", 200, 20)]);
 
     await vi.waitFor(() => {
@@ -57,11 +58,74 @@ describe("thumbnail store", () => {
     });
   });
 
+  it("does not enqueue generation for entries never marked visible", async () => {
+    const deps = makeDeps();
+    const store = createThumbnailStore(deps);
+
+    store.syncWithEntries([entry("hidden.excalidraw")]);
+
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 30));
+    expect(deps.generate).not.toHaveBeenCalled();
+    expect(store.isPending("hidden.excalidraw")).toBe(false);
+
+    store.setVisible("hidden.excalidraw", true);
+
+    await vi.waitFor(() => {
+      expect(deps.generate).toHaveBeenCalledWith("hidden.excalidraw");
+    });
+  });
+
+  it("generates once visibility arrives later and re-queues skipped work", async () => {
+    const deps = makeDeps();
+    const store = createThumbnailStore(deps);
+
+    store.syncWithEntries([entry("late.excalidraw"), entry("kept.excalidraw")]);
+    store.setVisible("kept.excalidraw", true);
+
+    await vi.waitFor(() => {
+      expect(deps.generate).toHaveBeenCalledTimes(1);
+      expect(deps.generate).toHaveBeenCalledWith("kept.excalidraw");
+    });
+
+    store.setVisible("late.excalidraw", true);
+
+    await vi.waitFor(() => {
+      expect(deps.generate).toHaveBeenCalledTimes(2);
+      expect(deps.generate).toHaveBeenCalledWith("late.excalidraw");
+    });
+  });
+
+  it("force generates immediately without visibility", async () => {
+    const deps = makeDeps();
+    const store = createThumbnailStore(deps);
+
+    store.force(entry("focus.excalidraw", 300, 30));
+
+    await vi.waitFor(() => {
+      expect(deps.generate).toHaveBeenCalledWith("focus.excalidraw");
+      expect(store.getRecord("focus.excalidraw")).toBeDefined();
+    });
+  });
+
+  it("force is a no-op when the record already covers the entry", async () => {
+    const deps = makeDeps();
+    const store = createThumbnailStore(deps);
+
+    store.force(entry("covered.excalidraw"));
+    await vi.waitFor(() => expect(deps.generate).toHaveBeenCalledTimes(1));
+
+    store.force(entry("covered.excalidraw"));
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 30));
+    expect(deps.generate).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps generating after an individual failure", async () => {
     const deps = makeDeps();
     const store = createThumbnailStore(deps);
     deps.generate.mockRejectedValueOnce(new Error("boom"));
 
+    store.setVisible("bad.excalidraw", true);
+    store.setVisible("good.excalidraw", true);
     store.syncWithEntries([entry("bad.excalidraw"), entry("good.excalidraw")]);
 
     await vi.waitFor(() => {
@@ -86,6 +150,8 @@ describe("thumbnail store", () => {
     );
 
     const store = createThumbnailStore(deps);
+    store.setVisible("slow.excalidraw", true);
+    store.setVisible("next.excalidraw", true);
     store.syncWithEntries([entry("slow.excalidraw"), entry("next.excalidraw")]);
 
     expect(store.isPending("next.excalidraw")).toBe(true);
@@ -111,6 +177,8 @@ describe("thumbnail store", () => {
       return Promise.resolve(pair);
     });
 
+    store.setVisible("slow.excalidraw", true);
+    store.setVisible("next.excalidraw", true);
     store.syncWithEntries([entry("slow.excalidraw")]);
     await vi.waitFor(() => expect(releaseFirst).toBeDefined());
 
@@ -128,6 +196,7 @@ describe("thumbnail store", () => {
     const deps = makeDeps();
     const store = createThumbnailStore(deps);
 
+    store.setVisible("doc.excalidraw", true);
     store.syncWithEntries([entry("doc.excalidraw", 100)]);
     await vi.waitFor(() => expect(deps.apiPut).toHaveBeenCalledTimes(1));
 

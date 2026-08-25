@@ -3,6 +3,7 @@ import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileEntry, ThumbnailRecord } from "@shared/ipc";
 
 import type { ResolvedTheme } from "@/lib/theme";
+import { createSlotPump } from "@/lib/thumbnail-scheduler";
 
 export type ThumbnailPair = { light: string; dark: string };
 
@@ -22,10 +23,14 @@ export type ThumbnailStore = {
   subscribe: (listener: () => void) => () => void;
   hydrate: (entries: FileEntry[]) => Promise<void>;
   syncWithEntries: (entries: FileEntry[]) => void;
+  setVisible: (fileId: string, visible: boolean) => void;
+  force: (entry: FileEntry) => void;
   cancelPending: () => void;
 };
 
 export const THUMBNAIL_MAX_SIZE = 200;
+
+const MIN_REMAINING_MS = 4;
 
 export const THUMBNAIL_CANVAS_BG = {
   light: "#ffffff",
@@ -45,6 +50,8 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
   const listeners = new Set<() => void>();
   const queue = new Map<string, FileEntry>();
   const inFlight = new Set<string>();
+  const visible = new Set<string>();
+  const known = new Map<string, FileEntry>();
   let epoch = 0;
   let running = false;
 
@@ -52,47 +59,69 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     for (const listener of listeners) listener();
   };
 
-  const pump = async (): Promise<void> => {
+  const generateOne = async (entry: FileEntry, myEpoch: number): Promise<void> => {
+    inFlight.add(entry.id);
+
+    try {
+      const pair = await deps.generate(entry.id);
+      if (myEpoch !== epoch) return;
+
+      const stored: ThumbnailRecord = {
+        fileId: entry.id,
+        mtimeMs: entry.modifiedAt,
+        size: entry.size,
+        light: pair.light,
+        dark: pair.dark,
+      };
+      records.set(entry.id, { ...stored, fetchedAt: Date.now() });
+      await deps.apiPut(stored);
+      notify();
+    } catch (error) {
+      console.error(`thumbnail generation failed for ${entry.id}`, error);
+    } finally {
+      inFlight.delete(entry.id);
+    }
+  };
+
+  const drain = async (deadline?: { timeRemaining: () => number }): Promise<void> => {
     if (running) return;
 
     running = true;
     const myEpoch = epoch;
 
     try {
-      while (queue.size > 0) {
+      let skips = 0;
+
+      do {
         if (myEpoch !== epoch) return;
+        if (queue.size === 0) return;
+        if (skips >= queue.size) break;
 
         const next = queue.values().next();
         if (next.done) return;
         const entry = next.value;
-        queue.delete(entry.id);
-        inFlight.add(entry.id);
 
-        try {
-          const pair = await deps.generate(entry.id);
-          if (myEpoch !== epoch) return;
-
-          const stored: ThumbnailRecord = {
-            fileId: entry.id,
-            mtimeMs: entry.modifiedAt,
-            size: entry.size,
-            light: pair.light,
-            dark: pair.dark,
-          };
-          records.set(entry.id, { ...stored, fetchedAt: Date.now() });
-          await deps.apiPut(stored);
-          notify();
-        } catch (error) {
-          console.error(`thumbnail generation failed for ${entry.id}`, error);
-        } finally {
-          inFlight.delete(entry.id);
+        if (!visible.has(entry.id)) {
+          queue.delete(entry.id);
+          queue.set(entry.id, entry);
+          skips += 1;
+          continue;
         }
-      }
+
+        queue.delete(entry.id);
+        await generateOne(entry, myEpoch);
+
+        if (deadline && deadline.timeRemaining() <= MIN_REMAINING_MS && queue.size > 0) {
+          return;
+        }
+      } while (queue.size > 0);
     } finally {
       running = false;
-      if (queue.size > 0) void pump();
+      if (queue.size > 0 && myEpoch === epoch) slotPump.kick();
     }
   };
+
+  const slotPump = createSlotPump({ drain: (deadline) => void drain(deadline) });
 
   return {
     getRecord: (fileId) => records.get(fileId),
@@ -123,16 +152,46 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     syncWithEntries: (entries) => {
       for (const entry of entries) {
         if (entry.kind !== "file") continue;
+        known.set(entry.id, entry);
         if (covers(records.get(entry.id), entry)) continue;
+        if (!visible.has(entry.id)) continue;
         queue.set(entry.id, entry);
       }
 
-      if (queue.size > 0) void pump();
+      if (queue.size > 0) slotPump.kick();
+    },
+
+    setVisible: (fileId, isVisible) => {
+      if (isVisible) visible.add(fileId);
+      else visible.delete(fileId);
+
+      if (!isVisible) return;
+
+      const entry = known.get(fileId);
+      if (!entry || covers(records.get(fileId), entry)) return;
+      if (queue.has(fileId) || inFlight.has(fileId)) return;
+
+      queue.set(fileId, entry);
+      slotPump.kick();
+    },
+
+    force: (entry) => {
+      known.set(entry.id, entry);
+      if (covers(records.get(entry.id), entry)) return;
+      if (inFlight.has(entry.id)) return;
+
+      queue.delete(entry.id);
+      const myEpoch = epoch;
+      void generateOne(entry, myEpoch).then(() => {
+        if (myEpoch !== epoch) return;
+        if (queue.size > 0) slotPump.kick();
+      });
     },
 
     cancelPending: () => {
       epoch += 1;
       queue.clear();
+      slotPump.cancel();
     },
   };
 };

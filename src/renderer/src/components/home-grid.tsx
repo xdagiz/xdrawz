@@ -6,6 +6,7 @@ import {
   resolveThumbnailPreview,
   useThumbnailHydration,
   useThumbnailRefresh,
+  useThumbnailVisibility,
 } from "@/hooks/use-thumbnails";
 import { toAppError } from "@/lib/app-error";
 import { selectRecentLibrary } from "@/lib/recent-files";
@@ -52,6 +53,7 @@ export const HomeGrid = () => {
 
   useThumbnailRefresh();
   useThumbnailHydration(recentFiles);
+  const observeTile = useThumbnailVisibility();
 
   const handleCreate = async () => {
     try {
@@ -123,6 +125,7 @@ export const HomeGrid = () => {
                 key={file.id}
                 type="button"
                 title={file.name}
+                ref={observeTile(file.id)}
                 onClick={() => void setOpenFileId(file.id)}
                 className="group hover:bg-muted/50 focus-visible:ring-ring/50 flex flex-col items-stretch gap-2.5 rounded-lg p-2 text-left transition-colors outline-none focus-visible:ring-3"
               >

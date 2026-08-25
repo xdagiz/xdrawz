@@ -9,7 +9,7 @@ import {
 } from "@/hooks/use-thumbnails";
 import { selectRecentLibrary } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
-import { THUMBNAIL_CANVAS_BG } from "@/lib/thumbnails";
+import { THUMBNAIL_CANVAS_BG, thumbnails } from "@/lib/thumbnails";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { Skeleton } from "./ui/skeleton";
@@ -45,6 +45,12 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
 
   const highlighted = Math.min(Math.max(index, 0), candidates.length - 1);
   const focusEntry = candidates[highlighted];
+  const focusCandidate = focusEntry && candidates.find((entry) => entry.id === focusEntry.id);
+
+  useEffect(() => {
+    if (focusCandidate) thumbnails.force(focusCandidate);
+  }, [focusCandidate]);
+
   if (!focusEntry) return null;
 
   const canvasBg = resolvedTheme === "dark" ? THUMBNAIL_CANVAS_BG.dark : THUMBNAIL_CANVAS_BG.light;

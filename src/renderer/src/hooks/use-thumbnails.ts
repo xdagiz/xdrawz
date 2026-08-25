@@ -1,5 +1,5 @@
 import type { FileEntry } from "@shared/ipc";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ResolvedTheme } from "@/lib/theme";
 import { pickThumbnailVariant, thumbnails } from "@/lib/thumbnails";
@@ -30,6 +30,58 @@ export const useThumbnailRefresh = (): void => {
   useEffect(() => {
     const timer = window.setInterval(() => setTick((tick) => tick + 1), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
+  }, []);
+};
+
+export const useThumbnailVisibility = (): ((
+  fileId: string,
+) => (element: HTMLElement | null) => void) => {
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const observedRef = useRef(new Map<string, HTMLElement>());
+  const callbacksRef = useRef(new Map<string, (element: HTMLElement | null) => void>());
+
+  const getObserver = () => {
+    if (!observerRef.current) {
+      observerRef.current = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!(entry.target instanceof HTMLElement)) continue;
+          const fileId = entry.target.dataset.thumbnailId;
+          if (fileId) thumbnails.setVisible(fileId, entry.isIntersecting);
+        }
+      });
+    }
+    return observerRef.current;
+  };
+
+  useEffect(
+    () => () => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      observedRef.current.clear();
+      callbacksRef.current.clear();
+    },
+    [],
+  );
+
+  return useCallback((fileId: string) => {
+    let callback = callbacksRef.current.get(fileId);
+    if (!callback) {
+      callback = (element: HTMLElement | null) => {
+        const observer = getObserver();
+        if (element) {
+          element.dataset.thumbnailId = fileId;
+          observedRef.current.set(fileId, element);
+          observer.observe(element);
+        } else {
+          const observed = observedRef.current.get(fileId);
+          if (observed) observer.unobserve(observed);
+          observedRef.current.delete(fileId);
+          thumbnails.setVisible(fileId, false);
+        }
+      };
+      callbacksRef.current.set(fileId, callback);
+    }
+    return callback;
   }, []);
 };
 
