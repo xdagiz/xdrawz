@@ -129,7 +129,12 @@ type Deps = {
   destroyWindow: (win: BrowserWindow, requestId: number) => void;
   markWindowReady: (win: BrowserWindow) => void;
   cancelQuit: (win: BrowserWindow, requestId: number) => void;
-  onDirtyState: (win: BrowserWindow, requestId: number, dirty: boolean) => void;
+  onDirtyState: (
+    win: BrowserWindow,
+    requestId: number,
+    dirty: boolean,
+    skipPrompt: boolean,
+  ) => void;
   onFlushStarted: (win: BrowserWindow, requestId: number) => void;
   getSettings: () => AppSettings;
   updateSettings: (update: SettingsUpdate) => AppSettings;
@@ -408,7 +413,13 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   on(WINDOW_DIRTY_STATE, (event, ...args) => {
     const win = windowFromEvent(event);
-    if (win) deps.onDirtyState(win, requireInteger(args[0], "requestId"), Boolean(args[1]));
+    if (win)
+      deps.onDirtyState(
+        win,
+        requireInteger(args[0], "requestId"),
+        Boolean(args[1]),
+        Boolean(args[2]),
+      );
   });
 
   on(WINDOW_FLUSH_STARTED, (event, ...args) => {

@@ -6,7 +6,7 @@ import { log } from "./logger";
 
 const CHECK_TIMEOUT_MS = 5000;
 const FLUSH_SILENCE_TIMEOUT_MS = 2000;
-const FLUSH_WRITE_TIMEOUT_MS = 10_000;
+const FLUSH_WRITE_TIMEOUT_MS = 30_000;
 
 const approvedCloses = new WeakSet<BrowserWindow>();
 const readyWindows = new WeakSet<BrowserWindow>();
@@ -158,7 +158,12 @@ export const requestQuitViaRenderer = (win: BrowserWindow) => {
   beginCloseFlow(win);
 };
 
-export const onDirtyState = (win: BrowserWindow, requestId: number, dirty: boolean) => {
+export const onDirtyState = (
+  win: BrowserWindow,
+  requestId: number,
+  dirty: boolean,
+  skipPrompt: boolean,
+) => {
   const state = closeStateFor(win);
   if (!isCurrentCloseRequest(win, requestId) || state.kind !== "check") return;
 
@@ -166,6 +171,14 @@ export const onDirtyState = (win: BrowserWindow, requestId: number, dirty: boole
 
   if (!dirty) {
     closeWindow(win);
+    return;
+  }
+
+  if (skipPrompt) {
+    state.kind = "flush";
+    const request: WindowCloseRequest = { requestId: state.requestId, kind: "flush" };
+    sendToRenderer(win, WINDOW_WILL_CLOSE, request);
+    state.timer = setTimeout(() => onRendererSilent(win), FLUSH_SILENCE_TIMEOUT_MS);
     return;
   }
 

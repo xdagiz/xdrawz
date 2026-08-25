@@ -1,6 +1,7 @@
 import type { ExternalConflict, FileEntry, SaveOrigin } from "@shared/ipc";
 
 import { toAppError, type AppError } from "@/lib/app-error";
+import { isCloseHandshakeActive } from "@/lib/close-handshake";
 import { conflictKeyOf, createSingleFlight, fileNameOf, removeKey } from "@/lib/conflicts";
 import { sessionOwner } from "@/lib/session-owner";
 import type { State } from "@/lib/store";
@@ -144,6 +145,11 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     const conflict = get().externalConflict;
     if (!conflict || conflict.fileId !== id) return { action: "proceed" };
     if (origin !== "explicit") return { action: "stop", result: false };
+
+    if (isCloseHandshakeActive()) {
+      set({ dismissedConflictKey: null });
+      return { action: "stop", result: false };
+    }
 
     if (conflict.type === "changed") {
       const choice = await resolveChangedConflict({ force: true });

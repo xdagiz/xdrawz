@@ -136,7 +136,8 @@ const api: NativeApi = {
     ready: () => ipcRenderer.send(WINDOW_READY),
     close: (requestId) => invoke(WINDOW_CLOSE, requestId),
     cancelQuit: (requestId) => ipcRenderer.send(WINDOW_CANCEL_QUIT, requestId),
-    reportDirtyState: (requestId, dirty) => ipcRenderer.send(WINDOW_DIRTY_STATE, requestId, dirty),
+    reportDirtyState: (requestId, dirty, skipPrompt) =>
+      ipcRenderer.send(WINDOW_DIRTY_STATE, requestId, dirty, skipPrompt),
     flushStarted: (requestId) => ipcRenderer.send(WINDOW_FLUSH_STARTED, requestId),
     reportFatal: (payload) => invoke(WINDOW_REPORT_FATAL, payload),
   },

@@ -93,7 +93,7 @@ describe("window close flow (renderer)", () => {
     onWillClose({ requestId: 3, kind: "check" });
 
     expect(session.evaluateNow).toHaveBeenCalledTimes(1);
-    expect(hoisted.api.window.reportDirtyState).toHaveBeenCalledWith(3, false);
+    expect(hoisted.api.window.reportDirtyState).toHaveBeenCalledWith(3, false, false);
   });
 
   it("reports clean without pausing autosave", () => {
@@ -102,7 +102,7 @@ describe("window close flow (renderer)", () => {
 
     onWillClose({ requestId: 7, kind: "check" });
 
-    expect(hoisted.api.window.reportDirtyState).toHaveBeenCalledWith(7, false);
+    expect(hoisted.api.window.reportDirtyState).toHaveBeenCalledWith(7, false, false);
     expect(expectAutosave(session)).not.toHaveBeenCalled();
   });
 
@@ -113,7 +113,7 @@ describe("window close flow (renderer)", () => {
 
     onWillClose({ requestId: 7, kind: "check" });
 
-    expect(hoisted.api.window.reportDirtyState).toHaveBeenCalledWith(7, true);
+    expect(hoisted.api.window.reportDirtyState).toHaveBeenCalledWith(7, true, false);
     expect(expectAutosave(session)).toHaveBeenCalledWith(true);
   });
 

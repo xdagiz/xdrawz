@@ -66,7 +66,7 @@ export interface NativeApi {
     ready: () => void;
     close: (requestId: number) => Promise<void>;
     cancelQuit: (requestId: number) => void;
-    reportDirtyState: (requestId: number, dirty: boolean) => void;
+    reportDirtyState: (requestId: number, dirty: boolean, skipPrompt?: boolean) => void;
     flushStarted: (requestId: number) => void;
     reportFatal: (payload: SerializedAppError) => Promise<void>;
   };

@@ -118,7 +118,7 @@ describe("close guard", () => {
     const { win, browserWindow } = setupWindow();
 
     win.emit("close", closeEvent());
-    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), false);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), false, false);
 
     expect(win.destroyed).toBe(true);
     expect(mocks.showMessageBox).not.toHaveBeenCalled();
@@ -129,7 +129,7 @@ describe("close guard", () => {
     mocks.showMessageBox.mockResolvedValue({ response: 2 });
 
     win.emit("close", closeEvent());
-    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true, false);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
@@ -151,7 +151,7 @@ describe("close guard", () => {
 
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
-    closeGuard.onDirtyState(browserWindow, requestId, true);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
@@ -172,7 +172,7 @@ describe("close guard", () => {
     mocks.showMessageBox.mockResolvedValue({ response: 1 });
 
     win.emit("close", closeEvent());
-    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), false, false);
     await flushAsync();
 
     expect(win.destroyed).toBe(true);
@@ -201,7 +201,7 @@ describe("close guard", () => {
 
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
-    closeGuard.onDirtyState(browserWindow, requestId, true);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
     await flushTicks();
 
     vi.advanceTimersByTime(1999);
@@ -218,13 +218,13 @@ describe("close guard", () => {
 
     ackedWin.emit("close", closeEvent());
     const ackedId = sentRequestId(ackedWin, 0);
-    closeGuard.onDirtyState(ackedBrowserWindow, ackedId, true);
+    closeGuard.onDirtyState(ackedBrowserWindow, ackedId, true, false);
     await flushTicks();
     closeGuard.onFlushStarted(ackedBrowserWindow, ackedId);
 
     vi.advanceTimersByTime(2000);
     expect(ackedWin.destroyed).toBe(false);
-    vi.advanceTimersByTime(7999);
+    vi.advanceTimersByTime(27_999);
     expect(ackedWin.destroyed).toBe(false);
     vi.advanceTimersByTime(2);
     expect(ackedWin.destroyed).toBe(true);
@@ -273,7 +273,7 @@ describe("close guard", () => {
     mocks.showMessageBox.mockResolvedValue({ response: 2 });
 
     closeGuard.requestQuitViaRenderer(browserWindow);
-    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true);
+    closeGuard.onDirtyState(browserWindow, sentRequestId(win, 0), true, false);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
@@ -295,7 +295,7 @@ describe("close guard", () => {
     closeGuard.requestQuitViaRenderer(browserWindow);
     win.emit("close", closeEvent());
     const requestId = sentRequestId(win, 0);
-    closeGuard.onDirtyState(browserWindow, requestId, true);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
     await flushAsync();
 
     expect(win.destroyed).toBe(false);
@@ -313,7 +313,7 @@ describe("close guard", () => {
   it("resolves a pending quit by closing and quitting", async () => {
     const clean = setupWindow();
     closeGuard.requestQuitViaRenderer(clean.browserWindow);
-    closeGuard.onDirtyState(clean.browserWindow, sentRequestId(clean.win, 0), false);
+    closeGuard.onDirtyState(clean.browserWindow, sentRequestId(clean.win, 0), false, false);
 
     expect(clean.win.destroyed).toBe(true);
     expect(mocks.quit).toHaveBeenCalledTimes(1);
@@ -325,7 +325,7 @@ describe("close guard", () => {
     mocks.showMessageBox.mockResolvedValue({ response: 1 });
     closeGuard.requestQuitViaRenderer(discard.browserWindow);
     discard.win.emit("close", closeEvent());
-    closeGuard.onDirtyState(discard.browserWindow, sentRequestId(discard.win, 0), true);
+    closeGuard.onDirtyState(discard.browserWindow, sentRequestId(discard.win, 0), true, false);
     await flushAsync();
 
     expect(discard.win.destroyed).toBe(true);

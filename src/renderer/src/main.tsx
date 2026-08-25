@@ -25,9 +25,11 @@ window.api.window.onWillClose((request) => {
   if (request.kind === "check") {
     const session = sessionOwner.getSession();
     session?.evaluateNow();
-    const dirty = Object.keys(useStore.getState().dirtyById).length > 0;
+    const state = useStore.getState();
+    const dirty = Object.keys(state.dirtyById).length > 0;
     if (dirty) session?.setAutosavePaused(true);
-    window.api.window.reportDirtyState(request.requestId, dirty);
+    const skipPrompt = dirty && state.externalConflict !== null;
+    window.api.window.reportDirtyState(request.requestId, dirty, skipPrompt);
     return;
   }
 
@@ -46,6 +48,12 @@ window.api.window.onWillClose((request) => {
     if (session?.isDirty()) {
       window.api.window.cancelQuit(request.requestId);
       setCloseHandshakeActive(false);
+      const state = useStore.getState();
+      if (state.externalConflict?.type === "changed") {
+        void state.resolveChangedConflict({ force: true });
+      } else if (state.externalConflict?.type === "missing") {
+        void state.resolveMissingConflict(undefined, { force: true });
+      }
       return;
     }
 
