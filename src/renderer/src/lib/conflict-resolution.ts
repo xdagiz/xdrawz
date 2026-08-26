@@ -11,26 +11,22 @@ import {
 } from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
 import { sessionOwner } from "@/lib/session-owner";
-import type { State } from "@/lib/store";
+
+export type ConflictSlice = {
+  entries: FileEntry[];
+  openFileId: string | null;
+  dirtyById: Record<string, true>;
+  error: AppError | null;
+  externalConflict: ExternalConflict;
+  dismissedConflictKey: string | null;
+};
 
 const runChangedDialog = createSingleFlight<"reload" | "overwrite" | "cancel">();
 const runRecoverDialog = createSingleFlight<"recover" | "discard" | "cancel">();
-let pendingRecoverContent: string | undefined;
 
 type ResolverDeps = {
-  get: () => Pick<
-    State,
-    "entries" | "openFileId" | "dirtyById" | "externalConflict" | "dismissedConflictKey"
-  >;
-  set: (
-    patch: Partial<{
-      entries: FileEntry[];
-      dirtyById: Record<string, true>;
-      error: AppError | null;
-      externalConflict: ExternalConflict;
-      dismissedConflictKey: string | null;
-    }>,
-  ) => void;
+  get: () => ConflictSlice;
+  set: (patch: Partial<ConflictSlice>) => void;
   reloadOpenFileFromDisk: () => void;
   discardMissingOpenFile: () => void;
 };
@@ -39,6 +35,7 @@ export type SaveGate = { action: "proceed" } | { action: "stop"; result: boolean
 
 export const createConflictResolver = (deps: ResolverDeps) => {
   const { get, set } = deps;
+  let pendingRecoverContent: string | undefined;
 
   const performRecover = async (fileId: string, body: string) => {
     try {

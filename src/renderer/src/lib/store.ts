@@ -148,8 +148,18 @@ export const useStore = create<State>((set, get) => {
     resolveChangedConflict,
     resolveMissingConflict,
   } = createConflictResolver({
-    get,
-    set,
+    get: () => {
+      const s = get();
+      return {
+        entries: s.entries,
+        openFileId: s.openFileId,
+        dirtyById: s.dirtyById,
+        error: s.error,
+        externalConflict: s.externalConflict,
+        dismissedConflictKey: s.dismissedConflictKey,
+      };
+    },
+    set: (patch) => set(patch),
     reloadOpenFileFromDisk: () => get().reloadOpenFileFromDisk(),
     discardMissingOpenFile: () => get().discardMissingOpenFile(),
   });
