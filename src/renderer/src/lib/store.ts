@@ -108,15 +108,13 @@ export type State = {
   filesRevision: number;
   externalConflict: ExternalConflict;
   watcherDown: string | null;
-  editorEpoch: number;
-  editorSessionId: number;
+  editorGeneration: number;
   dismissedConflictKey: string | null;
   settings: AppSettings;
   settingsDialogOpen: boolean;
   loadSnapshot: (snapshot: DrawingsSnapshot, recentFileIdsJson?: string | null) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
-  clearWatcherError: () => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
   openHome: () => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<boolean>;
@@ -126,9 +124,7 @@ export type State = {
   overwriteOpenFileFromSession: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
-  clearError: () => void;
   reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
-  clearExternalConflict: () => void;
   reloadOpenFileFromDisk: () => void;
   discardMissingOpenFile: () => void;
   resolveChangedConflict: (opts?: {
@@ -207,8 +203,7 @@ export const useStore = create<State>((set, get) => {
     filesRevision: 0,
     externalConflict: null,
     watcherDown: null,
-    editorEpoch: 0,
-    editorSessionId: 0,
+    editorGeneration: 0,
     dismissedConflictKey: null,
     settingsDialogOpen: false,
     settings:
@@ -241,15 +236,13 @@ export const useStore = create<State>((set, get) => {
           filesRevision: state.filesRevision,
           externalConflict: null,
           dismissedConflictKey: null,
-          editorSessionId: state.editorSessionId + 1,
+          editorGeneration: state.editorGeneration + 1,
         };
       }),
 
     applyEntries: (event) => {
       const state = get();
-
       if (event.revision > 0 && event.revision <= state.filesRevision) return;
-
       set({
         ...reduceEntries(state, event),
         drawings: event.info ?? state.drawings,
@@ -275,7 +268,7 @@ export const useStore = create<State>((set, get) => {
           error: null,
           externalConflict: null,
           recentFileIds,
-          editorSessionId: get().editorSessionId + 1,
+          editorGeneration: get().editorGeneration + 1,
         });
         void window.api.store.set("lastOpenedFileId", fileId);
         void window.api.store.set("recentFileIds", JSON.stringify(recentFileIds));
@@ -287,7 +280,6 @@ export const useStore = create<State>((set, get) => {
     openHome: async () => {
       const current = get().openFileId;
       if (current === null) return;
-
       await get().setOpenFileId(null);
       if (get().openFileId === null) {
         set({ homeReturnFileId: current });
@@ -436,26 +428,15 @@ export const useStore = create<State>((set, get) => {
       });
     },
 
-    clearError: () => set({ error: null }),
-
     reportError: (error, operation) => set({ error: toAppError(error, operation) }),
-
     reportWatcherError: (event) => set({ watcherDown: event.message }),
-
-    clearWatcherError: () => set({ watcherDown: null }),
-
     setSettingsDialogOpen: (open) => set({ settingsDialogOpen: open }),
-
-    clearExternalConflict: () => set({ externalConflict: null }),
-
     resolveChangedConflict,
-
     resolveMissingConflict,
-
     recoverMissingOpenFile,
 
     reloadOpenFileFromDisk: () => {
-      const { openFileId, dirtyById, editorEpoch } = get();
+      const { openFileId, dirtyById, editorGeneration } = get();
       if (!openFileId) {
         set({ externalConflict: null });
         return;
@@ -464,7 +445,7 @@ export const useStore = create<State>((set, get) => {
       set({
         externalConflict: null,
         dirtyById: removeKey(dirtyById, openFileId),
-        editorEpoch: editorEpoch + 1,
+        editorGeneration: editorGeneration + 1,
         error: null,
       });
     },
@@ -540,7 +521,6 @@ export const useStore = create<State>((set, get) => {
       }
 
       if (info === null) return false;
-
       if (info.path !== null && info.path === previousPath && info.configured) {
         return true;
       }
@@ -566,6 +546,7 @@ export const useStore = create<State>((set, get) => {
       } catch (error) {
         get().reportError(error, "load");
       }
+
       return true;
     },
   };

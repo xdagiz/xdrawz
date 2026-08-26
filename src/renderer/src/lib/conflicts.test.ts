@@ -18,7 +18,7 @@ const baseState = () => ({
   dirtyById: {},
   externalConflict: null,
   dismissedConflictKey: null,
-  editorEpoch: 0,
+  editorGeneration: 0,
 });
 
 const event = (ids: Array<[string, number]>, revision = 1) => ({
@@ -34,7 +34,7 @@ describe("reduceEntries", () => {
 
     expect(next.openFileId).toBeNull();
     expect(next.externalConflict).toBeNull();
-    expect(next.editorEpoch).toBe(0);
+    expect(next.editorGeneration).toBe(0);
   });
 
   it("keeps the open file and flags missing when it disappears while dirty", () => {
@@ -50,11 +50,11 @@ describe("reduceEntries", () => {
     expect(next.dirtyById["a.excalidraw"]).toBe(true);
   });
 
-  it("bumps the editor epoch when the clean open file changes on disk", () => {
+  it("bumps the editor generation when the clean open file changes on disk", () => {
     const state = { ...baseState(), openFileId: "a.excalidraw" };
     const next = reduceEntries(state, event([["a.excalidraw", 200]]));
 
-    expect(next.editorEpoch).toBe(1);
+    expect(next.editorGeneration).toBe(1);
     expect(next.externalConflict).toBeNull();
   });
 

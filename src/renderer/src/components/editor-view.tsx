@@ -10,8 +10,7 @@ const ExcalidrawEditor = lazy(() =>
 
 export const EditorView = () => {
   const openFileId = useStore((s) => s.openFileId);
-  const editorEpoch = useStore((s) => s.editorEpoch);
-  const editorSessionId = useStore((s) => s.editorSessionId);
+  const editorGeneration = useStore((s) => s.editorGeneration);
 
   if (!openFileId) {
     return <HomeGrid />;
@@ -19,7 +18,7 @@ export const EditorView = () => {
 
   return (
     <Suspense fallback={<div className="bg-background h-full w-full" />}>
-      <ExcalidrawEditor key={`${editorSessionId}:${editorEpoch}`} fileId={openFileId} />
+      <ExcalidrawEditor key={`${editorGeneration}`} fileId={openFileId} />
     </Suspense>
   );
 };

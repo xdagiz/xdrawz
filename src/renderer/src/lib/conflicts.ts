@@ -51,7 +51,7 @@ export type EntryReductionState = {
   dirtyById: Record<string, true>;
   externalConflict: ExternalConflict;
   dismissedConflictKey: string | null;
-  editorEpoch: number;
+  editorGeneration: number;
 };
 
 export type EntryReduction = EntryReductionState;
@@ -72,7 +72,7 @@ export const reduceEntries = (
 
   let externalConflict: ExternalConflict = null;
   let nextOpenFileId = openFileId;
-  let nextEditorEpoch = state.editorEpoch;
+  let nextEditorGeneration = state.editorGeneration;
 
   if (openFileId) {
     const stillExists = isStillPresent(entries, openFileId);
@@ -116,7 +116,7 @@ export const reduceEntries = (
       const oldEntry = findOnDisk(state.entries, openFileId);
       const newEntry = findOnDisk(entries, openFileId);
       if (oldEntry && newEntry && newEntry.modifiedAt > oldEntry.modifiedAt) {
-        nextEditorEpoch = state.editorEpoch + 1;
+        nextEditorGeneration = state.editorGeneration + 1;
       }
     }
 
@@ -140,7 +140,7 @@ export const reduceEntries = (
     openFileId: nextOpenFileId,
     dirtyById: nextDirty,
     externalConflict,
-    editorEpoch: nextEditorEpoch,
+    editorGeneration: nextEditorGeneration,
     dismissedConflictKey,
   };
 };

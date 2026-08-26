@@ -35,7 +35,7 @@ const App = () => {
   const reportWatcherError = useStore((s) => s.reportWatcherError);
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
-  const editorEpoch = useStore((s) => s.editorEpoch);
+  const editorGeneration = useStore((s) => s.editorGeneration);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
   const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
@@ -192,7 +192,7 @@ const App = () => {
         <SidebarInset className="isolation-isolate min-h-0 min-w-0 overflow-hidden">
           <ConflictBanner />
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            <ErrorBoundary resetKeys={[openFileId, editorEpoch]}>
+            <ErrorBoundary resetKeys={[openFileId, editorGeneration]}>
               <EditorView />
             </ErrorBoundary>
             {folderMissing && (
