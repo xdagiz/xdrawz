@@ -282,6 +282,116 @@ describe("createDrawingsWatcher", () => {
     expect(watcher.getRevision()).toBe(2);
   });
 
+  it("drops an in-flight listing that survives a restart to a new root", async () => {
+    vi.useRealTimers();
+
+    const oldEntries = [makeEntry("old.excalidraw")];
+    const newEntries = [makeEntry("new.excalidraw")];
+    let releaseOld!: (v: FileEntry[]) => void;
+    const listEntries = vi.fn(async (root: string): Promise<FileEntry[]> => {
+      if (root === "/home/user/drawings") {
+        return new Promise<FileEntry[]>((resolve) => {
+          releaseOld = resolve;
+        });
+      }
+      return newEntries;
+    });
+
+    const { watcher, fakeWatcher, onChange } = setupWatcher({
+      coalesceMs: 10,
+      overrideDeps: { listEntries },
+    });
+
+    await watcher.start("/home/user/drawings");
+    void fakeWatcher._emit("change", "/home/user/drawings/old.excalidraw");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(listEntries).toHaveBeenCalledWith("/home/user/drawings");
+    expect(onChange).not.toHaveBeenCalled();
+
+    await watcher.restart("/home/user/new");
+    await watcher.refreshNow();
+    expect(onChange).not.toHaveBeenCalled();
+
+    releaseOld(oldEntries);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const payload = onChange.mock.calls[0][0];
+    expect(payload.entries).toEqual(newEntries);
+    expect(payload.root).toBe("/home/user/new");
+    expect(payload.revision).toBe(1);
+    expect(listEntries).toHaveBeenLastCalledWith("/home/user/new");
+
+    await watcher.stop();
+    vi.useFakeTimers();
+  });
+
+  it("drops an in-flight listing after stop without emitting", async () => {
+    vi.useRealTimers();
+
+    let releaseOld!: (v: FileEntry[]) => void;
+    const listEntries = vi.fn(
+      (_root: string) =>
+        new Promise<FileEntry[]>((resolve) => {
+          releaseOld = resolve;
+        }),
+    );
+
+    const { watcher, fakeWatcher, onChange } = setupWatcher({
+      coalesceMs: 10,
+      overrideDeps: { listEntries },
+    });
+
+    await watcher.start("/home/user/drawings");
+    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    await new Promise((r) => setTimeout(r, 30));
+
+    await watcher.stop();
+    releaseOld([makeEntry("stale.excalidraw")]);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(onChange).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+  });
+
+  it("re-lists the new root when the stale in-flight listing fails", async () => {
+    vi.useRealTimers();
+
+    const newEntries = [makeEntry("new.excalidraw")];
+    let rejectOld!: (err: Error) => void;
+    const listEntries = vi.fn(async (root: string): Promise<FileEntry[]> => {
+      if (root === "/home/user/drawings") {
+        return new Promise<FileEntry[]>((_resolve, reject) => {
+          rejectOld = reject;
+        });
+      }
+      return newEntries;
+    });
+
+    const { watcher, fakeWatcher, onChange } = setupWatcher({
+      coalesceMs: 10,
+      overrideDeps: { listEntries },
+    });
+
+    await watcher.start("/home/user/drawings");
+    void fakeWatcher._emit("change", "/home/user/drawings/old.excalidraw");
+    await new Promise((r) => setTimeout(r, 30));
+
+    await watcher.restart("/home/user/new");
+    await watcher.refreshNow();
+
+    rejectOld(new Error("stale walk failed"));
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const payload = onChange.mock.calls[0][0];
+    expect(payload.entries).toEqual(newEntries);
+    expect(payload.root).toBe("/home/user/new");
+
+    await watcher.stop();
+    vi.useFakeTimers();
+  });
+
   it("refreshNow immediately triggers onChange", async () => {
     const { watcher, onChange, deps } = setupWatcher();
 

@@ -66,6 +66,7 @@ export const createDrawingsWatcher = (
   let currentRoot: string | null = null;
   let revision = 0;
   let chokidarInstance: FSWatcher | null = null;
+  let lifecycleEpoch = 0;
 
   const ignored = new Map<string, number>();
 
@@ -148,22 +149,26 @@ export const createDrawingsWatcher = (
         pending = false;
         if (stopped || !currentRoot) return;
 
+        const epoch = lifecycleEpoch;
+        const root = currentRoot;
+
         let entries: FileEntry[];
         try {
-          entries = await listEntries(currentRoot);
+          entries = await listEntries(root);
         } catch {
-          return;
+          if (!pending || stopped || !currentRoot) return;
+          continue;
         }
 
-        if (stopped || !currentRoot) return;
+        if (epoch !== lifecycleEpoch) continue;
         const info = await getDrawings().catch(() => undefined);
-        if (stopped || !currentRoot) return;
+        if (epoch !== lifecycleEpoch) continue;
 
         revision += 1;
         callbacks.onChange({
           entries,
           revision,
-          root: currentRoot,
+          root,
           info,
         });
       } while (pending);
@@ -195,6 +200,7 @@ export const createDrawingsWatcher = (
   };
 
   const stopInternal = async (reason?: "missing" | "not-directory") => {
+    lifecycleEpoch += 1;
     stopped = true;
     clearCoalesce();
     ignored.clear();
