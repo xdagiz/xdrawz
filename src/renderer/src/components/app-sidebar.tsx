@@ -319,7 +319,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
   return (
     <>
-      <Sidebar side="left">
+      <Sidebar side="left" variant="floating">
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupLabel className="flex items-center justify-between">
