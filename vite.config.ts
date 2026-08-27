@@ -15,6 +15,19 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 
+  run: {
+    tasks: {
+      "icons:export": {
+        command: "node scripts/export-icons.ts",
+        output: ["assets/icon.ico", "assets/icon.icns"],
+      },
+      "icons:check": {
+        cache: false,
+        command: "node scripts/export-icons.ts --check",
+      },
+    },
+  },
+
   fmt: {
     singleQuote: false,
     semi: true,

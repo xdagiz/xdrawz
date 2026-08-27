@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const cliArgs = process.argv.slice(2);
+const cliArgs: ReadonlyArray<string> = process.argv.slice(2);
 const isCheck = cliArgs.includes("--check");
-const masterArg = cliArgs.find((a) => !a.startsWith("-"));
-const master = path.resolve(root, masterArg || "assets/icon.png");
+const masterArg: string | undefined = cliArgs.find((argument) => !argument.startsWith("-"));
+const master = path.resolve(root, masterArg ?? "assets/icon.png");
 
 const resolveMagick = () => {
-  for (const cmd of ["magick", "convert"]) {
+  for (const command of ["magick", "convert"]) {
     try {
-      execFileSync(cmd, ["-version"], { stdio: "ignore" });
-      return cmd;
+      execFileSync(command, ["-version"], { stdio: "ignore" });
+      return command;
     } catch {
-      // ImageMagick not found in PATH; try the next candidate.
+      void 0;
     }
   }
 
@@ -24,6 +24,7 @@ const resolveMagick = () => {
 };
 
 const magick = resolveMagick();
+
 if (!magick) {
   console.error("ImageMagick not found (need `magick` or `convert` on PATH).");
   process.exit(1);
@@ -42,12 +43,13 @@ const outputs = {
 if (isCheck) {
   const masterMtime = statSync(master).mtimeMs;
   const stale = Object.entries(outputs).filter(
-    ([, p]) => !existsSync(p) || statSync(p).mtimeMs < masterMtime,
+    ([, outputPath]: readonly [string, string]) =>
+      !existsSync(outputPath) || statSync(outputPath).mtimeMs < masterMtime,
   );
 
-  if (stale.length) {
-    const rel = stale.map(([, p]) => path.relative(root, p)).join(", ");
-    console.error(`Icon outputs are missing or stale: ${rel}`);
+  if (stale.length > 0) {
+    const relative = stale.map(([, outputPath]) => path.relative(root, outputPath)).join(", ");
+    console.error(`Icon outputs are missing or stale: ${relative}`);
     console.error(`Run \`vp run icons:export\` to regenerate from ${path.relative(root, master)}.`);
     process.exit(1);
   }
@@ -61,11 +63,13 @@ mkdirSync(buildDir, { recursive: true });
 const tmp = path.join(buildDir, ".icns-tmp");
 mkdirSync(tmp, { recursive: true });
 
-const runMagick = (args) => execFileSync(magick, args, { stdio: "inherit" });
+const runMagick = (args: ReadonlyArray<string>) => {
+  execFileSync(magick, args, { stdio: "inherit" });
+};
 
 runMagick([master, "-define", "icon:auto-resize=256,128,64,48,32,16", outputs.ico]);
 
-const sizes = [
+const sizes: ReadonlyArray<readonly [string, number]> = [
   ["ic07", 128],
   ["ic08", 256],
   ["ic09", 512],
@@ -76,7 +80,7 @@ const sizes = [
   ["ic14", 512],
 ];
 
-const chunks = sizes.map(([type, size]) => {
+const chunks: ReadonlyArray<Buffer> = sizes.map(([type, size]: readonly [string, number]) => {
   const png = path.join(tmp, `${type}.png`);
   runMagick([master, "-resize", `${size}x${size}`, png]);
 
@@ -85,24 +89,24 @@ const chunks = sizes.map(([type, size]) => {
 
   chunk.write(type, 0, "ascii");
   chunk.writeUInt32BE(chunk.length, 4);
-
   data.copy(chunk, 8);
+
   return chunk;
 });
 
-const total = 8 + chunks.reduce((n, c) => n + c.length, 0);
+const total = 8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0);
 const icns = Buffer.alloc(total);
 
 icns.write("icns", 0, "ascii");
 icns.writeUInt32BE(total, 4);
 
-let off = 8;
-for (const c of chunks) {
-  c.copy(icns, off);
-  off += c.length;
+let offset = 8;
+for (const chunk of chunks) {
+  chunk.copy(icns, offset);
+  offset += chunk.length;
 }
 
 writeFileSync(outputs.icns, icns);
-
 rmSync(tmp, { recursive: true, force: true });
+
 console.log(`Generated: assets/icon.ico, assets/icon.icns from ${path.relative(root, master)}`);
