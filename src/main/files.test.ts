@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -236,5 +236,58 @@ describe("files", () => {
     );
     await expect(createEntry("ghost", "x.excalidraw", "file")).rejects.toThrow();
     await expect(createEntry(null, "   ", "directory")).rejects.toThrow("Name cannot be empty");
+  });
+
+  it("rejects reading a file symlink that points outside the root", async () => {
+    const outside = path.join(await realpath(tmpdir()), "jail-outside-secret.txt");
+    await rm(outside, { force: true });
+    await writeFile(outside, SCENE);
+    await symlink(outside, path.join(ctx.root, "pwned.excalidraw"));
+
+    await expect(readDrawingFile("pwned.excalidraw")).rejects.toThrow(/Symlink|Path escapes/i);
+
+    await rm(outside, { force: true });
+  });
+
+  it("writeDrawingFileRecover never writes through a symlinked directory", async () => {
+    const outside = path.join(await realpath(tmpdir()), "jail-outside-recover");
+    await rm(outside, { recursive: true, force: true });
+    await mkdir(outside);
+    await symlink(outside, path.join(ctx.root, "linkDir"));
+
+    await expect(writeDrawingFileRecover("linkDir/new.excalidraw", SCENE)).rejects.toThrow(
+      /Symlink|Path escapes/i,
+    );
+
+    const created = await readFile(path.join(outside, "new.excalidraw"), "utf8").catch(() => null);
+    expect(created).toBeNull();
+
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  it("rejects hardlinked files on read", async () => {
+    const outside = path.join(await realpath(tmpdir()), "jail-outside-hard.excalidraw");
+    await rm(outside, { force: true });
+    await writeFile(outside, SCENE);
+    await link(outside, path.join(ctx.root, "hard.excalidraw"));
+
+    await expect(readDrawingFile("hard.excalidraw")).rejects.toThrow(/Hardlink/i);
+
+    await rm(outside, { force: true });
+  });
+
+  it("does not enumerate entries through a directory symlink", async () => {
+    const outside = path.join(await realpath(tmpdir()), "jail-outside-dir");
+    await rm(outside, { recursive: true, force: true });
+    await mkdir(outside);
+    await writeFile(path.join(outside, "loot.excalidraw"), SCENE);
+    await symlink(outside, path.join(ctx.root, "linkDir"));
+
+    const entries = await listEntries();
+    const ids = entries.map((e) => e.id);
+    expect(ids).not.toContain("linkDir");
+    expect(ids).not.toContain("linkDir/loot.excalidraw");
+
+    await rm(outside, { recursive: true, force: true });
   });
 });

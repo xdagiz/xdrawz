@@ -1,6 +1,15 @@
 import { Buffer } from "node:buffer";
-import { Dirent, Stats } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { Dirent, Stats, constants as fsConstants } from "node:fs";
+import {
+  lstat,
+  mkdir,
+  open as fsOpen,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  unlink,
+} from "node:fs/promises";
 import path from "node:path";
 
 import type { ErrorCode } from "@shared/errors";
@@ -21,6 +30,103 @@ export const errorWithCode = (message: string, code: ErrorCode): Error => {
 
 const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
 
+const isWindows = process.platform === "win32";
+const isMac = process.platform === "darwin";
+
+const normalizeId = (id: string): string => (isMac ? id.normalize("NFC") : id);
+const normalizeFsName = (name: string): string => (isMac ? name.normalize("NFC") : name);
+
+const errorCodeOf = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined;
+  if (!("code" in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+};
+
+const contains = (parent: string, child: string): boolean => {
+  const p = isWindows ? parent.toLowerCase() : parent;
+  const c = isWindows ? child.toLowerCase() : child;
+  const rel = path.relative(p, c);
+  return rel === "" || (!path.isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${path.sep}`));
+};
+
+const realpathFromExistingAncestor = async (targetAbs: string): Promise<string> => {
+  const missing: string[] = [];
+  let current = targetAbs;
+  for (;;) {
+    try {
+      const real = await realpath(current);
+      return missing.length === 0 ? real : path.join(real, ...missing.toReversed());
+    } catch (error) {
+      if (errorCodeOf(error) !== "ENOENT") throw error;
+      const parent = path.dirname(current);
+      if (parent === current) throw error;
+      missing.push(path.basename(current));
+      current = parent;
+    }
+  }
+};
+
+const assertSafeIdString = (id: string) => {
+  if (id.includes("\0")) throw errorWithCode("Invalid path", "INVALID");
+  if (path.isAbsolute(id)) throw errorWithCode("Absolute paths not allowed", "INVALID");
+  if (/^[a-zA-Z]:/.test(id)) throw errorWithCode("Drive letters not allowed", "INVALID");
+  if (id.startsWith("\\\\") || id.startsWith("//")) {
+    throw errorWithCode("UNC paths not allowed", "INVALID");
+  }
+  if (id.includes("\\")) throw errorWithCode("Invalid path", "INVALID");
+};
+
+const getCanonicalRoot = async (): Promise<string> => {
+  const rawRoot = await requireDrawingsRoot();
+  return realpath(rawRoot);
+};
+
+const assertInsideRealRoot = async (rootReal: string, candidateAbs: string): Promise<string> => {
+  const candidateReal = await realpathFromExistingAncestor(candidateAbs);
+  if (!contains(rootReal, candidateReal)) {
+    throw new Error("Path escapes drawings root");
+  }
+  return candidateReal;
+};
+
+const assertParentsNotSymlinks = async (
+  rootLex: string,
+  rootReal: string,
+  candidateAbs: string,
+) => {
+  const parent = path.dirname(candidateAbs);
+  const rel = path.relative(rootLex, parent);
+  if (rel === "") return;
+  if (path.isAbsolute(rel) || rel.startsWith("..")) return;
+
+  let current = rootLex;
+  for (const segment of rel.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    const lst = await lstat(current).catch(() => null);
+    if (!lst) continue;
+    if (lst.isSymbolicLink()) throw errorWithCode("Symlink in path", "INVALID");
+    if (lst.isDirectory()) {
+      const realCurrent = await realpath(current).catch(() => null);
+      if (realCurrent && !contains(rootReal, realCurrent)) {
+        throw new Error("Path escapes drawings root");
+      }
+    }
+  }
+};
+
+const assertNotSymlink = async (absPath: string) => {
+  let lst: Stats;
+  try {
+    lst = await lstat(absPath);
+  } catch (error) {
+    if (errorCodeOf(error) === "ENOENT") return;
+    throw error;
+  }
+  if (lst.isSymbolicLink()) throw errorWithCode("Symlinks not allowed", "INVALID");
+  if (lst.isFile() && lst.nlink > 1) throw errorWithCode("Hardlinks not allowed", "INVALID");
+};
+
 export type FsMutationHooks = {
   beforeMutate?: (absPaths: string[]) => void;
 };
@@ -31,12 +137,28 @@ export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsM
 
   hooks?.beforeMutate?.([absPath, tmp]);
 
+  const flags =
+    fsConstants.O_WRONLY |
+    fsConstants.O_CREAT |
+    fsConstants.O_TRUNC |
+    (isWindows ? 0 : fsConstants.O_NOFOLLOW);
+
+  let fh: Awaited<ReturnType<typeof fsOpen>> | undefined;
   try {
-    await writeFile(tmp, data, "utf8");
+    fh = await fsOpen(tmp, flags, 0o600);
+    await fh.writeFile(data, "utf8");
+    await fh.close();
+    fh = undefined;
+  } catch (error) {
+    await fh?.close().catch(() => {});
+    await unlink(tmp).catch(() => {});
+    throw error;
+  }
+
+  try {
     await rename(tmp, absPath);
   } catch (error) {
     await unlink(tmp).catch(() => {});
-
     throw error;
   }
 };
@@ -52,7 +174,7 @@ const entryFromAbs = async (
   kind: "file" | "directory",
 ): Promise<FileEntry> => {
   const id = toRelativeId(root, absPath);
-  const stats = await stat(absPath);
+  const stats = await lstat(absPath);
   return {
     id,
     name: path.basename(absPath),
@@ -64,14 +186,26 @@ const entryFromAbs = async (
 };
 
 const resolveInsideRoot = async (id: string) => {
+  const normalizedId = normalizeId(id);
+  assertSafeIdString(normalizedId);
+
   const root = await requireDrawingsRoot();
-  const absPath = path.resolve(root, ...id.split("/"));
-  assertInsideRoot(root, absPath);
-  return { root, absPath };
+  const rootReal = await getCanonicalRoot();
+  const absPath = path.resolve(root, ...normalizedId.split("/").filter(Boolean));
+  if (!contains(path.resolve(root), absPath)) {
+    throw new Error("Path escapes drawings root");
+  }
+
+  const candidateReal = await assertInsideRealRoot(rootReal, absPath);
+  await assertParentsNotSymlinks(root, rootReal, absPath);
+  await assertNotSymlink(absPath);
+
+  return { root, rootReal, absPath, candidateReal };
 };
 
 const walkEntries = async (root: string): Promise<FileEntry[]> => {
   const out: FileEntry[] = [];
+  const rootReal = await getCanonicalRoot();
 
   const walk = async (dirAbs: string) => {
     let dirents: Dirent[];
@@ -88,36 +222,43 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
 
       const absPath = path.join(dirAbs, dirent.name);
 
-      let stats: Stats;
+      let lst: Stats;
       try {
-        stats = await stat(absPath);
+        lst = await lstat(absPath);
       } catch {
         continue;
       }
 
+      if (lst.isSymbolicLink()) continue;
+      if (lst.isFile() && lst.nlink > 1) continue;
+
       const id = toRelativeId(root, absPath);
 
-      if (stats.isDirectory()) {
+      if (lst.isDirectory()) {
+        if (isWindows) {
+          const realChild = await realpath(absPath).catch(() => null);
+          if (realChild === null || !contains(rootReal, realChild)) continue;
+        }
         out.push({
           id,
-          name: dirent.name,
+          name: normalizeFsName(dirent.name),
           kind: "directory",
           parentId: parentIdOf(id),
-          modifiedAt: stats.mtimeMs,
+          modifiedAt: lst.mtimeMs,
           size: 0,
         });
         await walk(absPath);
         continue;
       }
 
-      if (stats.isFile() && isExcalidrawFileName(dirent.name)) {
+      if (lst.isFile() && isExcalidrawFileName(dirent.name)) {
         out.push({
           id,
-          name: dirent.name,
+          name: normalizeFsName(dirent.name),
           kind: "file",
           parentId: parentIdOf(id),
-          modifiedAt: stats.mtimeMs,
-          size: stats.size,
+          modifiedAt: lst.mtimeMs,
+          size: lst.size,
         });
       }
     }
@@ -125,18 +266,6 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
 
   await walk(root);
   return out.toSorted((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }));
-};
-
-const assertInsideRoot = (root: string, candidate: string) => {
-  const normalizedRoot = path.resolve(root);
-  const normalizedCandidate = path.resolve(candidate);
-  const rootWithSep = normalizedRoot.endsWith(path.sep)
-    ? normalizedRoot
-    : normalizedRoot + path.sep;
-
-  if (normalizedCandidate !== normalizedRoot && !normalizedCandidate.startsWith(rootWithSep)) {
-    throw new Error("Path escapes drawings root");
-  }
 };
 
 const requireDrawingsRoot = async (): Promise<string> => {
@@ -181,25 +310,47 @@ const assertContentSize = (content: string) => {
 };
 
 export const readDrawingFile = async (id: string) => {
-  const { absPath } = await resolveInsideRoot(id);
+  const { candidateReal } = await resolveInsideRoot(id);
 
   if (!isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be read");
   }
 
-  const stats = await stat(absPath);
-  if (stats.isDirectory()) throw new Error("Cannot read a directory as a drawing");
-  if (stats.size > MAX_FILE_CONTENT_BYTES)
-    throw errorWithCode("File is too large to load", "TOO_LARGE");
+  const flags = isWindows ? fsConstants.O_RDONLY : fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW;
 
-  const content = await readFile(absPath, "utf8");
-  assertDrawingJson(content);
-  return content;
+  let fh: Awaited<ReturnType<typeof fsOpen>>;
+  try {
+    fh = await fsOpen(candidateReal, flags);
+  } catch (error) {
+    const code = errorCodeOf(error);
+    if (code === "ELOOP" || code === "ENOTDIR") {
+      throw new Error("Path escapes drawings root", { cause: error });
+    }
+    throw error;
+  }
+
+  try {
+    const stats = await fh.stat();
+    if (stats.isDirectory()) throw new Error("Cannot read a directory as a drawing");
+    if (stats.isFile() && stats.nlink > 1) {
+      throw errorWithCode("Hardlinks not allowed", "INVALID");
+    }
+    if (stats.size > MAX_FILE_CONTENT_BYTES)
+      throw errorWithCode("File is too large to load", "TOO_LARGE");
+
+    const content = await fh.readFile("utf8");
+    assertDrawingJson(content);
+    return content;
+  } finally {
+    await fh.close().catch(() => {});
+  }
 };
 
 const ensureNotDirectory = async (absPath: string) => {
-  const existing = await stat(absPath).catch(() => null);
+  const existing = await lstat(absPath).catch(() => null);
   if (existing?.isDirectory()) throw new Error("Cannot write over a directory");
+  if (existing?.isSymbolicLink()) throw errorWithCode("Invalid file", "INVALID");
+  if (existing?.isFile() && existing.nlink > 1) throw errorWithCode("Invalid file", "INVALID");
 };
 
 export const writeDrawingFile = async (
@@ -212,17 +363,21 @@ export const writeDrawingFile = async (
   assertContentSize(content);
   assertDrawingJson(content);
 
-  const { root, absPath } = await resolveInsideRoot(id);
+  const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
   if (!isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be written");
   }
 
-  const existing = await stat(absPath).catch(() => null);
+  const existing = await lstat(absPath).catch(() => null);
   if (!existing) throw errorWithCode(FILE_NOT_FOUND_MESSAGE, "NOT_FOUND");
   if (existing.isDirectory()) throw new Error("Cannot write over a directory");
 
-  await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);
+  await assertInsideRealRoot(rootReal, absPath);
+  await assertParentsNotSymlinks(root, rootReal, absPath);
+  await assertNotSymlink(absPath);
+
+  await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
   return entryFromAbs(root, absPath, "file");
 };
 
@@ -236,15 +391,20 @@ export const writeDrawingFileRecover = async (
   assertContentSize(content);
   assertDrawingJson(content);
 
-  const { root, absPath } = await resolveInsideRoot(id);
+  const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
   if (!isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be written");
   }
 
-  await mkdir(path.dirname(absPath), { recursive: true });
+  await assertParentsNotSymlinks(root, rootReal, absPath);
+  await mkdir(path.dirname(candidateReal), { recursive: true });
+
+  await assertInsideRealRoot(rootReal, absPath);
+  await assertParentsNotSymlinks(root, rootReal, absPath);
   await ensureNotDirectory(absPath);
-  await atomicWriteFile(absPath, content.endsWith("\n") ? content : `${content}\n`, hooks);
+
+  await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
   return entryFromAbs(root, absPath, "file");
 };
 
@@ -253,10 +413,12 @@ export const renameEntry = async (
   newName: string,
   hooks?: FsMutationHooks,
 ): Promise<FileEntry> => {
-  const { root, absPath } = await resolveInsideRoot(id);
+  const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
-  const stats = await stat(absPath);
-  const isDirectory = stats.isDirectory();
+  const lst = await lstat(absPath);
+  if (lst.isSymbolicLink()) throw errorWithCode("Symlinks not allowed", "INVALID");
+  if (lst.isFile() && lst.nlink > 1) throw errorWithCode("Hardlinks not allowed", "INVALID");
+  const isDirectory = lst.isDirectory();
 
   if (!isDirectory && !isExcalidrawFileName(path.basename(id))) {
     throw new Error("Only .excalidraw files can be renamed");
@@ -271,32 +433,35 @@ export const renameEntry = async (
   const nameWithExt = isDirectory || isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
   const nextAbs = path.join(path.dirname(absPath), nameWithExt);
 
-  assertInsideRoot(root, nextAbs);
+  if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
+
+  const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
+  await assertParentsNotSymlinks(root, rootReal, nextAbs);
 
   if (nextAbs === absPath) {
     return entryFromAbs(root, absPath, isDirectory ? "directory" : "file");
   }
 
-  const exists = await stat(nextAbs).catch(() => null);
+  const exists = await lstat(nextAbs).catch(() => null);
   if (exists) throw new Error("A file or folder with that name already exists");
 
   const kind = isDirectory ? "directory" : "file";
 
   if (nextAbs.toLowerCase() === absPath.toLowerCase()) {
-    const tempAbs = `${absPath}.renaming-${process.pid}-${Date.now()}`;
-    hooks?.beforeMutate?.([absPath, tempAbs, nextAbs]);
-    await rename(absPath, tempAbs);
+    const tempAbs = `${candidateReal}.renaming-${process.pid}-${Date.now()}`;
+    hooks?.beforeMutate?.([candidateReal, tempAbs, nextReal]);
+    await rename(candidateReal, tempAbs);
     try {
-      await rename(tempAbs, nextAbs);
+      await rename(tempAbs, nextReal);
     } catch (error) {
-      await rename(tempAbs, absPath).catch(() => {});
+      await rename(tempAbs, candidateReal).catch(() => {});
       throw error;
     }
     return entryFromAbs(root, nextAbs, kind);
   }
 
-  hooks?.beforeMutate?.([absPath, nextAbs]);
-  await rename(absPath, nextAbs);
+  hooks?.beforeMutate?.([candidateReal, nextReal]);
+  await rename(candidateReal, nextReal);
   return entryFromAbs(root, nextAbs, kind);
 };
 
@@ -313,29 +478,38 @@ export const createEntry = async (
   }
 
   const root = await requireDrawingsRoot();
+  const rootReal = await getCanonicalRoot();
 
   let parentAbs = root;
   if (parentId !== null) {
-    parentAbs = path.resolve(root, ...parentId.split("/"));
-    assertInsideRoot(root, parentAbs);
-    const parentStats = await stat(parentAbs).catch(() => null);
-    if (!parentStats || !parentStats.isDirectory()) {
+    const normalizedParent = normalizeId(parentId);
+    assertSafeIdString(normalizedParent);
+    parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
+    if (!contains(path.resolve(root), parentAbs)) throw new Error("Path escapes drawings root");
+
+    await assertInsideRealRoot(rootReal, parentAbs);
+    await assertParentsNotSymlinks(root, rootReal, parentAbs);
+    const parentStats = await lstat(parentAbs).catch(() => null);
+    if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
       throw errorWithCode("Parent folder not found", "NOT_FOUND");
     }
   }
 
   const nameForFs = kind === "file" && !isExcalidrawFileName(leaf) ? `${leaf}.excalidraw` : leaf;
   const nextAbs = path.join(parentAbs, nameForFs);
-  assertInsideRoot(root, nextAbs);
+  if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
 
-  const exists = await stat(nextAbs).catch(() => null);
+  const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
+  await assertParentsNotSymlinks(root, rootReal, nextAbs);
+
+  const exists = await lstat(nextAbs).catch(() => null);
   if (exists) throw new Error("A file or folder with that name already exists");
 
   if (kind === "directory") {
-    hooks?.beforeMutate?.([nextAbs]);
-    await mkdir(nextAbs);
+    hooks?.beforeMutate?.([nextReal]);
+    await mkdir(nextReal);
   } else {
-    await atomicWriteFile(nextAbs, `${EMPTY_DRAWING_CONTENT}\n`, hooks);
+    await atomicWriteFile(nextReal, `${EMPTY_DRAWING_CONTENT}\n`, hooks);
   }
 
   return entryFromAbs(root, nextAbs, kind);
@@ -347,19 +521,27 @@ export const deleteEntry = async (
   hooks?: FsMutationHooks,
   trashItem?: (path: string) => Promise<void>,
 ): Promise<void> => {
-  const { root, absPath } = await resolveInsideRoot(id);
+  const { rootReal, candidateReal } = await resolveInsideRoot(id);
 
-  if (absPath === root) throw new Error("Cannot delete drawings root");
+  if (candidateReal === rootReal) throw new Error("Cannot delete drawings root");
 
-  hooks?.beforeMutate?.([absPath]);
+  hooks?.beforeMutate?.([candidateReal]);
+
+  const lst = await lstat(candidateReal).catch(() => null);
+  if (!lst) return;
+
+  if (lst.isSymbolicLink()) {
+    await unlink(candidateReal);
+    return;
+  }
 
   if (mode === "permanent") {
-    await rm(absPath, { recursive: true, force: false });
+    await rm(candidateReal, { recursive: true, force: false, maxRetries: 2 });
     return;
   }
 
   if (!trashItem) throw errorWithCode("Trash is unavailable", "UNKNOWN");
-  await trashItem(absPath);
+  await trashItem(candidateReal);
 };
 
 export const listEntries = async (root?: string): Promise<FileEntry[]> => {
@@ -367,13 +549,19 @@ export const listEntries = async (root?: string): Promise<FileEntry[]> => {
   if (!info.configured || !info.path) return [];
 
   const configured = path.resolve(info.path);
+  const canonicalConfigured = await realpath(configured).catch(() => null);
+  if (!canonicalConfigured) return [];
+
   if (root) {
     const resolved = path.resolve(root);
-    if (resolved !== configured) {
+    const realRequested = await realpath(resolved).catch(() => null);
+    const inside =
+      realRequested !== null
+        ? contains(canonicalConfigured, realRequested)
+        : contains(configured, resolved);
+    if (!inside) {
       throw new Error("Path escapes drawings root");
     }
-
-    return walkEntries(resolved);
   }
 
   return walkEntries(configured);

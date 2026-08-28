@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { resolve, basename } from "node:path";
 
 import { DrawingInfo } from "@shared/ipc";
@@ -26,14 +26,15 @@ export const getDrawings = async (): Promise<DrawingInfo> => {
   };
 
   try {
-    const stats = await stat(resolved);
+    const canonical = await realpath(resolved);
+    const stats = await stat(canonical);
     if (!stats.isDirectory()) {
       return def;
     }
 
     return {
-      path: resolved,
-      displayName: basename(resolved),
+      path: canonical,
+      displayName: basename(canonical),
       configured: true,
       missing: false,
     };

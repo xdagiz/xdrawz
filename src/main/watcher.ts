@@ -1,4 +1,4 @@
-import { stat as fsStat } from "node:fs/promises";
+import { realpath, stat as fsStat } from "node:fs/promises";
 import path from "node:path";
 
 import type { DrawingInfo, FileEntry } from "@shared/ipc";
@@ -101,7 +101,8 @@ export const createDrawingsWatcher = (
   const isHiddenWithinRoot = (absPath: string): boolean => {
     const root = currentRoot;
     if (!root) return DOT_FILE_RE.test(absPath);
-    const relative = absPath.startsWith(root) ? absPath.slice(root.length) : absPath;
+    const relative = path.relative(root, absPath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return true;
     return DOT_FILE_RE.test(relative);
   };
 
@@ -223,14 +224,15 @@ export const createDrawingsWatcher = (
 
   const start = async (root: string) => {
     const resolvedRoot = normalizePath(root);
+    const canonicalRoot = await realpath(resolvedRoot).catch(() => resolvedRoot);
 
-    if (chokidarInstance && currentRoot === resolvedRoot) return;
+    if (chokidarInstance && currentRoot === canonicalRoot) return;
     if (chokidarInstance) await stopInternal();
 
     stopped = false;
-    currentRoot = resolvedRoot;
+    currentRoot = canonicalRoot;
 
-    chokidarInstance = watch(resolvedRoot, {
+    chokidarInstance = watch(canonicalRoot, {
       ignoreInitial: true,
       persistent: true,
       awaitWriteFinish: {
@@ -238,14 +240,15 @@ export const createDrawingsWatcher = (
         pollInterval: 50,
       },
       ignored: (testPath: string) => {
-        if (testPath === resolvedRoot) return false;
-        const relative = testPath.startsWith(resolvedRoot)
-          ? testPath.slice(resolvedRoot.length)
-          : testPath;
+        if (testPath === canonicalRoot) return false;
+        const relative = path.relative(canonicalRoot, testPath);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) return true;
         return DOT_FILE_RE.test(relative);
       },
       ignorePermissionErrors: true,
       atomic: true,
+      followSymlinks: false,
+      depth: 99,
     });
 
     chokidarInstance.on("all", handleChokidarEvent);

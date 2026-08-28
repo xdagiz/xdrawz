@@ -266,6 +266,41 @@ describe("createDrawingsWatcher", () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
+  it("configures chokidar with followSymlinks disabled and depth capped", async () => {
+    const fakeWatcher = createFakeWatcher();
+    let captured: Record<string, unknown> | null = null;
+    const watchSpy = (_root: string, opts: Record<string, unknown>) => {
+      captured = opts;
+      return fakeWatcher;
+    };
+
+    const { watcher } = setupWatcher({
+      overrideDeps: { watch: watchSpy as unknown as WatcherDeps["watch"] },
+    });
+
+    await watcher.start("/tmp/xdrawz-roots");
+
+    expect(captured).not.toBeNull();
+    expect(captured!.followSymlinks).toBe(false);
+    expect(captured!.depth).toBe(99);
+    expect(captured!.ignorePermissionErrors).toBe(true);
+    expect(captured!.atomic).toBe(true);
+  });
+
+  it("drops events whose path shares a prefix with the root but lies outside it", async () => {
+    const { watcher, fakeWatcher, onChange } = setupWatcher();
+
+    await watcher.start("/tmp/xdrawz");
+
+    void fakeWatcher._emit("change", "/tmp/xdrawz-evil/.secret.excalidraw");
+    await tick(60);
+    expect(onChange).not.toHaveBeenCalled();
+
+    void fakeWatcher._emit("change", "/tmp/xdrawz/a.excalidraw");
+    await tick(60);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps revision monotonic across restart", async () => {
     const { watcher, fakeWatcher } = setupWatcher();
 

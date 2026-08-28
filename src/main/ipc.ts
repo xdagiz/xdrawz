@@ -209,6 +209,9 @@ const requireString = (value: unknown, field: string) => {
   if (typeof value !== "string" || value.length === 0) {
     throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
   }
+  if (value.includes("\0")) {
+    throw errorWithCode(`${field} must not contain null bytes`, "INVALID");
+  }
   return value;
 };
 
