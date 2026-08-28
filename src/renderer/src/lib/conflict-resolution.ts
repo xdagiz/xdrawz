@@ -3,6 +3,7 @@ import type { FileEntry } from "@shared/ipc";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { isCloseHandshakeActive } from "@/lib/close-handshake";
 import {
+  conflictBelongsTo,
   conflictKeyOf,
   createSingleFlight,
   type ExternalConflict,
@@ -18,7 +19,6 @@ export type ConflictSlice = {
   dirtyById: Record<string, true>;
   error: AppError | null;
   externalConflict: ExternalConflict;
-  dismissedConflictKey: string | null;
 };
 
 const runChangedDialog = createSingleFlight<"reload" | "overwrite" | "cancel">();
@@ -29,6 +29,7 @@ type ResolverDeps = {
   set: (patch: Partial<ConflictSlice>) => void;
   reloadOpenFileFromDisk: () => void;
   discardMissingOpenFile: () => void;
+  commitEntries: (entries: FileEntry[]) => FileEntry[];
 };
 
 export type SaveGate = { action: "proceed" } | { action: "stop"; result: boolean };
@@ -36,6 +37,7 @@ export type SaveGate = { action: "proceed" } | { action: "stop"; result: boolean
 export const createConflictResolver = (deps: ResolverDeps) => {
   const { get, set } = deps;
   let pendingRecoverContent: string | undefined;
+  let dismissedKey: string | null = null;
 
   const performRecover = async (fileId: string, body: string) => {
     try {
@@ -44,7 +46,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
       set({
         error: null,
         externalConflict: null,
-        entries,
+        entries: deps.commitEntries(entries),
         dirtyById: removeKey(get().dirtyById, fileId),
       });
       return true;
@@ -61,7 +63,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     if (!conflict || conflict.type !== "changed") return "cancel";
 
     const key = conflictKeyOf(conflict);
-    if (!force && state.dismissedConflictKey === key) return "cancel";
+    if (!force && dismissedKey === key) return "cancel";
 
     const fileName = fileNameOf(state.entries, conflict.fileId);
     const expectedFileId = conflict.fileId;
@@ -75,12 +77,13 @@ export const createConflictResolver = (deps: ResolverDeps) => {
       }
 
       if (choice === "reload") {
-        set({ dismissedConflictKey: null });
+        dismissedKey = null;
         deps.reloadOpenFileFromDisk();
       } else if (choice === "overwrite") {
-        set({ externalConflict: null, dismissedConflictKey: null });
+        dismissedKey = null;
+        set({ externalConflict: null });
       } else {
-        set({ dismissedConflictKey: conflictKeyOf(current) });
+        dismissedKey = conflictKeyOf(current);
       }
 
       return choice;
@@ -99,7 +102,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     if (!conflict || conflict.type !== "missing") return "cancel";
 
     const key = conflictKeyOf(conflict);
-    if (!force && state.dismissedConflictKey === key) return "cancel";
+    if (!force && dismissedKey === key) return "cancel";
 
     const fileName = fileNameOf(state.entries, conflict.fileId);
     const expectedFileId = conflict.fileId;
@@ -114,12 +117,12 @@ export const createConflictResolver = (deps: ResolverDeps) => {
         }
 
         if (choice === "cancel") {
-          set({ dismissedConflictKey: conflictKeyOf(current) });
+          dismissedKey = conflictKeyOf(current);
           return "cancel";
         }
 
         if (choice === "discard") {
-          set({ dismissedConflictKey: null });
+          dismissedKey = null;
           deps.discardMissingOpenFile();
           return "discard";
         }
@@ -132,7 +135,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
           return "cancel";
         }
 
-        set({ dismissedConflictKey: null });
+        dismissedKey = null;
         const ok = await performRecover(expectedFileId, body);
         return ok ? ("recover" as const) : ("cancel" as const);
       } finally {
@@ -151,7 +154,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     if (origin !== "explicit") return { action: "stop", result: false };
 
     if (isCloseHandshakeActive()) {
-      set({ dismissedConflictKey: null });
+      dismissedKey = null;
       return { action: "stop", result: false };
     }
 
@@ -179,10 +182,29 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     return performRecover(conflict.fileId, body);
   };
 
+  const resetConflicts = () => {
+    dismissedKey = null;
+    set({ externalConflict: null });
+  };
+
+  const syncDismissal = (next: ExternalConflict): void => {
+    const nextKey = next ? conflictKeyOf(next) : null;
+    if (nextKey !== dismissedKey) dismissedKey = null;
+  };
+
+  const clearDismissalIfOwned = (fileId: string): boolean => {
+    const owns = conflictBelongsTo(get().externalConflict, dismissedKey, fileId);
+    if (owns) dismissedKey = null;
+    return owns;
+  };
+
   return {
     gateConflictedSave,
     recoverMissingOpenFile,
     resolveChangedConflict,
     resolveMissingConflict,
+    resetConflicts,
+    clearDismissalIfOwned,
+    syncDismissal,
   };
 };

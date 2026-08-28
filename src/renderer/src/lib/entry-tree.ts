@@ -1,4 +1,4 @@
-import type { FileEntry } from "@shared/ipc";
+import { type FileEntry, sortFileEntries } from "@shared/ipc";
 
 const isAncestorId = (ancestorId: string, id: string): boolean =>
   id !== ancestorId && id.startsWith(`${ancestorId}/`);
@@ -54,9 +54,7 @@ export const applySubtreeRemap = (
     };
   });
 
-  const entries = opts?.sort
-    ? nextEntries.toSorted((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }))
-    : nextEntries;
+  const entries = opts?.sort ? sortFileEntries(nextEntries) : nextEntries;
 
   const openFileId = remapNullableId(state.openFileId, oldRoot, newRoot);
 

@@ -32,6 +32,12 @@ export const parentIdOf = (id: string): string | null => {
   return idx === -1 ? null : id.slice(0, idx);
 };
 
+export const compareEntryIds = (a: string, b: string): number =>
+  a.localeCompare(b, undefined, { sensitivity: "base" });
+
+export const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
+  entries.toSorted((a, b) => compareEntryIds(a.id, b.id));
+
 export type DrawingsSnapshot = {
   info: DrawingInfo;
   entries: FileEntry[];

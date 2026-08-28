@@ -1,7 +1,8 @@
+import { sortFileEntries } from "@shared/ipc";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ConflictSlice } from "./conflict-resolution";
-import { conflictKeyOf, type ExternalConflict } from "./conflicts";
+import { type ExternalConflict } from "./conflicts";
 
 const handshake = { active: false };
 
@@ -31,7 +32,6 @@ const makeHarness = async (overrides: Partial<ConflictSlice> = {}) => {
     dirtyById: { "a.excalidraw": true },
     error: null,
     externalConflict: null,
-    dismissedConflictKey: null,
     ...overrides,
   };
 
@@ -47,9 +47,22 @@ const makeHarness = async (overrides: Partial<ConflictSlice> = {}) => {
     set: (patch) => Object.assign(slice, patch),
     reloadOpenFileFromDisk: calls.reload,
     discardMissingOpenFile: calls.discard,
+    commitEntries: sortFileEntries,
   });
 
-  return { slice, dialog, files, calls, resolver };
+  const dismissChanged = async () => {
+    dialog.fileChanged.mockResolvedValue("cancel");
+    await resolver.resolveChangedConflict();
+    dialog.fileChanged.mockClear();
+  };
+
+  const dismissMissing = async () => {
+    dialog.fileRecover.mockResolvedValue("cancel");
+    await resolver.resolveMissingConflict();
+    dialog.fileRecover.mockClear();
+  };
+
+  return { slice, dialog, files, calls, resolver, dismissChanged, dismissMissing };
 };
 
 afterEach(() => {
@@ -68,10 +81,10 @@ describe("resolveChangedConflict", () => {
 
   it("cancels on a dismissed key unless forced", async () => {
     const conflict = changedAt(200);
-    const { dialog, resolver } = await makeHarness({
+    const { dialog, resolver, dismissChanged } = await makeHarness({
       externalConflict: conflict,
-      dismissedConflictKey: conflictKeyOf(conflict as NonNullable<ExternalConflict>),
     });
+    await dismissChanged();
 
     expect(await resolver.resolveChangedConflict()).toBe("cancel");
     expect(dialog.fileChanged).not.toHaveBeenCalled();
@@ -81,30 +94,33 @@ describe("resolveChangedConflict", () => {
     expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("reloads on choice and clears the dismissed key", async () => {
+  it("reloads on choice and clears the dismissal", async () => {
     const conflict = changedAt(200);
-    const { dialog, calls, slice, resolver } = await makeHarness({
+    const { dialog, calls, resolver, dismissChanged } = await makeHarness({
       externalConflict: conflict,
-      dismissedConflictKey: conflictKeyOf(conflict as NonNullable<ExternalConflict>),
     });
+    await dismissChanged();
     dialog.fileChanged.mockResolvedValue("reload");
 
     expect(await resolver.resolveChangedConflict({ force: true })).toBe("reload");
     expect(calls.reload).toHaveBeenCalledTimes(1);
-    expect(slice.dismissedConflictKey).toBeNull();
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
+
+    dialog.fileChanged.mockResolvedValue("cancel");
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(2);
   });
 
   it("clears the conflict on overwrite", async () => {
     const conflict = changedAt(200);
-    const { dialog, slice, resolver } = await makeHarness({
+    const { dialog, slice, resolver, dismissChanged } = await makeHarness({
       externalConflict: conflict,
-      dismissedConflictKey: conflictKeyOf(conflict as NonNullable<ExternalConflict>),
     });
+    await dismissChanged();
     dialog.fileChanged.mockResolvedValue("overwrite");
 
     expect(await resolver.resolveChangedConflict({ force: true })).toBe("overwrite");
     expect(slice.externalConflict).toBeNull();
-    expect(slice.dismissedConflictKey).toBeNull();
   });
 
   it("records the dismissal on cancel", async () => {
@@ -115,10 +131,10 @@ describe("resolveChangedConflict", () => {
     dialog.fileChanged.mockResolvedValue("cancel");
 
     expect(await resolver.resolveChangedConflict()).toBe("cancel");
-    expect(slice.dismissedConflictKey).toBe(
-      conflictKeyOf(conflict as NonNullable<ExternalConflict>),
-    );
     expect(slice.externalConflict).toEqual(conflict);
+
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
   });
 
   it("single-flights concurrent dialogs into one prompt with one outcome", async () => {
@@ -161,27 +177,28 @@ describe("resolveMissingConflict", () => {
     expect(slice.error).toBeNull();
   });
 
-  it("discards via the dependency and clears the dismissed key", async () => {
-    const { dialog, calls, slice, resolver } = await makeHarness({
+  it("discards via the dependency and clears the dismissal", async () => {
+    const { dialog, calls, resolver, dismissMissing } = await makeHarness({
       externalConflict: missing,
     });
+    await dismissMissing();
     dialog.fileRecover.mockResolvedValue("discard");
 
-    expect(await resolver.resolveMissingConflict("<json/>")).toBe("discard");
+    expect(await resolver.resolveMissingConflict("<json/>", { force: true })).toBe("discard");
     expect(calls.discard).toHaveBeenCalledTimes(1);
-    expect(slice.dismissedConflictKey).toBeNull();
+    expect(dialog.fileRecover).toHaveBeenCalledTimes(1);
   });
 
   it("dismisses the key on cancel", async () => {
-    const { dialog, slice, resolver } = await makeHarness({
+    const { dialog, resolver } = await makeHarness({
       externalConflict: missing,
     });
     dialog.fileRecover.mockResolvedValue("cancel");
 
     expect(await resolver.resolveMissingConflict("<json/>")).toBe("cancel");
-    expect(slice.dismissedConflictKey).toBe(
-      conflictKeyOf(missing as NonNullable<ExternalConflict>),
-    );
+
+    expect(await resolver.resolveMissingConflict("<json/>")).toBe("cancel");
+    expect(dialog.fileRecover).toHaveBeenCalledTimes(1);
   });
 
   it("fails softly when there is nothing to recover", async () => {
@@ -216,10 +233,10 @@ describe("gateConflictedSave", () => {
   });
 
   it("forces the overwrite dialog for explicit saves against a changed file", async () => {
-    const { dialog, resolver } = await makeHarness({
+    const { dialog, resolver, dismissChanged } = await makeHarness({
       externalConflict: changedAt(200),
-      dismissedConflictKey: conflictKeyOf(changedAt(200) as NonNullable<ExternalConflict>),
     });
+    await dismissChanged();
     dialog.fileChanged.mockResolvedValue("overwrite");
 
     expect(await resolver.gateConflictedSave("a.excalidraw", "<json/>", "explicit")).toEqual({
@@ -228,19 +245,23 @@ describe("gateConflictedSave", () => {
     expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("blocks saves during the close handshake", async () => {
+  it("blocks saves during the close handshake and clears the dismissal", async () => {
     handshake.active = true;
-    const { dialog, slice, resolver } = await makeHarness({
+    const { dialog, resolver, dismissChanged } = await makeHarness({
       externalConflict: changedAt(200),
-      dismissedConflictKey: "changed:a.excalidraw:1",
     });
+    await dismissChanged();
 
     expect(await resolver.gateConflictedSave("a.excalidraw", "<json/>", "explicit")).toEqual({
       action: "stop",
       result: false,
     });
-    expect(slice.dismissedConflictKey).toBeNull();
     expect(dialog.fileChanged).not.toHaveBeenCalled();
+
+    handshake.active = false;
+    dialog.fileChanged.mockResolvedValue("cancel");
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
   });
 
   it("reports failure when recovery of a missing explicit save is cancelled", async () => {
@@ -264,5 +285,88 @@ describe("recoverMissingOpenFile", () => {
 
     expect(await resolver.recoverMissingOpenFile()).toBe(false);
     expect(slice.error).not.toBeNull();
+  });
+});
+
+describe("resetConflicts", () => {
+  it("clears the active conflict and the dismissal", async () => {
+    const { dialog, slice, resolver, dismissChanged } = await makeHarness({
+      externalConflict: changedAt(200),
+    });
+    await dismissChanged();
+
+    resolver.resetConflicts();
+
+    expect(slice.externalConflict).toBeNull();
+
+    slice.externalConflict = changedAt(200);
+    dialog.fileChanged.mockResolvedValue("cancel");
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("clearDismissalIfOwned", () => {
+  it("clears a dismissal belonging to the file and reports ownership", async () => {
+    const { slice, resolver, dismissChanged } = await makeHarness({
+      externalConflict: changedAt(200),
+    });
+    await dismissChanged();
+    slice.externalConflict = null;
+
+    expect(resolver.clearDismissalIfOwned("a.excalidraw")).toBe(true);
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+  });
+
+  it("returns false when the dismissal belongs to another file", async () => {
+    const { slice, resolver, dismissChanged } = await makeHarness({
+      externalConflict: changedAt(200),
+    });
+    await dismissChanged();
+    slice.externalConflict = null;
+
+    expect(resolver.clearDismissalIfOwned("b.excalidraw")).toBe(false);
+  });
+});
+
+describe("syncDismissal", () => {
+  it("keeps the dismissal when the same conflict key recurs", async () => {
+    const conflict = changedAt(200);
+    const { dialog, resolver, dismissChanged } = await makeHarness({
+      externalConflict: conflict,
+    });
+    await dismissChanged();
+
+    resolver.syncDismissal(changedAt(200));
+
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+    expect(dialog.fileChanged).not.toHaveBeenCalled();
+  });
+
+  it("clears the dismissal when the conflict key changes", async () => {
+    const { dialog, resolver, dismissChanged } = await makeHarness({
+      externalConflict: changedAt(200),
+    });
+    await dismissChanged();
+
+    resolver.syncDismissal(changedAt(500));
+
+    dialog.fileChanged.mockResolvedValue("cancel");
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the dismissal when the conflict resolves", async () => {
+    const { slice, dialog, resolver, dismissChanged } = await makeHarness({
+      externalConflict: changedAt(200),
+    });
+    await dismissChanged();
+
+    resolver.syncDismissal(null);
+
+    slice.externalConflict = changedAt(200);
+    dialog.fileChanged.mockResolvedValue("cancel");
+    expect(await resolver.resolveChangedConflict()).toBe("cancel");
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
   });
 });

@@ -17,7 +17,6 @@ const baseState = () => ({
   openFileId: null,
   dirtyById: {},
   externalConflict: null,
-  dismissedConflictKey: null,
   editorGeneration: 0,
 });
 
@@ -129,25 +128,6 @@ describe("reduceEntries", () => {
     };
     const kept = reduceEntries(conflicted, event([]));
     expect(kept.dirtyById).toEqual({ "a.excalidraw": true });
-  });
-
-  it("retains a dismissal only when the same conflict key recurs", () => {
-    const key = conflictKeyOf({ type: "changed", fileId: "a.excalidraw", diskModifiedAt: 200 });
-    const state = {
-      ...baseState(),
-      openFileId: "a.excalidraw",
-      dirtyById: { "a.excalidraw": true as const },
-      dismissedConflictKey: key,
-    };
-
-    const same = reduceEntries(state, event([["a.excalidraw", 200]]));
-    expect(same.dismissedConflictKey).toBe(key);
-
-    const other = reduceEntries(state, event([["a.excalidraw", 500]]));
-    expect(other.dismissedConflictKey).toBeNull();
-
-    const none = reduceEntries({ ...baseState(), dismissedConflictKey: key }, event([]));
-    expect(none.dismissedConflictKey).toBeNull();
   });
 
   it("clears the conflict for a clean open file even when one existed", () => {

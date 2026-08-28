@@ -50,7 +50,6 @@ export type EntryReductionState = {
   openFileId: string | null;
   dirtyById: Record<string, true>;
   externalConflict: ExternalConflict;
-  dismissedConflictKey: string | null;
   editorGeneration: number;
 };
 
@@ -131,16 +130,11 @@ export const reduceEntries = (
     if (!entries.some((e) => e.id === id)) delete nextDirty[id];
   }
 
-  const nextKey = externalConflict ? conflictKeyOf(externalConflict) : null;
-  const dismissedConflictKey =
-    nextKey && state.dismissedConflictKey === nextKey ? state.dismissedConflictKey : null;
-
   return {
     entries,
     openFileId: nextOpenFileId,
     dirtyById: nextDirty,
     externalConflict,
     editorGeneration: nextEditorGeneration,
-    dismissedConflictKey,
   };
 };

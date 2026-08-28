@@ -18,6 +18,7 @@ import {
   parentIdOf,
   type FileDeleteMode,
   type FileEntry,
+  sortFileEntries,
 } from "@shared/ipc";
 
 import { getDrawings } from "./drawings";
@@ -265,7 +266,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
   };
 
   await walk(root);
-  return out.toSorted((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base" }));
+  return sortFileEntries(out);
 };
 
 const requireDrawingsRoot = async (): Promise<string> => {

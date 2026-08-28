@@ -9,18 +9,19 @@ import type {
   UnsavedReason,
   WatcherErrorEvent,
 } from "@shared/ipc";
-import { DEFAULT_SETTINGS, FILE_NOT_FOUND_MESSAGE, type FileDeleteMode } from "@shared/ipc";
+import {
+  DEFAULT_SETTINGS,
+  FILE_NOT_FOUND_MESSAGE,
+  compareEntryIds,
+  type FileDeleteMode,
+  sortFileEntries,
+} from "@shared/ipc";
 import { create } from "zustand";
 
 import { toast } from "@/components/ui/toast";
 import { saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createConflictResolver } from "@/lib/conflict-resolution";
-import {
-  conflictBelongsTo,
-  reduceEntries,
-  removeKey,
-  type ExternalConflict,
-} from "@/lib/conflicts";
+import { reduceEntries, removeKey, type ExternalConflict } from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
 import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree, remapId } from "@/lib/entry-tree";
 import {
@@ -51,7 +52,7 @@ const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.i
   let high = withoutOld.length;
   while (low < high) {
     const mid = (low + high) >> 1;
-    if (withoutOld[mid].id.localeCompare(entry.id, undefined, { sensitivity: "base" }) < 0) {
+    if (compareEntryIds(withoutOld[mid].id, entry.id) < 0) {
       low = mid + 1;
     } else {
       high = mid;
@@ -105,11 +106,9 @@ export type State = {
   homeReturnFileId: string | null;
   dirtyById: Record<string, true>;
   error: AppError | null;
-  filesRevision: number;
   externalConflict: ExternalConflict;
   watcherDown: string | null;
   editorGeneration: number;
-  dismissedConflictKey: string | null;
   settings: AppSettings;
   settingsDialogOpen: boolean;
   loadSnapshot: (snapshot: DrawingsSnapshot, recentFileIdsJson?: string | null) => void;
@@ -147,6 +146,9 @@ export const useStore = create<State>((set, get) => {
     recoverMissingOpenFile,
     resolveChangedConflict,
     resolveMissingConflict,
+    resetConflicts,
+    clearDismissalIfOwned,
+    syncDismissal,
   } = createConflictResolver({
     get: () => {
       const s = get();
@@ -156,13 +158,15 @@ export const useStore = create<State>((set, get) => {
         dirtyById: s.dirtyById,
         error: s.error,
         externalConflict: s.externalConflict,
-        dismissedConflictKey: s.dismissedConflictKey,
       };
     },
     set: (patch) => set(patch),
     reloadOpenFileFromDisk: () => get().reloadOpenFileFromDisk(),
     discardMissingOpenFile: () => get().discardMissingOpenFile(),
+    commitEntries: sortFileEntries,
   });
+
+  let filesRevision = 0;
 
   const persistDrawingToDisk = async (
     id: string,
@@ -172,15 +176,11 @@ export const useStore = create<State>((set, get) => {
     try {
       const savedEntry = await window.api.files.write(id, content);
       const latest = get();
-      const ownsConflict = conflictBelongsTo(
-        latest.externalConflict,
-        latest.dismissedConflictKey,
-        id,
-      );
+      const ownsConflict = clearDismissalIfOwned(id);
       set({
         error: null,
-        ...(ownsConflict ? { externalConflict: null, dismissedConflictKey: null } : {}),
-        entries: upsertSorted(latest.entries, savedEntry),
+        ...(ownsConflict ? { externalConflict: null } : {}),
+        entries: sortFileEntries(upsertSorted(latest.entries, savedEntry)),
       });
       toast.close(saveErrorToastId(id));
       return true;
@@ -210,18 +210,17 @@ export const useStore = create<State>((set, get) => {
     homeReturnFileId: null,
     dirtyById: {},
     error: null,
-    filesRevision: 0,
     externalConflict: null,
     watcherDown: null,
     editorGeneration: 0,
-    dismissedConflictKey: null,
     settingsDialogOpen: false,
     settings:
       typeof window !== "undefined"
         ? { ...DEFAULT_SETTINGS, theme: readStoredTheme(window.localStorage) }
         : DEFAULT_SETTINGS,
 
-    loadSnapshot: (snapshot, recentFileIdsJson) =>
+    loadSnapshot: (snapshot, recentFileIdsJson) => {
+      resetConflicts();
       set((state) => {
         const openFileId =
           state.settings.reopenLastDrawing &&
@@ -237,28 +236,29 @@ export const useStore = create<State>((set, get) => {
 
         return {
           drawings: snapshot.info,
-          entries: snapshot.entries,
+          entries: sortFileEntries(snapshot.entries),
           openFileId,
           recentFileIds,
           dirtyById: {},
           error: null,
           watcherDown: null,
-          filesRevision: state.filesRevision,
-          externalConflict: null,
-          dismissedConflictKey: null,
           editorGeneration: state.editorGeneration + 1,
         };
-      }),
+      });
+    },
 
     applyEntries: (event) => {
       const state = get();
-      if (event.revision > 0 && event.revision <= state.filesRevision) return;
+      if (event.revision > 0 && event.revision <= filesRevision) return;
+      const reduced = reduceEntries(state, event);
+      syncDismissal(reduced.externalConflict);
       set({
-        ...reduceEntries(state, event),
+        ...reduced,
+        entries: sortFileEntries(reduced.entries),
         drawings: event.info ?? state.drawings,
-        filesRevision: event.revision,
         watcherDown: null,
       });
+      filesRevision = event.revision;
     },
 
     setOpenFileId: async (fileId) => {
@@ -384,7 +384,7 @@ export const useStore = create<State>((set, get) => {
       const name = nextDefaultName(get().entries, parentId, kind);
       const entry = await window.api.files.create(parentId, name, kind);
       set((state) => ({
-        entries: upsertSorted(state.entries, entry),
+        entries: sortFileEntries(upsertSorted(state.entries, entry)),
         error: null,
       }));
       return entry.id;
@@ -537,6 +537,8 @@ export const useStore = create<State>((set, get) => {
 
       sessionOwner.getSession()?.setAutosavePaused(true);
 
+      resetConflicts();
+
       set({
         drawings: info,
         entries: [],
@@ -545,8 +547,6 @@ export const useStore = create<State>((set, get) => {
         dirtyById: {},
         error: null,
         watcherDown: null,
-        externalConflict: null,
-        dismissedConflictKey: null,
       });
       void window.api.store.set("lastOpenedFileId", null);
 
