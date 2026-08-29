@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 
 import { useStore } from "@/lib/store";
 
-import { HomeGrid } from "./home-grid";
+import { Home } from "./home";
 
 const ExcalidrawEditor = lazy(() =>
   import("@/components/excalidraw-editor").then((m) => ({ default: m.ExcalidrawEditor })),
@@ -13,7 +13,7 @@ export const EditorView = () => {
   const editorGeneration = useStore((s) => s.editorGeneration);
 
   if (!openFileId) {
-    return <HomeGrid />;
+    return <Home />;
   }
 
   return (

@@ -3,6 +3,7 @@ import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
 import { PlusIcon, SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { NoDrawingsEmpty } from "@/components/no-drawings-empty";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
@@ -344,9 +346,15 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
             </SidebarGroupLabel>
             <SidebarGroupContent>
               {entries.length === 0 ? (
-                <p className="text-muted-foreground px-2 py-1.5 text-xs leading-relaxed">
-                  No drawings yet. Use + to create your first one.
-                </p>
+                <div className="flex justify-center py-2">
+                  <NoDrawingsEmpty
+                    action={
+                      <Button onClick={() => void handleCreate(null, "file")}>
+                        Create drawing
+                      </Button>
+                    }
+                  />
+                </div>
               ) : (
                 <TreeContainer
                   tree={tree}
