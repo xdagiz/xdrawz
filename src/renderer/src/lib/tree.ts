@@ -14,23 +14,23 @@ export const sortSiblings = (children: FileEntry[]): FileEntry[] =>
     return collator.compare(a.name, b.name);
   });
 
-export const buildSortedChildIndex = (entries: FileEntry[]): Map<string | null, FileEntry[]> => {
+export const buildSortedChildIndex = (entries: FileEntry[]) => {
   const index = new Map<string | null, FileEntry[]>();
 
   for (const entry of entries) {
     const siblings = index.get(entry.parentId);
-    if (siblings) siblings.push(entry);
-    else index.set(entry.parentId, [entry]);
+    if (siblings) {
+      siblings.push(entry);
+    } else {
+      index.set(entry.parentId, [entry]);
+    }
   }
 
-  for (const [parent, children] of index) {
-    index.set(parent, sortSiblings(children));
-  }
-
+  for (const [parent, children] of index) index.set(parent, sortSiblings(children));
   return index;
 };
 
-export const buildEntriesById = (entries: FileEntry[]): Map<string, FileEntry> => {
+export const buildEntriesById = (entries: FileEntry[]) => {
   const map = new Map<string, FileEntry>();
   for (const entry of entries) map.set(entry.id, entry);
   return map;
@@ -38,16 +38,11 @@ export const buildEntriesById = (entries: FileEntry[]): Map<string, FileEntry> =
 
 export const TYPEAHEAD_RESET_MS = 500;
 
-export const findTypeaheadMatch = (
-  names: string[],
-  startIndex: number,
-  query: string,
-): number | null => {
+export const findTypeaheadMatch = (names: string[], startIndex: number, query: string) => {
   const count = names.length;
   if (!query || count === 0) return null;
 
   const needle = query.toLowerCase();
-
   for (let step = 1; step <= count; step += 1) {
     const index = (startIndex + step) % count;
     if (names[index].toLowerCase().startsWith(needle)) return index;
@@ -56,7 +51,7 @@ export const findTypeaheadMatch = (
   return null;
 };
 
-export const ancestorIdsOf = (id: string): string[] => {
+export const ancestorIdsOf = (id: string) => {
   const out: string[] = [];
   let current = parentIdOf(id);
 
@@ -92,7 +87,7 @@ export const readExpandedFolderIds = (storage: StorageReader): Set<string> => {
   }
 };
 
-export const writeExpandedFolderIds = (storage: StorageWriter, ids: Iterable<string>): void => {
+export const writeExpandedFolderIds = (storage: StorageWriter, ids: Iterable<string>) => {
   try {
     storage.setItem(EXPANDED_FOLDERS_STORAGE_KEY, JSON.stringify([...ids]));
   } catch {

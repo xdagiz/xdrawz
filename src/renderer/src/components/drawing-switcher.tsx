@@ -20,7 +20,7 @@ type DrawingSwitcherProps = {
   onCancel: () => void;
 };
 
-const labelOf = (entry: FileEntry): string => stripExcalidraw(entry.name);
+const labelOf = (entry: FileEntry) => stripExcalidraw(entry.name);
 
 export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherProps) => {
   const resolvedTheme = useTheme();
@@ -54,7 +54,6 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
   if (!focusEntry) return null;
 
   const canvasBg = resolvedTheme === "dark" ? THUMBNAIL_CANVAS_BG.dark : THUMBNAIL_CANVAS_BG.light;
-
   const focusPreview = resolveThumbnailPreview(focusEntry.id, resolvedTheme);
 
   return (
@@ -88,13 +87,13 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
               </span>
             )}
           </div>
+
           <p className="truncate text-center text-sm font-medium">{labelOf(focusEntry)}</p>
 
           <div className="flex flex-wrap justify-center gap-1.5">
             {candidates.map((entry, tileIndex) => {
               const preview = resolveThumbnailPreview(entry.id, resolvedTheme);
               const activeTile = tileIndex === highlighted;
-
               return (
                 <button
                   key={entry.id}

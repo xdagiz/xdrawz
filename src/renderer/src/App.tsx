@@ -58,7 +58,7 @@ const App = () => {
   }, [pickAndSwitchFolder]);
 
   useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
-  useHotkey("Mod+W", () => void setOpenFileId(null));
+  useHotkey("Mod+W", () => void setOpenFileId(null), { requireReset: true });
   useHotkey("Mod+K", () => setPaletteOpen((current) => !current));
 
   useEffect(() => {
@@ -160,14 +160,11 @@ const App = () => {
       if (externalConflict.type === "changed") {
         const choice = await resolveChangedConflict();
         if (choice === "cancel") return;
-
         if (choice === "overwrite") await overwriteOpenFileFromSession();
         return;
       }
 
-      if (externalConflict.type === "missing") {
-        await resolveMissingConflict();
-      }
+      if (externalConflict.type === "missing") await resolveMissingConflict();
     })();
   }, [
     externalConflict,

@@ -11,7 +11,7 @@ const RECENCY_TERM_SPAN_MS = 30 * 24 * 60 * 60 * 1000;
 
 const WORD_SEPARATOR = /[\s\-_./\\()[\]]/;
 
-export const fuzzyScore = (query: string, text: string): number => {
+export const fuzzyScore = (query: string, text: string) => {
   const needle = query.toLowerCase();
   const haystack = text.toLowerCase();
 
@@ -37,7 +37,7 @@ export const fuzzyScore = (query: string, text: string): number => {
   return score;
 };
 
-const recencyTerm = (recency: number, newestRecency: number): number => {
+const recencyTerm = (recency: number, newestRecency: number) => {
   const ageBehindNewest = newestRecency - recency;
   if (ageBehindNewest <= 0) return RECENCY_TERM_WEIGHT;
   if (ageBehindNewest >= RECENCY_TERM_SPAN_MS) return 0;

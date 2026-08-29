@@ -19,7 +19,7 @@ const collectFontFiles = (dir: string): string[] =>
     return entry.isDirectory() ? collectFontFiles(filePath) : [filePath];
   });
 
-const serveFontFile = (req: IncomingMessage, res: ServerResponse, next: () => void): void => {
+const serveFontFile = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
   const pathname = decodeURIComponent(new URL(req.url ?? "/", "http://localhost").pathname);
   const filePath = resolve(excalidrawFontsDir, pathname.replace(/^\/+/, ""));
   if (!filePath.startsWith(excalidrawFontsDir + sep)) {

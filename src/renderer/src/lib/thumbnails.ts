@@ -37,13 +37,13 @@ export const THUMBNAIL_CANVAS_BG = {
   dark: "#121212",
 };
 
-const covers = (record: CacheEntry | undefined, entry: FileEntry): boolean =>
+const covers = (record: CacheEntry | undefined, entry: FileEntry) =>
   record !== undefined && record.mtimeMs === entry.modifiedAt && record.size === entry.size;
 
 export const pickThumbnailVariant = (
   record: Pick<ThumbnailRecord, "light" | "dark">,
   resolvedTheme: ResolvedTheme,
-): string => (resolvedTheme === "dark" ? record.dark : record.light);
+) => (resolvedTheme === "dark" ? record.dark : record.light);
 
 export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore => {
   const records = new Map<string, CacheEntry>();
@@ -52,6 +52,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
   const inFlight = new Set<string>();
   const visible = new Set<string>();
   const known = new Map<string, FileEntry>();
+
   let epoch = 0;
   let running = false;
 
@@ -59,7 +60,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     for (const listener of listeners) listener();
   };
 
-  const generateOne = async (entry: FileEntry, myEpoch: number): Promise<void> => {
+  const generateOne = async (entry: FileEntry, myEpoch: number) => {
     inFlight.add(entry.id);
 
     try {
@@ -83,7 +84,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     }
   };
 
-  const drain = async (deadline?: { timeRemaining: () => number }): Promise<void> => {
+  const drain = async (deadline?: { timeRemaining: () => number }) => {
     if (running) return;
 
     running = true;
@@ -125,7 +126,6 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
 
   return {
     getRecord: (fileId) => records.get(fileId),
-
     isPending: (fileId) => queue.has(fileId) || inFlight.has(fileId),
 
     subscribe: (listener) => {
@@ -205,6 +205,7 @@ const loadExcalidraw = async () => {
   if (!excalidrawModulePromise) {
     excalidrawModulePromise = import("@excalidraw/excalidraw");
   }
+
   return excalidrawModulePromise;
 };
 
@@ -239,7 +240,7 @@ export const generateThumbnailPair: GenerateThumbnails = async (fileId) => {
   };
 };
 
-export const thumbnails: ThumbnailStore = createThumbnailStore({
+export const thumbnails = createThumbnailStore({
   apiFetch: (ids) => window.api.thumbnails.get(ids),
   apiPut: (record) => window.api.thumbnails.put(record),
   generate: generateThumbnailPair,

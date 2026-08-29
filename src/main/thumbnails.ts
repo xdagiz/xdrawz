@@ -8,10 +8,8 @@ import { app } from "electron";
 import { atomicWriteFile } from "./files";
 
 export const THUMBNAIL_CACHE_DIR_NAME = "thumbnails";
-
-const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
-
 export const MAX_THUMBNAIL_DATA_URL_CHARS = 512 * 1024;
+const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 
 const isValidThumbnailDataUrl = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -22,16 +20,19 @@ export type ThumbnailCacheOptions = {
   cacheDir?: string;
 };
 
-export const getThumbnailCacheDir = (): string =>
-  path.join(app.getPath("userData"), THUMBNAIL_CACHE_DIR_NAME);
+export const getThumbnailCacheDir = () => {
+  return path.join(app.getPath("userData"), THUMBNAIL_CACHE_DIR_NAME);
+};
 
-const resolveCacheDir = (opts: ThumbnailCacheOptions): string =>
-  opts.cacheDir ?? getThumbnailCacheDir();
+const resolveCacheDir = (opts: ThumbnailCacheOptions) => {
+  return opts.cacheDir ?? getThumbnailCacheDir();
+};
 
-export const thumbnailKey = (fileId: string): string =>
-  `${Buffer.from(fileId, "utf8").toString("base64url")}.json`;
+export const thumbnailKey = (fileId: string) => {
+  return `${Buffer.from(fileId, "utf8").toString("base64url")}.json`;
+};
 
-export const decodeThumbnailKey = (fileName: string): string | null => {
+export const decodeThumbnailKey = (fileName: string) => {
   if (!fileName.endsWith(".json")) return null;
 
   const body = fileName.slice(0, -".json".length);
@@ -89,7 +90,7 @@ export const readThumbnailRecords = async (
   return records.flatMap((item) => (item ? [item[1]] : []));
 };
 
-const ensureCacheDir = async (opts: ThumbnailCacheOptions): Promise<string> => {
+const ensureCacheDir = async (opts: ThumbnailCacheOptions) => {
   const dir = resolveCacheDir(opts);
   await mkdir(dir, { recursive: true });
   return dir;
@@ -98,16 +99,18 @@ const ensureCacheDir = async (opts: ThumbnailCacheOptions): Promise<string> => {
 export const writeThumbnailRecord = async (
   record: ThumbnailRecord,
   opts: ThumbnailCacheOptions = {},
-): Promise<void> => {
+) => {
   const dir = await ensureCacheDir(opts);
   await atomicWriteFile(path.join(dir, thumbnailKey(record.fileId)), JSON.stringify(record));
 };
+
+type KeptRecord = { name: string; mtimeMs: number };
 
 export const pruneThumbnailCache = async (
   validIds: Set<string>,
   cap = 2000,
   opts: ThumbnailCacheOptions = {},
-): Promise<{ removed: number }> => {
+) => {
   const dir = resolveCacheDir(opts);
 
   let entries: Dirent[];
@@ -117,7 +120,6 @@ export const pruneThumbnailCache = async (
     return { removed: 0 };
   }
 
-  type KeptRecord = { name: string; mtimeMs: number };
   let removed = 0;
   const removeJobs: Promise<void>[] = [];
   const keptJobs: Promise<KeptRecord | null>[] = [];

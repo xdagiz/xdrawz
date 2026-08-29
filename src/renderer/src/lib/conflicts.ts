@@ -22,7 +22,7 @@ export const conflictBelongsTo = (
   conflict: ExternalConflict,
   dismissedKey: string | null,
   fileId: string,
-): boolean =>
+) =>
   conflict?.fileId === fileId ||
   dismissedKey === `missing:${fileId}` ||
   (dismissedKey?.startsWith(`changed:${fileId}:`) ?? false);
@@ -34,13 +34,13 @@ export const fileNameOf = (entries: FileEntry[], id: string) => {
 
 export const createSingleFlight = <T>() => {
   let inflight: Promise<T> | null = null;
-
   return (task: () => Promise<T>): Promise<T> => {
     if (!inflight) {
       inflight = task().finally(() => {
         inflight = null;
       });
     }
+
     return inflight;
   };
 };
@@ -55,7 +55,7 @@ export type EntryReductionState = {
 
 export type EntryReduction = EntryReductionState;
 
-const isStillPresent = (entries: FileEntry[], fileId: string | null): boolean =>
+const isStillPresent = (entries: FileEntry[], fileId: string | null) =>
   entries.some((e) => e.id === fileId && e.kind === "file");
 
 const findOnDisk = (entries: FileEntry[], fileId: string) => entries.find((e) => e.id === fileId);
@@ -82,7 +82,6 @@ export const reduceEntries = (
     } else if (stillExists && isDirty) {
       const oldEntry = findOnDisk(state.entries, openFileId);
       const newEntry = findOnDisk(entries, openFileId);
-
       if (
         prevConflict?.type === "changed" &&
         prevConflict.fileId === openFileId &&
@@ -119,9 +118,7 @@ export const reduceEntries = (
       }
     }
 
-    if (!stillExists && !isDirty) {
-      nextOpenFileId = null;
-    }
+    if (!stillExists && !isDirty) nextOpenFileId = null;
   }
 
   const nextDirty = { ...dirtyById };

@@ -56,9 +56,9 @@ export function Greeting() {
         <div className="space-y-1.5">
           <h1 className="text-lg font-semibold tracking-tight">Choose your drawings folder</h1>
           <p className="text-muted-foreground max-w-xs text-sm leading-relaxed">
-            xdrawz stores drawings as local{" "}
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">.excalidraw</code>{" "}
-            files. Pick a folder once - xdrawz will use it as your drawings library.
+            xdrawz stores drawings locally.
+            <br />
+            Pick a folder as your drawings library.
           </p>
         </div>
 
@@ -68,7 +68,7 @@ export function Greeting() {
             {picking ? "Choosing…" : "Choose folder"}
           </Button>
           <Button variant="outline" onClick={handleQuit}>
-            Quit
+            Cancel
           </Button>
         </div>
 

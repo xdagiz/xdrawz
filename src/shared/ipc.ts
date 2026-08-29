@@ -27,12 +27,12 @@ export type FileEntry = {
   size: number;
 };
 
-export const parentIdOf = (id: string): string | null => {
+export const parentIdOf = (id: string) => {
   const idx = id.lastIndexOf("/");
   return idx === -1 ? null : id.slice(0, idx);
 };
 
-export const compareEntryIds = (a: string, b: string): number =>
+export const compareEntryIds = (a: string, b: string) =>
   a.localeCompare(b, undefined, { sensitivity: "base" });
 
 export const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>

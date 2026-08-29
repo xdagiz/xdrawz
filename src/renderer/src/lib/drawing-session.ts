@@ -1,5 +1,5 @@
 import { serializeAsJSON } from "@excalidraw/excalidraw";
-import { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
+import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { UnsavedChoice, UnsavedReason } from "@shared/ipc";
@@ -120,7 +120,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
     files: BinaryFiles | undefined,
-  ): string => {
+  ) => {
     if (
       cachedInputs !== null &&
       cachedInputs.elements === elements &&
@@ -245,15 +245,12 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
   const evaluateLatest = () => {
     cancelScheduledEvaluation = null;
-
     if (disposed || !latestDrawing) return;
 
     const [elements, appState, files] = latestDrawing;
-
     if (appState.isLoading) return;
 
     const current = signatureFor(elements, appState, files);
-
     if (baseline === null) {
       baseline = current;
       latestSignature = current;
@@ -301,7 +298,6 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     latestDrawing = [elements, appState, files];
 
     if (appState.isLoading) return;
-
     if (baseline === null) {
       evaluateLatest();
       return;
@@ -321,8 +317,11 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   };
 
   const setAutosavePaused = (paused: boolean) => {
-    if (paused) block();
-    else unblock();
+    if (paused) {
+      block();
+    } else {
+      unblock();
+    }
   };
 
   const setAutosaveInterval = (nextMs: number) => {

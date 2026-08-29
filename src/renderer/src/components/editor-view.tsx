@@ -12,9 +12,7 @@ export const EditorView = () => {
   const openFileId = useStore((s) => s.openFileId);
   const editorGeneration = useStore((s) => s.editorGeneration);
 
-  if (!openFileId) {
-    return <Home />;
-  }
+  if (!openFileId) return <Home />;
 
   return (
     <Suspense fallback={<div className="bg-background h-full w-full" />}>

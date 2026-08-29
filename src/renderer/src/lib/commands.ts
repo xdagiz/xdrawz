@@ -50,7 +50,6 @@ export type CommandPaletteHooks = {
 };
 
 const OPEN_FILE_REQUIRED = "Open a drawing first";
-
 const THEME_CHOICES: { value: ThemePreference; label: string; icon: LucideIcon }[] = [
   { value: "light", label: "Light theme", icon: Sun },
   { value: "dark", label: "Dark theme", icon: Moon },

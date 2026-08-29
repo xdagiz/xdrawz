@@ -1,5 +1,5 @@
 import type { LibraryPersistenceAdapter } from "@excalidraw/excalidraw/data/library";
-import type { LibraryItems_anyVersion } from "@excalidraw/excalidraw/types";
+import type { LibraryItems } from "@excalidraw/excalidraw/types";
 
 export const LIBRARY_STORE_KEY = "libraryItems";
 
@@ -16,12 +16,10 @@ const isLibraryItemLike = (value: unknown): value is LibraryItemLike =>
   "elements" in value &&
   Array.isArray(value.elements);
 
-export const isLibraryItemsPayload = (value: unknown): value is LibraryItems_anyVersion =>
+export const isLibraryItemsPayload = (value: unknown): value is LibraryItems =>
   Array.isArray(value) && value.every(isLibraryItemLike);
 
-export const parseStoredLibraryItems = (
-  json: string | null | undefined,
-): LibraryItems_anyVersion | null => {
+export const parseStoredLibraryItems = (json: string | null | undefined): LibraryItems | null => {
   if (!json) return null;
 
   let parsed: unknown;

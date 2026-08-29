@@ -32,7 +32,7 @@ const SKETCH_STROKE = {
   fill: "none",
   strokeLinecap: "round",
   strokeLinejoin: "round",
-  strokeWidth: 1.8,
+  strokeWidth: 1,
 } as const;
 
 const CIRCLE_PATH =

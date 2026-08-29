@@ -23,35 +23,35 @@ import {
 
 import { getDrawings } from "./drawings";
 
+const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
+
+const isWindows = process.platform === "win32";
+const isMac = process.platform === "darwin";
+
+const normalizeId = (id: string) => (isMac ? id.normalize("NFC") : id);
+const normalizeFsName = (name: string) => (isMac ? name.normalize("NFC") : name);
+
 export const errorWithCode = (message: string, code: ErrorCode): Error => {
   const error = new Error(message);
   Object.assign(error, { code });
   return error;
 };
 
-const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
-
-const isWindows = process.platform === "win32";
-const isMac = process.platform === "darwin";
-
-const normalizeId = (id: string): string => (isMac ? id.normalize("NFC") : id);
-const normalizeFsName = (name: string): string => (isMac ? name.normalize("NFC") : name);
-
-const errorCodeOf = (error: unknown): string | undefined => {
+const errorCodeOf = (error: unknown) => {
   if (typeof error !== "object" || error === null) return undefined;
   if (!("code" in error)) return undefined;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
 };
 
-const contains = (parent: string, child: string): boolean => {
+const contains = (parent: string, child: string) => {
   const p = isWindows ? parent.toLowerCase() : parent;
   const c = isWindows ? child.toLowerCase() : child;
   const rel = path.relative(p, c);
   return rel === "" || (!path.isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${path.sep}`));
 };
 
-const realpathFromExistingAncestor = async (targetAbs: string): Promise<string> => {
+const realpathFromExistingAncestor = async (targetAbs: string) => {
   const missing: string[] = [];
   let current = targetAbs;
   for (;;) {
@@ -78,16 +78,14 @@ const assertSafeIdString = (id: string) => {
   if (id.includes("\\")) throw errorWithCode("Invalid path", "INVALID");
 };
 
-const getCanonicalRoot = async (): Promise<string> => {
+const getCanonicalRoot = async () => {
   const rawRoot = await requireDrawingsRoot();
   return realpath(rawRoot);
 };
 
-const assertInsideRealRoot = async (rootReal: string, candidateAbs: string): Promise<string> => {
+const assertInsideRealRoot = async (rootReal: string, candidateAbs: string) => {
   const candidateReal = await realpathFromExistingAncestor(candidateAbs);
-  if (!contains(rootReal, candidateReal)) {
-    throw new Error("Path escapes drawings root");
-  }
+  if (!contains(rootReal, candidateReal)) throw new Error("Path escapes drawings root");
   return candidateReal;
 };
 
@@ -193,9 +191,7 @@ const resolveInsideRoot = async (id: string) => {
   const root = await requireDrawingsRoot();
   const rootReal = await getCanonicalRoot();
   const absPath = path.resolve(root, ...normalizedId.split("/").filter(Boolean));
-  if (!contains(path.resolve(root), absPath)) {
-    throw new Error("Path escapes drawings root");
-  }
+  if (!contains(path.resolve(root), absPath)) throw new Error("Path escapes drawings root");
 
   const candidateReal = await assertInsideRealRoot(rootReal, absPath);
   await assertParentsNotSymlinks(root, rootReal, absPath);
@@ -240,6 +236,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
           const realChild = await realpath(absPath).catch(() => null);
           if (realChild === null || !contains(rootReal, realChild)) continue;
         }
+
         out.push({
           id,
           name: normalizeFsName(dirent.name),
@@ -248,6 +245,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
           modifiedAt: lst.mtimeMs,
           size: 0,
         });
+
         await walk(absPath);
         continue;
       }
@@ -269,7 +267,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
   return sortFileEntries(out);
 };
 
-const requireDrawingsRoot = async (): Promise<string> => {
+const requireDrawingsRoot = async () => {
   const info = await getDrawings();
   if (!info.configured || !info.path) throw new Error("Drawings folder not configured");
   return path.resolve(info.path);
@@ -336,8 +334,10 @@ export const readDrawingFile = async (id: string) => {
     if (stats.isFile() && stats.nlink > 1) {
       throw errorWithCode("Hardlinks not allowed", "INVALID");
     }
-    if (stats.size > MAX_FILE_CONTENT_BYTES)
+
+    if (stats.size > MAX_FILE_CONTENT_BYTES) {
       throw errorWithCode("File is too large to load", "TOO_LARGE");
+    }
 
     const content = await fh.readFile("utf8");
     assertDrawingJson(content);
@@ -463,6 +463,7 @@ export const renameEntry = async (
 
   hooks?.beforeMutate?.([candidateReal, nextReal]);
   await rename(candidateReal, nextReal);
+
   return entryFromAbs(root, nextAbs, kind);
 };
 
@@ -485,11 +486,13 @@ export const createEntry = async (
   if (parentId !== null) {
     const normalizedParent = normalizeId(parentId);
     assertSafeIdString(normalizedParent);
+
     parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
     if (!contains(path.resolve(root), parentAbs)) throw new Error("Path escapes drawings root");
 
     await assertInsideRealRoot(rootReal, parentAbs);
     await assertParentsNotSymlinks(root, rootReal, parentAbs);
+
     const parentStats = await lstat(parentAbs).catch(() => null);
     if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
       throw errorWithCode("Parent folder not found", "NOT_FOUND");
@@ -521,9 +524,8 @@ export const deleteEntry = async (
   mode: FileDeleteMode = "trash",
   hooks?: FsMutationHooks,
   trashItem?: (path: string) => Promise<void>,
-): Promise<void> => {
+) => {
   const { rootReal, candidateReal } = await resolveInsideRoot(id);
-
   if (candidateReal === rootReal) throw new Error("Cannot delete drawings root");
 
   hooks?.beforeMutate?.([candidateReal]);
@@ -560,9 +562,7 @@ export const listEntries = async (root?: string): Promise<FileEntry[]> => {
       realRequested !== null
         ? contains(canonicalConfigured, realRequested)
         : contains(configured, resolved);
-    if (!inside) {
-      throw new Error("Path escapes drawings root");
-    }
+    if (!inside) throw new Error("Path escapes drawings root");
   }
 
   return walkEntries(configured);

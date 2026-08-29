@@ -47,22 +47,25 @@ const ERROR_OPERATIONS: ReadonlySet<string> = new Set([
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const normalizeMessage = (value: string): string => {
+const normalizeMessage = (value: string) => {
   const cleaned = value.replace(IPC_PREFIX_PATTERN, "");
   return cleaned.trim();
 };
 
-export const cleanErrorMessage = (error: unknown): string => {
+export const cleanErrorMessage = (error: unknown) => {
   if (isSerializedAppError(error)) {
     const cleaned = normalizeMessage(error.message);
     return cleaned ? cleaned : "Unknown error";
   }
 
   let message = "";
-
-  if (error instanceof Error) message = error.message;
-  else if (typeof error === "string") message = error;
-  else if (isRecord(error) && typeof error.message === "string") message = error.message;
+  if (error instanceof Error) {
+    message = error.message;
+  } else if (typeof error === "string") {
+    message = error;
+  } else if (isRecord(error) && typeof error.message === "string") {
+    message = error.message;
+  }
 
   const cleaned = normalizeMessage(message);
   return cleaned ? cleaned : "Unknown error";
@@ -75,12 +78,14 @@ export const isSerializedAppError = (value: unknown): value is SerializedAppErro
   if (!("name" in value)) return false;
   if (!("code" in value)) return false;
   if (!("retryable" in value)) return false;
+
   const isApp = value.$isAppError === true;
   const msg = value.message;
   const name = value.name;
   const code = value.code;
   const retryable = value.retryable;
   const operation = value.operation;
+
   return (
     isApp &&
     typeof msg === "string" &&
@@ -115,13 +120,15 @@ const toErrorCode = (error: unknown): ErrorCode => {
   return "UNKNOWN";
 };
 
-const getStack = (error: unknown): string | undefined => {
-  if (isRecord(error) && typeof error.stack === "string" && error.stack.length > 0)
+const getStack = (error: unknown) => {
+  if (isRecord(error) && typeof error.stack === "string" && error.stack.length > 0) {
     return error.stack;
+  }
+
   return undefined;
 };
 
-const getCause = (error: unknown): unknown => {
+const getCause = (error: unknown) => {
   if (isRecord(error) && "cause" in error) return error.cause;
   return undefined;
 };
@@ -145,7 +152,7 @@ const getOperation = (error: unknown): ErrorOperation | undefined => {
   return undefined;
 };
 
-const getRetryable = (error: unknown): boolean | undefined => {
+const getRetryable = (error: unknown) => {
   if (isRecord(error) && typeof error.retryable === "boolean") return error.retryable;
   return undefined;
 };
@@ -176,11 +183,9 @@ export const toSerialized = (
   const effectiveRetryable = storedRetryable ?? retryable ?? !NON_RETRYABLE.has(code);
 
   let name = "Error";
-
   if (isRecord(error) && typeof error.name === "string" && error.name.length > 0) name = error.name;
 
   let cause: SerializedAppError | undefined;
-
   if (causeRaw instanceof Error || isSerializedAppError(causeRaw) || typeof causeRaw === "string") {
     if (causeRaw instanceof Error || typeof causeRaw === "string") {
       cause = toSerialized(causeRaw, effectiveOperation, effectiveRetryable);

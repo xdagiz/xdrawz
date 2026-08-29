@@ -48,6 +48,7 @@ const isFileNotFoundMessage = (message: string) => {
 
 const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.id): FileEntry[] => {
   const withoutOld = entries.filter((e) => e.id !== removeId);
+
   let low = 0;
   let high = withoutOld.length;
   while (low < high) {
@@ -58,20 +59,21 @@ const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.i
       high = mid;
     }
   }
+
   const next = [...withoutOld];
   next.splice(low, 0, entry);
+
   return next;
 };
 
 const pad2 = (value: number) => `${value}`.padStart(2, "0");
 
-export const drawingTimestamp = (date: Date): string => {
+export const drawingTimestamp = (date: Date) => {
   const year = date.getFullYear();
   const month = pad2(date.getMonth() + 1);
   const day = pad2(date.getDate());
   const hr = pad2(date.getHours());
   const min = pad2(date.getMinutes());
-
   return `${year}-${month}-${day}-${hr}${min}`;
 };
 
@@ -86,15 +88,17 @@ export const nextDefaultName = (
   parentId: string | null,
   kind: "file" | "directory",
   now: Date = new Date(),
-): string => {
+) => {
   const base = kind === "directory" ? "New Folder" : `Untitled-${drawingTimestamp(now)}`;
   const suffix = kind === "directory" ? "" : ".excalidraw";
+
   let n = 1;
   let candidate = `${base}${suffix}`;
   while (isNameTaken(entries, parentId, candidate)) {
     n += 1;
     candidate = `${base} ${n}${suffix}`;
   }
+
   return candidate;
 };
 
@@ -168,11 +172,7 @@ export const useStore = create<State>((set, get) => {
 
   let filesRevision = 0;
 
-  const persistDrawingToDisk = async (
-    id: string,
-    content: string,
-    origin: SaveOrigin,
-  ): Promise<boolean> => {
+  const persistDrawingToDisk = async (id: string, content: string, origin: SaveOrigin) => {
     try {
       const savedEntry = await window.api.files.write(id, content);
       const latest = get();
@@ -291,9 +291,7 @@ export const useStore = create<State>((set, get) => {
       const current = get().openFileId;
       if (current === null) return;
       await get().setOpenFileId(null);
-      if (get().openFileId === null) {
-        set({ homeReturnFileId: current });
-      }
+      if (get().openFileId === null) set({ homeReturnFileId: current });
     },
 
     renameEntry: async (id, newName) => {
@@ -311,6 +309,7 @@ export const useStore = create<State>((set, get) => {
           sessionOwner.retargetActive(activeSessionFileId, remappedActive);
         }
       }
+
       const { entries, openFileId, dirtyById, recentFileIds } = get();
       const next = applySubtreeRemap({ entries, openFileId, dirtyById }, id, entry.id, {
         rootEntry: entry,
@@ -322,6 +321,7 @@ export const useStore = create<State>((set, get) => {
         const mapped = remapId(e.id, id, entry.id);
         if (mapped !== e.id) pairs.set(e.id, mapped);
       }
+
       const nextRecentFileIds = remapRecentIds(recentFileIds, (rid) => pairs.get(rid) ?? rid);
       const recentChanged = !sameIdList(nextRecentFileIds, recentFileIds);
 
@@ -332,12 +332,15 @@ export const useStore = create<State>((set, get) => {
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
+
       if (next.openFileId !== openFileId) {
         void window.api.store.set("lastOpenedFileId", next.openFileId);
       }
+
       if (recentChanged) {
         void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
       }
+
       return true;
     },
 
@@ -370,9 +373,8 @@ export const useStore = create<State>((set, get) => {
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
-      if (next.openedRemoved) {
-        void window.api.store.set("lastOpenedFileId", null);
-      }
+
+      if (next.openedRemoved) void window.api.store.set("lastOpenedFileId", null);
       if (recentChanged) {
         void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
       }
@@ -392,10 +394,8 @@ export const useStore = create<State>((set, get) => {
 
     saveFile: async (id, content, origin = "auto") => {
       if (!id) return false;
-
       const gate = await gateConflictedSave(id, content, origin);
       if (gate.action === "stop") return gate.result;
-
       return persistDrawingToDisk(id, content, origin);
     },
 
@@ -417,12 +417,12 @@ export const useStore = create<State>((set, get) => {
           ),
         });
       }
+
       return saved;
     },
 
     setFileDirty: (id, dirty) => {
       if (!id) return;
-
       set((state) => {
         if (dirty) {
           if (state.dirtyById[id]) return state;
@@ -430,7 +430,6 @@ export const useStore = create<State>((set, get) => {
         }
 
         if (!state.dirtyById[id]) return state;
-
         const next = { ...state.dirtyById };
         delete next[id];
 
@@ -474,6 +473,7 @@ export const useStore = create<State>((set, get) => {
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
+
       void window.api.store.set("lastOpenedFileId", null);
       if (recentChanged) {
         void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
@@ -531,12 +531,9 @@ export const useStore = create<State>((set, get) => {
       }
 
       if (info === null) return false;
-      if (info.path !== null && info.path === previousPath && info.configured) {
-        return true;
-      }
+      if (info.path !== null && info.path === previousPath && info.configured) return true;
 
       sessionOwner.getSession()?.setAutosavePaused(true);
-
       resetConflicts();
 
       set({

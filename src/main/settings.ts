@@ -73,10 +73,12 @@ export const setSettings = (update: SettingsUpdate): AppSettings => {
     store.set("theme", clean.theme);
     themeChanged = true;
   }
+
   if (clean.autosaveIntervalMs !== undefined) {
     next.autosaveIntervalMs = clean.autosaveIntervalMs;
     store.set("autosaveIntervalMs", clean.autosaveIntervalMs);
   }
+
   if (clean.reopenLastDrawing !== undefined) {
     next.reopenLastDrawing = clean.reopenLastDrawing;
     store.set("reopenLastDrawing", clean.reopenLastDrawing);

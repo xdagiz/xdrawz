@@ -28,9 +28,7 @@ export const getDrawings = async (): Promise<DrawingInfo> => {
   try {
     const canonical = await realpath(resolved);
     const stats = await stat(canonical);
-    if (!stats.isDirectory()) {
-      return def;
-    }
+    if (!stats.isDirectory()) return def;
 
     return {
       path: canonical,
@@ -51,15 +49,11 @@ export const pickDrawings = async (win: BrowserWindow | null): Promise<DrawingIn
   };
 
   const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
+  if (result.canceled || result.filePaths.length === 0) return null;
 
   const chosen = resolve(result.filePaths[0]);
   const stats = await stat(chosen).catch(() => null);
-  if (!stats?.isDirectory()) {
-    throw new Error(`Not a directory: ${chosen}`);
-  }
+  if (!stats?.isDirectory()) throw new Error(`Not a directory: ${chosen}`);
 
   setDrawingPath(chosen);
   return getDrawings();

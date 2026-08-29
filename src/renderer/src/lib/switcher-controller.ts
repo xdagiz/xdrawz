@@ -12,7 +12,7 @@ export type SwitcherControllerDeps = {
 
 const DEFAULT_FALLBACK_MS = 600;
 
-const wrapIndex = (index: number, length: number): number => ((index % length) + length) % length;
+const wrapIndex = (index: number, length: number) => ((index % length) + length) % length;
 
 export type SwitcherController = ReturnType<typeof createSwitcherController>;
 
@@ -29,7 +29,6 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
   let cancelFallback: (() => void) | null = null;
 
   const emit = () => deps.onChange(state);
-
   const clearFallback = () => {
     cancelFallback?.();
     cancelFallback = null;
@@ -109,7 +108,6 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
 
     cancel: () => {
       if (state.phase === "idle") return;
-
       clearFallback();
       state = { phase: "idle" };
       emit();

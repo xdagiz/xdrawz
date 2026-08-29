@@ -116,13 +116,13 @@ export function debounceAsync<TArgs extends unknown[]>(
     }
 
     const delayMs = remainingMs === null ? wait : Math.min(remainingMs, wait);
-
     if (paused) {
       if (timer) {
         clearTimeout(timer);
         timer = null;
         deadlineMs = null;
       }
+
       frozenRemainingMs = delayMs;
       return;
     }

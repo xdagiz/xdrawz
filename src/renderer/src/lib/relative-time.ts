@@ -1,4 +1,4 @@
-export const formatRelativeTime = (timestamp: number): string => {
+export const formatRelativeTime = (timestamp: number) => {
   const diff = Date.now() - timestamp;
   if (diff <= 0) return "just now";
 
@@ -10,5 +10,6 @@ export const formatRelativeTime = (timestamp: number): string => {
 
   if (days > 0) return `${days}d ago`;
   if (hours > 0) return `${hours}h ago`;
+
   return `${minutes}m ago`;
 };

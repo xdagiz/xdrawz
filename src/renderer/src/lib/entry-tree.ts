@@ -1,19 +1,16 @@
 import { type FileEntry, sortFileEntries } from "@shared/ipc";
 
-const isAncestorId = (ancestorId: string, id: string): boolean =>
+const isAncestorId = (ancestorId: string, id: string) =>
   id !== ancestorId && id.startsWith(`${ancestorId}/`);
 
-export const remapId = (id: string, oldRoot: string, newRoot: string): string => {
+export const remapId = (id: string, oldRoot: string, newRoot: string) => {
   if (id === oldRoot) return newRoot;
   if (isAncestorId(oldRoot, id)) return `${newRoot}${id.slice(oldRoot.length)}`;
   return id;
 };
 
-export const remapNullableId = (
-  id: string | null | undefined,
-  oldRoot: string,
-  newRoot: string,
-): string | null => (id ? remapId(id, oldRoot, newRoot) : null);
+export const remapNullableId = (id: string | null | undefined, oldRoot: string, newRoot: string) =>
+  id ? remapId(id, oldRoot, newRoot) : null;
 
 export const isInsideSubtree = (root: string, id: string | null | undefined): id is string => {
   if (!id) return false;
@@ -44,6 +41,7 @@ export const applySubtreeRemap = (
     const nextId = remapId(e.id, oldRoot, newRoot);
     const nextParentId = remapNullableId(e.parentId, oldRoot, newRoot);
     if (nextId === e.id && nextParentId === e.parentId) return e;
+
     return {
       id: nextId,
       name: e.name,
@@ -55,10 +53,9 @@ export const applySubtreeRemap = (
   });
 
   const entries = opts?.sort ? sortFileEntries(nextEntries) : nextEntries;
-
   const openFileId = remapNullableId(state.openFileId, oldRoot, newRoot);
-
   const dirtyById: Record<string, true> = {};
+
   for (const key of Object.keys(state.dirtyById)) {
     const mapped = remapId(key, oldRoot, newRoot);
     if (mapped) dirtyById[mapped] = true;
@@ -76,8 +73,8 @@ export type SubtreeDeleteResult = {
 
 export const applySubtreeDelete = (state: EntryTreeState, root: string): SubtreeDeleteResult => {
   const entries = state.entries.filter((e) => !isInsideSubtree(root, e.id));
-
   const dirtyById: Record<string, true> = {};
+
   for (const key of Object.keys(state.dirtyById)) {
     if (!isInsideSubtree(root, key)) dirtyById[key] = true;
   }

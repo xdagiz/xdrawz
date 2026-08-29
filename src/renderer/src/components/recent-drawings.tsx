@@ -20,6 +20,7 @@ export const RecentDrawings = ({ files }: { files: FileEntry[] }) => {
 
   useThumbnailRefresh();
   useThumbnailHydration(files);
+
   const observeTile = useThumbnailVisibility();
 
   return (

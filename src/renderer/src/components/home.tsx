@@ -6,7 +6,7 @@ import { toAppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 
-import { NoDrawingsEmpty } from "./no-drawings-empty";
+import { EmptyDrawings } from "./empty-drawings";
 import { RecentDrawings } from "./recent-drawings";
 import { Button } from "./ui/button";
 import { toast } from "./ui/toast";
@@ -40,7 +40,7 @@ export const Home = () => {
   if (recentFiles.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <NoDrawingsEmpty
+        <EmptyDrawings
           action={<Button onClick={() => void handleCreate()}>Create drawing</Button>}
         />
       </div>
@@ -73,7 +73,6 @@ export const Home = () => {
           </div>
           <p className="text-muted-foreground text-xs">{scopeLabel}</p>
         </header>
-
         <RecentDrawings files={recentFiles} />
       </div>
     </div>

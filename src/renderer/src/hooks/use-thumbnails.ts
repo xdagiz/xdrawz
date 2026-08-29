@@ -22,11 +22,9 @@ export const resolveThumbnailPreview = (
   };
 };
 
-export const useThumbnailRefresh = (): void => {
-  const [, setTick] = useState(0);
-
+export const useThumbnailRefresh = () => {
+  const [_tick, setTick] = useState(0);
   useEffect(() => thumbnails.subscribe(() => setTick((tick) => tick + 1)), []);
-
   useEffect(() => {
     const timer = window.setInterval(() => setTick((tick) => tick + 1), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
@@ -85,7 +83,7 @@ export const useThumbnailVisibility = (): ((
   }, []);
 };
 
-export const useThumbnailHydration = (files: FileEntry[]): void => {
+export const useThumbnailHydration = (files: FileEntry[]) => {
   const filesRef = useRef(files);
   filesRef.current = files;
 

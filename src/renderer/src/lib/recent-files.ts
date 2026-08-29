@@ -2,21 +2,25 @@ import type { FileEntry } from "@shared/ipc";
 
 export const RECENTS_LIMIT = 12;
 
-export const pushRecentId = (ids: string[], id: string): string[] =>
-  [id, ...ids.filter((existing) => existing !== id)].slice(0, RECENTS_LIMIT);
+export const pushRecentId = (ids: string[], id: string) => {
+  return [id, ...ids.filter((existing) => existing !== id)].slice(0, RECENTS_LIMIT);
+};
 
-export const removeRecentIds = (ids: string[], predicate: (id: string) => boolean): string[] =>
-  ids.filter((id) => !predicate(id));
+export const removeRecentIds = (ids: string[], predicate: (id: string) => boolean) => {
+  return ids.filter((id) => !predicate(id));
+};
 
-export const remapRecentIds = (ids: string[], remap: (id: string) => string): string[] => {
+export const remapRecentIds = (ids: string[], remap: (id: string) => string) => {
   const seen = new Set<string>();
   const next: string[] = [];
+
   for (const id of ids) {
     const mapped = remap(id);
     if (!mapped || seen.has(mapped)) continue;
     seen.add(mapped);
     next.push(mapped);
   }
+
   return next;
 };
 
@@ -31,6 +35,7 @@ export const selectRecentFiles = (ids: string[], entries: FileEntry[]): FileEntr
     const entry = fileById.get(id);
     if (entry) selected.push(entry);
   }
+
   return selected;
 };
 
@@ -47,10 +52,11 @@ export const selectRecentLibrary = (
     .filter((entry) => entry.kind === "file" && !openedIds.has(entry.id))
     .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
     .slice(0, limit - opened.length);
+
   return [...opened, ...rest];
 };
 
-export const parseRecentIdsJson = (json: string | null): string[] => {
+export const parseRecentIdsJson = (json: string | null) => {
   if (!json) return [];
 
   let value: unknown;
@@ -67,5 +73,6 @@ export const parseRecentIdsJson = (json: string | null): string[] => {
     if (typeof item !== "string") return [];
     ids.push(item);
   }
+
   return ids;
 };

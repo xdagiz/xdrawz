@@ -10,7 +10,7 @@ import {
   EmptyTitle,
 } from "./ui/empty";
 
-export const NoDrawingsEmpty = ({ action }: { action?: ReactNode }) => (
+export const EmptyDrawings = ({ action }: { action?: ReactNode }) => (
   <Empty className="border-0">
     <EmptyHeader>
       <EmptyMedia variant="icon">

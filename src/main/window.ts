@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join } from "node:path";
 
 import { is } from "@electron-toolkit/utils";
 import { LIBRARY_RETURNED, WINDOW_CLOSE_CANCELLED, WINDOW_WILL_CLOSE } from "@shared/channels";
@@ -49,6 +49,7 @@ const closeStateFor = (win: BrowserWindow) => {
     lastArmedMs: 0,
     silentDialogOpen: false,
   };
+
   closeStates.set(win, state);
   return state;
 };
@@ -328,7 +329,7 @@ export function ensureMainWindow(): BrowserWindow {
 export const LIBRARY_BROWSE_HOST = "libraries.excalidraw.com";
 export const LIBRARY_PARTITION = "xdrawz-library";
 
-export const isLibraryBrowseUrl = (urlString: string): boolean => {
+export const isLibraryBrowseUrl = (urlString: string) => {
   try {
     const url = new URL(urlString);
     return url.protocol === "https:" && url.host === LIBRARY_BROWSE_HOST;
@@ -337,7 +338,7 @@ export const isLibraryBrowseUrl = (urlString: string): boolean => {
   }
 };
 
-export const parseLibraryReturnHash = (urlString: string): string | null => {
+export const parseLibraryReturnHash = (urlString: string) => {
   let url: URL;
   try {
     url = new URL(urlString);
@@ -401,8 +402,10 @@ const forwardLibraryReturn = (hash: string) => {
     target.isDestroyed() ||
     target.webContents.isDestroyed() ||
     target.webContents.isCrashed()
-  )
+  ) {
     return;
+  }
+
   const event: LibraryReturnedEvent = { hash };
   target.webContents.send(LIBRARY_RETURNED, event);
 };
@@ -480,7 +483,7 @@ function showWhenReady(win: BrowserWindow) {
   win.webContents.once("did-finish-load", show);
 }
 
-const isSafeExternalUrl = (value: string): string | null => {
+const isSafeExternalUrl = (value: string) => {
   try {
     const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:"

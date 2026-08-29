@@ -3,7 +3,7 @@ import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
 import { PlusIcon, SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { NoDrawingsEmpty } from "@/components/no-drawings-empty";
+import { EmptyDrawings } from "@/components/empty-drawings";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +29,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { toast } from "@/components/ui/toast";
 import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/components/ui/tree";
 import { useExpandedFolders } from "@/hooks/use-expanded-folders";
 import { toAppError, type AppError } from "@/lib/app-error";
@@ -42,9 +43,7 @@ import {
 } from "@/lib/tree";
 import { stripExcalidraw } from "@/lib/utils";
 
-import { toast } from "./ui/toast";
-
-const isTypeaheadChar = (event: React.KeyboardEvent<HTMLDivElement>): boolean =>
+const isTypeaheadChar = (event: React.KeyboardEvent<HTMLDivElement>) =>
   event.key !== " " && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
 
 export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) => {
@@ -76,9 +75,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const handlePrimaryAction = useCallback(
     (item: FileTreeItem) => {
       const entry = item.getItemData();
-      if (entry && entry.kind === "file") {
-        void setOpenFileId(entry.id);
-      }
+      if (entry && entry.kind === "file") void setOpenFileId(entry.id);
     },
     [setOpenFileId],
   );
@@ -243,10 +240,12 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         setRenamingId(null);
         if (pendingValue) await handleRename(pendingId, pendingValue);
       }
+
       try {
         const newId = await createEntry(parentId, kind);
         if (!newId) return;
         if (kind === "file") freshDrawingIdRef.current = newId;
+
         expandIds(ancestorIdsOf(newId));
         setRenameError(null);
         setRenamingId(newId);
@@ -347,7 +346,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
             <SidebarGroupContent>
               {entries.length === 0 ? (
                 <div className="flex justify-center py-2">
-                  <NoDrawingsEmpty
+                  <EmptyDrawings
                     action={
                       <Button onClick={() => void handleCreate(null, "file")}>
                         Create drawing
@@ -513,6 +512,7 @@ const RenameInput = ({
   return (
     <Field data-invalid={error ? "true" : undefined} className="gap-1">
       <Input
+        className="h-8 text-xs"
         ref={ref}
         value={value}
         aria-invalid={error ? true : undefined}
@@ -521,6 +521,10 @@ const RenameInput = ({
           onValueChange?.(e.target.value);
         }}
         onClick={(e) => e.stopPropagation()}
+        onBlur={() => {
+          if (error && value.trim() === lastCommitted.current) finish("cancel");
+          else finish("commit");
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
@@ -530,11 +534,6 @@ const RenameInput = ({
             finish("cancel");
           }
         }}
-        onBlur={() => {
-          if (error && value.trim() === lastCommitted.current) finish("cancel");
-          else finish("commit");
-        }}
-        className="h-8 text-xs"
       />
       <FieldError errors={error ? [{ message: error.message }] : undefined} className="text-xs" />
     </Field>

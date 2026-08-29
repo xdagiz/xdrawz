@@ -101,13 +101,8 @@ app.on("child-process-gone", (_event, details) => {
   log.error("[child-process-gone]", details);
 });
 
-let watcher: DrawingsWatcher | null = null;
-
 const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  app.quit();
-}
+if (!gotTheLock) app.quit();
 
 registerAppScheme();
 
@@ -119,11 +114,6 @@ function broadcastFilesChanged(event: FilesChangedEvent) {
   }
 }
 
-const WATCHER_ERROR_INTERVAL_MS = 10_000;
-let lastWatcherErrorAt = 0;
-let queuedWatcherError: string | null = null;
-let queuedWatcherTimer: NodeJS.Timeout | null = null;
-
 function sendWatcherError(event: WatcherErrorEvent) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
@@ -131,6 +121,13 @@ function sendWatcherError(event: WatcherErrorEvent) {
     win.webContents.send(WATCHER_ERROR, event);
   }
 }
+
+let watcher: DrawingsWatcher | null = null;
+let lastWatcherErrorAt = 0;
+let queuedWatcherError: string | null = null;
+let queuedWatcherTimer: NodeJS.Timeout | null = null;
+
+const WATCHER_ERROR_INTERVAL_MS = 10_000;
 
 function broadcastWatcherError(error: unknown) {
   log.error("[watcher]", error);
@@ -206,7 +203,7 @@ function withWatchIgnore<TArgs extends unknown[], TRet>(
   };
 }
 
-const surfacePrimaryUi = async (): Promise<void> => {
+const surfacePrimaryUi = async () => {
   const existing = BrowserWindow.getAllWindows();
   if (existing.length > 0) {
     const win = existing[0];
@@ -395,6 +392,7 @@ void app.whenReady().then(async () => {
           parentWindow.close();
         }
       }
+
       return info;
     },
   });
@@ -437,7 +435,5 @@ app.on("before-quit", (event) => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  if (process.platform !== "darwin") app.quit();
 });

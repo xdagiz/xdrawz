@@ -5,22 +5,31 @@ import { toAppError } from "@/lib/app-error";
 
 let installed = false;
 
-const isCancellationError = (error: unknown): boolean => {
-  if (error instanceof Error && error.name === "Canceled" && error.message === "Canceled")
+const isCancellationError = (error: unknown) => {
+  if (error instanceof Error && error.name === "Canceled" && error.message === "Canceled") {
     return true;
+  }
+
   if (isSerializedAppError(error) && error.code === "CANCELLED") return true;
-  if (isSerializedAppError(error) && error.name === "Canceled" && error.message === "Canceled")
+  if (isSerializedAppError(error) && error.name === "Canceled" && error.message === "Canceled") {
     return true;
+  }
+
   return false;
 };
 
-const isResizeObserverLoopError = (error: unknown): boolean => {
+const isResizeObserverLoopError = (error: unknown) => {
   let message = "";
 
-  if (typeof error === "string") message = error;
-  else if (error instanceof Error) message = error.message;
-  else if (isSerializedAppError(error)) message = error.message;
-  else if (isRecord(error) && typeof error.message === "string") message = error.message;
+  if (typeof error === "string") {
+    message = error;
+  } else if (error instanceof Error) {
+    message = error.message;
+  } else if (isSerializedAppError(error)) {
+    message = error.message;
+  } else if (isRecord(error) && typeof error.message === "string") {
+    message = error.message;
+  }
 
   return (
     message.includes("ResizeObserver loop completed with undelivered notifications") ||
@@ -28,16 +37,18 @@ const isResizeObserverLoopError = (error: unknown): boolean => {
   );
 };
 
-const isSigPipeError = (error: unknown): boolean => {
+const isSigPipeError = (error: unknown) => {
   if (!isRecord(error)) return false;
   if (!("code" in error)) return false;
   if (!("syscall" in error)) return false;
+
   const code = error.code;
   const syscall = error.syscall;
+
   return code === "EPIPE" && typeof syscall === "string" && syscall.toUpperCase() === "WRITE";
 };
 
-const shouldSilence = (error: unknown): boolean => {
+const shouldSilence = (error: unknown) => {
   if (isCancellationError(error)) return true;
   if (isResizeObserverLoopError(error)) return true;
   if (isSigPipeError(error)) return true;
@@ -48,13 +59,11 @@ export const reportRendererError = (
   error: unknown,
   operation: ErrorOperation = "unexpected",
   opts?: { fatal?: boolean },
-): void => {
+) => {
   if (shouldSilence(error)) return;
-
   console.error(`${operation} error:`, error);
 
   const appError = toAppError(error, operation);
-
   toast.add({
     id: appError.id,
     title: appError.title,
@@ -68,7 +77,7 @@ export const reportRendererError = (
   }
 };
 
-export const installRendererErrorHandlers = (): void => {
+export const installRendererErrorHandlers = () => {
   if (installed) return;
   if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
   installed = true;

@@ -18,7 +18,7 @@ function createFakeWatcher(): FSWatcher & {
     return instance;
   };
 
-  const close = async (): Promise<void> => listeners.clear();
+  const close = async () => listeners.clear();
 
   const instance: FSWatcher & {
     _emit: (...args: unknown[]) => void;
@@ -72,7 +72,7 @@ const mockEntries: FileEntry[] = [
   makeEntry("folder/drawing3.excalidraw", { parentId: "folder" }),
 ];
 
-async function tick(ms: number): Promise<void> {
+async function tick(ms: number) {
   vi.advanceTimersByTime(ms);
   await vi.waitFor(() => Promise.resolve());
 }

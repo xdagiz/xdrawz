@@ -77,7 +77,6 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
 
   useEffect(() => {
     if (state.phase !== "cycling") return undefined;
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Control" || event.key === "Meta" || event.key === "Tab") {
         heldKeysRef.current.add(event.key);
@@ -85,7 +84,6 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
     };
 
     const onBlur = () => controller.cancel();
-
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("blur", onBlur);
 

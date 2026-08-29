@@ -58,7 +58,7 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
   };
 };
 
-export const saveErrorToastId = (fileId: string): string => `save:${fileId}`;
+export const saveErrorToastId = (fileId: string) => `save:${fileId}`;
 
 const friendlyDetail = (error: unknown): string | null => {
   const raw = cleanErrorMessage(error);
@@ -67,15 +67,16 @@ const friendlyDetail = (error: unknown): string | null => {
   if (code === "EACCES" || code === "EPERM" || /permission denied/i.test(raw)) {
     return "The drawings folder or file is not writable.";
   }
-  if (code === "ENOSPC") {
-    return "The disk is full. Free up space and try again.";
-  }
+
+  if (code === "ENOSPC") return "The disk is full. Free up space and try again.";
   if (code === "EFBIG" || /Content exceeds \d+ bytes/.test(raw)) {
     return "The drawing exceeds the 50 MB size limit.";
   }
+
   if (code === "ENOENT" || code === "NOT_FOUND" || raw.includes(FILE_NOT_FOUND_MESSAGE)) {
     return "The file no longer exists on disk.";
   }
+
   return null;
 };
 

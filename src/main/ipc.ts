@@ -86,7 +86,7 @@ const pageFor = (pathname: string) => {
   return filePath;
 };
 
-export const installAppProtocolHandler = (): void => {
+export const installAppProtocolHandler = () => {
   protocol.handle("app", async (request) => {
     let url: URL;
     try {
@@ -150,15 +150,13 @@ type Deps = {
   saveThumbnail: (record: ThumbnailRecord) => Promise<void>;
 };
 
-const windowFromEvent = (
-  event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent,
-): BrowserWindow | null => {
+const windowFromEvent = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return null;
   return win;
 };
 
-export const isTrustedRendererUrl = (urlString: string): boolean => {
+export const isTrustedRendererUrl = (urlString: string) => {
   try {
     if (!app.isPackaged) {
       const rendererUrl = process.env["ELECTRON_RENDERER_URL"];
@@ -174,11 +172,7 @@ export const isTrustedRendererUrl = (urlString: string): boolean => {
   }
 };
 
-export const normalizeContextMenuPos = (
-  x: number,
-  y: number,
-  zoomFactor: number,
-): { x: number; y: number } | null => {
+export const normalizeContextMenuPos = (x: number, y: number, zoomFactor: number) => {
   if (
     !Number.isFinite(x) ||
     !Number.isFinite(y) ||
@@ -209,24 +203,25 @@ const requireString = (value: unknown, field: string) => {
   if (typeof value !== "string" || value.length === 0) {
     throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
   }
+
   if (value.includes("\0")) {
     throw errorWithCode(`${field} must not contain null bytes`, "INVALID");
   }
+
   return value;
 };
 
-const requireOptionalString = (value: unknown, field: string): string | null => {
+const requireOptionalString = (value: unknown, field: string) => {
   if (value === null) return null;
   return requireString(value, field);
 };
 
-const requireIdArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    throw errorWithCode("ids must be an array", "INVALID");
-  }
+const requireIdArray = (value: unknown) => {
+  if (!Array.isArray(value)) throw errorWithCode("ids must be an array", "INVALID");
   if (value.length > MAX_THUMBNAIL_BATCH) {
     throw errorWithCode(`Too many ids, max ${MAX_THUMBNAIL_BATCH}`, "INVALID");
   }
+
   return [...new Set(value.map((item) => requireString(item, "id")))];
 };
 
@@ -237,6 +232,7 @@ const requireDeleteMode = (value: unknown): FileDeleteMode => {
   if (!isFileDeleteMode(value)) {
     throw errorWithCode("Delete mode must be trash or permanent", "INVALID");
   }
+
   return value;
 };
 
@@ -249,6 +245,7 @@ const requireInteger = (value: unknown, field: string) => {
   ) {
     throw errorWithCode(`${field} must be a finite integer`, "INVALID");
   }
+
   return value;
 };
 
@@ -365,27 +362,28 @@ export const registerIpcHandlers = (deps: Deps) => {
   });
 
   handle(DRAWINGS_PICK, "load", (event) => deps.pickDrawings(windowFromEvent(event)));
-
-  handle(APP_QUIT, "unexpected", () => {
-    app.quit();
-  });
+  handle(APP_QUIT, "unexpected", () => app.quit());
 
   handle(CONTEXT_MENU_SHOW, "unexpected", async (event, ...args) => {
     const win = windowFromEvent(event);
     if (!win) return null;
+
     const request = args[0];
     if (!isRecord(request)) {
       throw errorWithCode("Context menu request must be an object", "INVALID");
     }
+
     const itemsRaw = request.items;
     const xRaw = request.x;
     const yRaw = request.y;
     if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
       throw errorWithCode("Context menu items must be a non-empty array", "INVALID");
     }
+
     if (itemsRaw.length > MAX_CONTEXT_MENU_ITEMS) {
       throw errorWithCode("Too many context menu items", "INVALID");
     }
+
     if (typeof xRaw !== "number" || typeof yRaw !== "number") {
       throw errorWithCode("Context menu position must be numbers", "INVALID");
     }
@@ -394,14 +392,17 @@ export const registerIpcHandlers = (deps: Deps) => {
       if (!isRecord(item)) {
         throw errorWithCode("Context menu item must be an object", "INVALID");
       }
+
       const id = item.id;
       const label = item.label;
       if (typeof id !== "string" || id.length === 0) {
         throw errorWithCode("Context menu item id must be a non-empty string", "INVALID");
       }
+
       if (typeof label !== "string" || label.length === 0) {
         throw errorWithCode("Context menu item label must be a non-empty string", "INVALID");
       }
+
       return { id, label };
     });
 
@@ -437,9 +438,7 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(SETTINGS_SET, "settings", (_event, ...args) => {
     const payload = args[0];
-    if (!isRecord(payload)) {
-      throw errorWithCode("Settings update must be an object", "INVALID");
-    }
+    if (!isRecord(payload)) throw errorWithCode("Settings update must be an object", "INVALID");
     return deps.updateSettings(validateSettingsUpdate(payload));
   });
 
@@ -536,22 +535,18 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(THUMBNAILS_PUT, "save", (_event, ...args) => {
     const record = args[0];
-    if (!isValidThumbnailRecord(record)) {
-      throw errorWithCode("Invalid thumbnail record", "INVALID");
-    }
+    if (!isValidThumbnailRecord(record)) throw errorWithCode("Invalid thumbnail record", "INVALID");
     return deps.saveThumbnail(record);
   });
 
   handle(WINDOW_REPORT_FATAL, "unexpected", (_event, ...args) => {
     const payload = args[0];
-    if (!isSerializedAppError(payload)) {
-      throw errorWithCode("Invalid fatal payload", "INVALID");
-    }
+    if (!isSerializedAppError(payload)) throw errorWithCode("Invalid fatal payload", "INVALID");
+
     const message = typeof payload.message === "string" ? payload.message : "Unknown fatal";
     log.error("[renderer:fatal]", payload);
 
     const shouldQuit = shouldQuitAfterFatal(Date.now());
-
     if (shouldQuit) {
       void dialog
         .showMessageBox({

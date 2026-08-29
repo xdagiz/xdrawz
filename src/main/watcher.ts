@@ -45,9 +45,9 @@ const DOT_FILE_RE = /(^|[/\\])\.[^/\\]/;
 const EXCALIDRAW_EXT = ".excalidraw";
 const DIR_EVENTS = new Set(["addDir", "unlinkDir"]);
 
-const isExcalidrawFile = (name: string): boolean => name.toLowerCase().endsWith(EXCALIDRAW_EXT);
-const normalizePath = (p: string): string => path.resolve(p);
-const eventAbsPath = (eventPath: string): string => path.resolve(eventPath);
+const isExcalidrawFile = (name: string) => name.toLowerCase().endsWith(EXCALIDRAW_EXT);
+const normalizePath = (p: string) => path.resolve(p);
+const eventAbsPath = (eventPath: string) => path.resolve(eventPath);
 
 export const createDrawingsWatcher = (
   callbacks: WatcherCallbacks,
@@ -93,12 +93,10 @@ export const createDrawingsWatcher = (
 
   const ignorePaths = (absPaths: string[], ttlMs = defaultIgnoreTtlMs) => {
     const deadline = now() + ttlMs;
-    for (const p of absPaths) {
-      ignored.set(normalizePath(p), deadline);
-    }
+    for (const p of absPaths) ignored.set(normalizePath(p), deadline);
   };
 
-  const isHiddenWithinRoot = (absPath: string): boolean => {
+  const isHiddenWithinRoot = (absPath: string) => {
     const root = currentRoot;
     if (!root) return DOT_FILE_RE.test(absPath);
     const relative = path.relative(root, absPath);
@@ -255,16 +253,10 @@ export const createDrawingsWatcher = (
     chokidarInstance.on("error", handleChokidarError);
   };
 
-  const stop = async () => await stopInternal();
-
   const restart = async (root: string | null) => {
     await stopInternal();
     if (root) await start(root);
   };
-
-  const isWatching = (): boolean => chokidarInstance !== null && !stopped;
-  const getRoot = (): string | null => currentRoot;
-  const getRevision = (): number => revision;
 
   const refreshNow = async () => {
     clearCoalesce();
@@ -273,11 +265,11 @@ export const createDrawingsWatcher = (
 
   return {
     start,
-    stop,
+    stop: async () => await stopInternal(),
     restart,
-    isWatching,
-    getRoot,
-    getRevision,
+    isWatching: () => chokidarInstance !== null && !stopped,
+    getRoot: () => currentRoot,
+    getRevision: () => revision,
     ignorePath,
     ignorePaths,
     refreshNow,

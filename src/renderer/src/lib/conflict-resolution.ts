@@ -171,14 +171,16 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     return { action: "proceed" };
   };
 
-  const recoverMissingOpenFile = async (): Promise<boolean> => {
+  const recoverMissingOpenFile = async () => {
     const conflict = get().externalConflict;
     if (!conflict || conflict.type !== "missing") return false;
+
     const body = sessionOwner.getSession()?.getSerializedContent();
     if (!body) {
       set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
       return false;
     }
+
     return performRecover(conflict.fileId, body);
   };
 
@@ -187,12 +189,12 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     set({ externalConflict: null });
   };
 
-  const syncDismissal = (next: ExternalConflict): void => {
+  const syncDismissal = (next: ExternalConflict) => {
     const nextKey = next ? conflictKeyOf(next) : null;
     if (nextKey !== dismissedKey) dismissedKey = null;
   };
 
-  const clearDismissalIfOwned = (fileId: string): boolean => {
+  const clearDismissalIfOwned = (fileId: string) => {
     const owns = conflictBelongsTo(get().externalConflict, dismissedKey, fileId);
     if (owns) dismissedKey = null;
     return owns;
