@@ -186,10 +186,14 @@ export const createDrawingsWatcher = (
     callbacks.onError?.(error);
     if (!currentRoot) return;
 
+    const epoch = lifecycleEpoch;
+
     try {
       const stats = await statFn(currentRoot);
+      if (epoch !== lifecycleEpoch) return;
       if (!stats.isDirectory()) await stopInternal("not-directory");
     } catch (err) {
+      if (epoch !== lifecycleEpoch) return;
       const code =
         typeof err === "object" && err !== null && "code" in err && typeof err.code === "string"
           ? err.code

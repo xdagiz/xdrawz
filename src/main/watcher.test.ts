@@ -471,6 +471,71 @@ describe("createDrawingsWatcher", () => {
     expect(watcher.isWatching()).toBe(true);
   });
 
+  it("does not stop a restarted watcher when a stale error from the old root resolves", async () => {
+    vi.useRealTimers();
+
+    const enoentErr = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    let rejectStat!: (err: unknown) => void;
+    const statFn = vi.fn(
+      (): Promise<{ isDirectory: () => boolean }> =>
+        new Promise((_resolve, reject) => {
+          rejectStat = reject;
+        }),
+    );
+
+    const { watcher, fakeWatcher, onRootInvalid } = setupWatcher({
+      overrideDeps: { statFn },
+    });
+
+    await watcher.start("/home/user/old");
+    fakeWatcher._error(new Error("stale watch error"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(statFn).toHaveBeenCalled();
+
+    await watcher.restart("/home/user/new");
+    expect(watcher.getRoot()).toBe("/home/user/new");
+
+    rejectStat(enoentErr);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(watcher.getRoot()).toBe("/home/user/new");
+    expect(watcher.isWatching()).toBe(true);
+    expect(onRootInvalid).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+  });
+
+  it("does not stop a restarted watcher when the stale stat reports a non-directory", async () => {
+    vi.useRealTimers();
+
+    let resolveStat!: (v: { isDirectory: () => boolean }) => void;
+    const statFn = vi.fn(
+      (): Promise<{ isDirectory: () => boolean }> =>
+        new Promise((resolve) => {
+          resolveStat = resolve;
+        }),
+    );
+
+    const { watcher, fakeWatcher, onRootInvalid } = setupWatcher({
+      overrideDeps: { statFn },
+    });
+
+    await watcher.start("/home/user/old");
+    fakeWatcher._error(new Error("stale watch error"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(statFn).toHaveBeenCalled();
+
+    await watcher.restart("/home/user/new");
+    expect(watcher.getRoot()).toBe("/home/user/new");
+
+    resolveStat({ isDirectory: () => false });
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(watcher.getRoot()).toBe("/home/user/new");
+    expect(watcher.isWatching()).toBe(true);
+    expect(onRootInvalid).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+  });
+
   it("refreshNow immediately triggers onChange", async () => {
     const { watcher, onChange, deps } = setupWatcher();
 
