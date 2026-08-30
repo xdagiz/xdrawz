@@ -439,13 +439,7 @@ export const renameEntry = async (
   const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
   await assertParentsNotSymlinks(root, rootReal, nextAbs);
 
-  if (nextAbs === absPath) {
-    return entryFromAbs(root, absPath, isDirectory ? "directory" : "file");
-  }
-
-  const exists = await lstat(nextAbs).catch(() => null);
-  if (exists) throw new Error("A file or folder with that name already exists");
-
+  if (nextAbs === absPath) return entryFromAbs(root, absPath, isDirectory ? "directory" : "file");
   const kind = isDirectory ? "directory" : "file";
 
   if (nextAbs.toLowerCase() === absPath.toLowerCase()) {
@@ -460,6 +454,9 @@ export const renameEntry = async (
     }
     return entryFromAbs(root, nextAbs, kind);
   }
+
+  const exists = await lstat(nextAbs).catch(() => null);
+  if (exists) throw new Error("A file or folder with that name already exists");
 
   hooks?.beforeMutate?.([candidateReal, nextReal]);
   await rename(candidateReal, nextReal);
