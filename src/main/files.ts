@@ -146,6 +146,7 @@ export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsM
   try {
     fh = await fsOpen(tmp, flags, 0o600);
     await fh.writeFile(data, "utf8");
+    await fh.datasync();
     await fh.close();
     fh = undefined;
   } catch (error) {
@@ -159,6 +160,14 @@ export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsM
   } catch (error) {
     await unlink(tmp).catch(() => {});
     throw error;
+  }
+
+  if (!isWindows) {
+    const dirFh = await fsOpen(dir, "r").catch(() => null);
+    if (dirFh) {
+      await dirFh.sync().catch(() => {});
+      await dirFh.close().catch(() => {});
+    }
   }
 };
 
