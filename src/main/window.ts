@@ -30,6 +30,12 @@ type CloseState = {
   timer: NodeJS.Timeout | null;
   lastArmedMs: number;
   silentDialogOpen: boolean;
+  pendingAnswer: {
+    requestId: number;
+    dirty: boolean;
+    skipPrompt: boolean;
+  } | null;
+  pendingFlushStarted: boolean;
 };
 
 let quitState: QuitState = "idle";
@@ -48,6 +54,8 @@ const closeStateFor = (win: BrowserWindow) => {
     timer: null,
     lastArmedMs: 0,
     silentDialogOpen: false,
+    pendingAnswer: null,
+    pendingFlushStarted: false,
   };
 
   closeStates.set(win, state);
@@ -67,6 +75,8 @@ const clearCloseRequest = (win: BrowserWindow) => {
   clearTimer(win);
   state.awaitingRenderer = false;
   state.kind = null;
+  state.pendingAnswer = null;
+  state.pendingFlushStarted = false;
 };
 
 const sendToRenderer = (win: BrowserWindow, channel: string, ...args: unknown[]) => {
@@ -167,8 +177,33 @@ const onRendererSilent = async (win: BrowserWindow) => {
   if (win.isDestroyed()) return;
   state.silentDialogOpen = false;
 
+  const buffered = state.pendingAnswer;
+  state.pendingAnswer = null;
+
   if (!keepWaiting) {
+    if (state.pendingFlushStarted && isCurrentCloseRequest(win, state.requestId)) {
+      state.pendingFlushStarted = false;
+      onFlushStarted(win, state.requestId);
+      return;
+    }
+
+    if (buffered && isCurrentCloseRequest(win, buffered.requestId)) {
+      onDirtyState(win, buffered.requestId, buffered.dirty, buffered.skipPrompt);
+      return;
+    }
+
     closeWindow(win, "closing window: renderer did not answer the close request in time");
+    return;
+  }
+
+  if (state.pendingFlushStarted && isCurrentCloseRequest(win, state.requestId)) {
+    state.pendingFlushStarted = false;
+    onFlushStarted(win, state.requestId);
+    return;
+  }
+
+  if (buffered && isCurrentCloseRequest(win, buffered.requestId)) {
+    onDirtyState(win, buffered.requestId, buffered.dirty, buffered.skipPrompt);
     return;
   }
 
@@ -237,7 +272,11 @@ export const onDirtyState = (
   skipPrompt: boolean,
 ) => {
   const state = closeStateFor(win);
-  if (state.silentDialogOpen) return;
+  if (state.silentDialogOpen) {
+    state.pendingAnswer = { requestId, dirty, skipPrompt };
+    return;
+  }
+
   if (!isCurrentCloseRequest(win, requestId) || state.kind !== "check") return;
 
   clearTimer(win);
@@ -290,7 +329,11 @@ export const onDirtyState = (
 
 export const onFlushStarted = (win: BrowserWindow, requestId: number) => {
   const state = closeStateFor(win);
-  if (state.silentDialogOpen) return;
+  if (state.silentDialogOpen) {
+    state.pendingFlushStarted = true;
+    return;
+  }
+
   if (!isCurrentCloseRequest(win, requestId) || state.kind !== "flush") return;
 
   armSilentTimer(win, FLUSH_WRITE_TIMEOUT_MS);
