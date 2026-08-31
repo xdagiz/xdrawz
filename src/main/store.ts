@@ -19,10 +19,6 @@ const schema = {
   lastOpenedFileId: {
     type: ["string", "null"],
   },
-  recentFileIds: {
-    type: ["string", "null"],
-    default: null,
-  },
   libraryItems: {
     type: ["string", "null"],
     default: null,

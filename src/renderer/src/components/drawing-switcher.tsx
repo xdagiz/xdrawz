@@ -7,7 +7,7 @@ import {
   useThumbnailHydration,
   useThumbnailRefresh,
 } from "@/hooks/use-thumbnails";
-import { selectRecentLibrary } from "@/lib/recent-files";
+import { selectSwitcherCandidates } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
 import { THUMBNAIL_CANVAS_BG, thumbnails } from "@/lib/thumbnails";
 import { stripExcalidraw } from "@/lib/utils";
@@ -26,8 +26,7 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
   const resolvedTheme = useTheme();
   const entries = useStore((s) => s.entries);
   const recentFileIds = useStore((s) => s.recentFileIds);
-
-  const candidates = selectRecentLibrary(recentFileIds, entries);
+  const candidates = selectSwitcherCandidates(recentFileIds, entries);
 
   useThumbnailRefresh();
   useThumbnailHydration(candidates);
@@ -100,7 +99,7 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
                   type="button"
                   title={labelOf(entry)}
                   onClick={() => commitAt(tileIndex)}
-                  className={`flex w-[calc((100%-1.5rem)/5)] flex-col items-stretch gap-1 rounded-md border p-1 outline-none ${
+                  className={`flex w-20 shrink-0 flex-col items-stretch gap-1 rounded-md border p-1 outline-none ${
                     activeTile
                       ? "border-foreground/60 bg-foreground/10 ring-foreground/40 ring-1"
                       : "border-border/60 bg-foreground/[0.04] opacity-50 hover:opacity-90"

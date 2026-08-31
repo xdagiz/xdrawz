@@ -58,6 +58,7 @@ export const APP_ORIGIN = "app://renderer";
 export const APP_HOST = "renderer";
 export const APP_INDEX_URL = `${APP_ORIGIN}/index.html`;
 export const APP_GREETING_URL = `${APP_ORIGIN}/greeting.html`;
+export const MAX_LIBRARY_STORE_BYTES = 20 * 1024 * 1024;
 
 const MAX_CONTEXT_MENU_ITEMS = 32;
 
@@ -189,12 +190,8 @@ export const normalizeContextMenuPos = (x: number, y: number, zoomFactor: number
   };
 };
 
-export const MAX_LIBRARY_STORE_BYTES = 20 * 1024 * 1024;
-
-function assertRendererStoreKey(
-  key: unknown,
-): asserts key is "lastOpenedFileId" | "recentFileIds" | "libraryItems" {
-  if (key !== "lastOpenedFileId" && key !== "recentFileIds" && key !== "libraryItems") {
+function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId" | "libraryItems" {
+  if (key !== "lastOpenedFileId" && key !== "libraryItems") {
     throw new Error("Store key is not allowed");
   }
 }

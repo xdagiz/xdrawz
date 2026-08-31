@@ -117,15 +117,8 @@ const App = () => {
         const snapshot = await window.api.drawings.load();
         if (cancelled) return;
 
-        let recentFileIdsJson: string | null = null;
-        try {
-          recentFileIdsJson = await window.api.store.get("recentFileIds");
-        } catch {
-          recentFileIdsJson = null;
-        }
-
         if (!cancelled) {
-          loadSnapshot(snapshot, recentFileIdsJson);
+          loadSnapshot(snapshot);
         }
       } catch (err) {
         if (!cancelled) {

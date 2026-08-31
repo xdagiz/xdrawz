@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   RECENTS_LIMIT,
-  parseRecentIdsJson,
   pushRecentId,
   remapRecentIds,
   removeRecentIds,
@@ -128,22 +127,5 @@ describe("selectRecentLibrary", () => {
     ];
     const selected = selectRecentLibrary([], pool);
     expect(selected.map((e) => e.id)).toEqual(["new", "old"]);
-  });
-});
-
-describe("parseRecentIdsJson", () => {
-  it("returns an empty list for null, blank, or malformed payloads", () => {
-    expect(parseRecentIdsJson(null)).toEqual([]);
-    expect(parseRecentIdsJson("")).toEqual([]);
-    expect(parseRecentIdsJson("not json {")).toEqual([]);
-  });
-
-  it("rejects non-arrays and arrays with non-string members", () => {
-    expect(parseRecentIdsJson('{"a":1}')).toEqual([]);
-    expect(parseRecentIdsJson('["a",1,"b"]')).toEqual([]);
-  });
-
-  it("parses a valid array of ids", () => {
-    expect(parseRecentIdsJson('["b","a"]')).toEqual(["b", "a"]);
   });
 });

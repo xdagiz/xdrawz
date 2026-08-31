@@ -2,7 +2,7 @@ import { useHotkey } from "@tanstack/react-hotkeys";
 import { useEffect, useRef, useState } from "react";
 
 import { isCloseHandshakeActive, onCloseHandshakeStart } from "@/lib/close-handshake";
-import { selectRecentLibrary } from "@/lib/recent-files";
+import { selectSwitcherCandidates } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
 import {
   createSwitcherController,
@@ -25,9 +25,10 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
   if (!controllerRef.current) {
     controllerRef.current = createSwitcherController({
       getCandidates: () =>
-        selectRecentLibrary(useStore.getState().recentFileIds, useStore.getState().entries).map(
-          (entry) => entry.id,
-        ),
+        selectSwitcherCandidates(
+          useStore.getState().recentFileIds,
+          useStore.getState().entries,
+        ).map((entry) => entry.id),
       canSwitchNow: () => {
         if (isCloseHandshakeActive()) return false;
         const { externalConflict, settingsDialogOpen } = useStore.getState();

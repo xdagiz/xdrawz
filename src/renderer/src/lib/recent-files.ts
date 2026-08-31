@@ -1,6 +1,7 @@
 import type { FileEntry } from "@shared/ipc";
 
 export const RECENTS_LIMIT = 12;
+export const SWITCHER_LIMIT = 3;
 
 export const pushRecentId = (ids: string[], id: string) => {
   return [id, ...ids.filter((existing) => existing !== id)].slice(0, RECENTS_LIMIT);
@@ -56,23 +57,6 @@ export const selectRecentLibrary = (
   return [...opened, ...rest];
 };
 
-export const parseRecentIdsJson = (json: string | null) => {
-  if (!json) return [];
-
-  let value: unknown;
-  try {
-    value = JSON.parse(json);
-  } catch {
-    return [];
-  }
-
-  if (!Array.isArray(value)) return [];
-
-  const ids: string[] = [];
-  for (const item of value) {
-    if (typeof item !== "string") return [];
-    ids.push(item);
-  }
-
-  return ids;
+export const selectSwitcherCandidates = (ids: string[], entries: FileEntry[]): FileEntry[] => {
+  return selectRecentFiles(ids, entries).slice(0, SWITCHER_LIMIT);
 };

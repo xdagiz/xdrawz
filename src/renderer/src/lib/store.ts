@@ -24,13 +24,7 @@ import { createConflictResolver } from "@/lib/conflict-resolution";
 import { reduceEntries, removeKey, type ExternalConflict } from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
 import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree, remapId } from "@/lib/entry-tree";
-import {
-  parseRecentIdsJson,
-  pushRecentId,
-  remapRecentIds,
-  removeRecentIds,
-  selectRecentFiles,
-} from "@/lib/recent-files";
+import { pushRecentId, remapRecentIds, removeRecentIds } from "@/lib/recent-files";
 import { sessionOwner } from "@/lib/session-owner";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
 
@@ -117,7 +111,7 @@ export type State = {
   editorGeneration: number;
   settings: AppSettings;
   settingsDialogOpen: boolean;
-  loadSnapshot: (snapshot: DrawingsSnapshot, recentFileIdsJson?: string | null) => void;
+  loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
@@ -221,7 +215,7 @@ export const useStore = create<State>((set, get) => {
         ? { ...DEFAULT_SETTINGS, theme: readStoredTheme(window.localStorage) }
         : DEFAULT_SETTINGS,
 
-    loadSnapshot: (snapshot, recentFileIdsJson) => {
+    loadSnapshot: (snapshot) => {
       resetConflicts();
       filesRevision = 0;
       set((state) => {
@@ -231,17 +225,11 @@ export const useStore = create<State>((set, get) => {
             ? snapshot.prefs.lastOpenedFileId
             : null;
 
-        const sanitized = selectRecentFiles(
-          parseRecentIdsJson(recentFileIdsJson ?? null),
-          snapshot.entries,
-        ).map((entry) => entry.id);
-        const recentFileIds = sanitized.length > 0 ? sanitized : openFileId ? [openFileId] : [];
-
         return {
           drawings: snapshot.info,
           entries: sortFileEntries(snapshot.entries),
           openFileId,
-          recentFileIds,
+          recentFileIds: openFileId ? [openFileId] : [],
           dirtyById: {},
           error: null,
           watcherDown: null,
@@ -284,7 +272,6 @@ export const useStore = create<State>((set, get) => {
           editorGeneration: get().editorGeneration + 1,
         });
         void window.api.store.set("lastOpenedFileId", fileId);
-        void window.api.store.set("recentFileIds", JSON.stringify(recentFileIds));
       } else {
         set({ error: null });
       }
@@ -340,10 +327,6 @@ export const useStore = create<State>((set, get) => {
         void window.api.store.set("lastOpenedFileId", next.openFileId);
       }
 
-      if (recentChanged) {
-        void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
-      }
-
       return true;
     },
 
@@ -378,9 +361,6 @@ export const useStore = create<State>((set, get) => {
       });
 
       if (next.openedRemoved) void window.api.store.set("lastOpenedFileId", null);
-      if (recentChanged) {
-        void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
-      }
 
       return true;
     },
@@ -478,9 +458,6 @@ export const useStore = create<State>((set, get) => {
       });
 
       void window.api.store.set("lastOpenedFileId", null);
-      if (recentChanged) {
-        void window.api.store.set("recentFileIds", JSON.stringify(nextRecentFileIds));
-      }
     },
 
     ensureCleanOrConfirm: async (reason = "switch") => {
