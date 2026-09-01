@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { randomUUID } from "node:crypto";
 import { Dirent, Stats, constants as fsConstants } from "node:fs";
 import {
   lstat,
@@ -103,7 +104,14 @@ const assertParentsNotSymlinks = async (
   for (const segment of rel.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
     const lst = await lstat(current).catch(() => null);
-    if (!lst) continue;
+    if (!lst) {
+      const parentReal = await realpath(path.dirname(current)).catch(() => null);
+      if (parentReal && !contains(rootReal, parentReal)) {
+        throw errorWithCode("Symlink in path", "INVALID");
+      }
+      continue;
+    }
+
     if (lst.isSymbolicLink()) throw errorWithCode("Symlink in path", "INVALID");
     if (lst.isDirectory()) {
       const realCurrent = await realpath(current).catch(() => null);
@@ -132,7 +140,10 @@ export type FsMutationHooks = {
 
 export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsMutationHooks) => {
   const dir = path.dirname(absPath);
-  const tmp = path.join(dir, `.${path.basename(absPath)}.${process.pid}.${Date.now()}.tmp`);
+  const tmp = path.join(
+    dir,
+    `.${path.basename(absPath)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`,
+  );
 
   hooks?.beforeMutate?.([absPath, tmp]);
 
@@ -140,6 +151,7 @@ export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsM
     fsConstants.O_WRONLY |
     fsConstants.O_CREAT |
     fsConstants.O_TRUNC |
+    fsConstants.O_EXCL |
     (isWindows ? 0 : fsConstants.O_NOFOLLOW);
 
   let fh: Awaited<ReturnType<typeof fsOpen>> | undefined;
@@ -409,6 +421,12 @@ export const writeDrawingFileRecover = async (
 
   await assertParentsNotSymlinks(root, rootReal, absPath);
   await mkdir(path.dirname(candidateReal), { recursive: true });
+
+  const parentRealAfter = await realpath(path.dirname(absPath)).catch(() => null);
+  if (parentRealAfter && !contains(rootReal, parentRealAfter)) {
+    await rm(path.dirname(candidateReal), { recursive: true, force: true }).catch(() => {});
+    throw errorWithCode("Symlink in path", "INVALID");
+  }
 
   await assertInsideRealRoot(rootReal, absPath);
   await assertParentsNotSymlinks(root, rootReal, absPath);

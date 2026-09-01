@@ -154,7 +154,8 @@ export const createDrawingsWatcher = (
         let entries: FileEntry[];
         try {
           entries = await listEntries(root);
-        } catch {
+        } catch (error) {
+          callbacks.onError?.(error);
           if (!pending || stopped || !currentRoot) return;
           continue;
         }

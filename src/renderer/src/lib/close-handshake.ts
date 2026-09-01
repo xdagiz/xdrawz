@@ -12,6 +12,8 @@ export const isCloseHandshakeActive = () => active;
 
 export const onCloseHandshakeStart = (listener: () => void) => {
   startListeners.add(listener);
+  if (active) listener();
+
   return () => {
     startListeners.delete(listener);
   };

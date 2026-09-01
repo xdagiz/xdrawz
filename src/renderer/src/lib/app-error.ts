@@ -60,8 +60,16 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
 
 export const saveErrorToastId = (fileId: string) => `save:${fileId}`;
 
+const stripPaths = (msg: string) => {
+  return msg.replace(/['"]?\/[^'"\s]+['"]?/g, (m) => {
+    const clean = m.replace(/^['"]|['"]$/g, "");
+    const base = clean.split("/").pop() ?? clean;
+    return `'${base}'`;
+  });
+};
+
 const friendlyDetail = (error: unknown): string | null => {
-  const raw = cleanErrorMessage(error);
+  const raw = stripPaths(cleanErrorMessage(error));
   const code = isRecord(error) && typeof error.code === "string" ? error.code.toUpperCase() : "";
 
   if (code === "EACCES" || code === "EPERM" || /permission denied/i.test(raw)) {
@@ -86,7 +94,7 @@ export const toAppError = (
   retryable = true,
   resourceId?: string,
 ): AppError => {
-  const detail = friendlyDetail(error) ?? cleanErrorMessage(error);
+  const detail = friendlyDetail(error) ?? stripPaths(cleanErrorMessage(error));
 
   return {
     id: resourceId ? `${operation}:${resourceId}` : `${operation}:${detail}`,

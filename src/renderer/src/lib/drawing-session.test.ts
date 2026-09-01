@@ -207,17 +207,15 @@ describe("createDrawingSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
-  it("saveNow refuses to write when no scene was ever loaded from disk", async () => {
+  it("saveNow writes even when no scene was ever loaded from disk if a drawing exists (new file)", async () => {
     const { session, dirty, save } = makeSession();
 
-    // A placeholder scene (e.g. the empty canvas Excalidraw mounts when a load
-    // fails) can reach onChange without a disk baseline ever being established.
     session.onChange([el("a")], appState(), emptyFiles);
 
     const saved = await session.saveNow();
 
-    expect(saved).toBe(false);
-    expect(save).not.toHaveBeenCalled();
+    expect(saved).toBe(true);
+    expect(save).toHaveBeenCalled();
     expect(dirty).not.toHaveBeenCalled();
   });
 

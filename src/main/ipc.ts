@@ -263,6 +263,39 @@ const withIpcResult = async <T>(
   }
 };
 
+const rateMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_CLEANUP_INTERVAL_MS = 60_000;
+const RATE_MAX_ENTRIES = 10_000;
+let lastRateCleanupAt = 0;
+
+const cleanupRateMap = (now: number) => {
+  if (now - lastRateCleanupAt < RATE_CLEANUP_INTERVAL_MS) return;
+  lastRateCleanupAt = now;
+  for (const [key, entry] of rateMap) {
+    if (now >= entry.resetAt) rateMap.delete(key);
+  }
+};
+
+const allowRate = (key: string, limit = 20, windowMs = 1000) => {
+  const now = Date.now();
+  cleanupRateMap(now);
+
+  if (rateMap.size > RATE_MAX_ENTRIES) rateMap.clear();
+  const entry = rateMap.get(key);
+  if (!entry || now >= entry.resetAt) {
+    rateMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+
+  if (entry.count >= limit) {
+    log.debug("rate limit hit:", key, "count:", entry.count, "limit:", limit);
+    return false;
+  }
+
+  entry.count += 1;
+  return true;
+};
+
 let lastFatalAt = 0;
 
 export const shouldQuitAfterFatal = (now = Date.now()) => {
@@ -305,7 +338,11 @@ export const registerIpcHandlers = (deps: Deps) => {
     return typeof value === "string" ? value : null;
   });
 
-  handle(STORE_SET, "unexpected", (_event, ...args) => {
+  handle(STORE_SET, "unexpected", (event, ...args) => {
+    if (!allowRate(`store:${event.sender.id}`, 20, 1000)) {
+      throw errorWithCode("Too many requests", "INVALID");
+    }
+
     const key = args[0];
     assertRendererStoreKey(key);
     const value = requireOptionalString(args[1], "value");
@@ -349,7 +386,10 @@ export const registerIpcHandlers = (deps: Deps) => {
     return deps.createEntry(parentId, name, kindRaw);
   });
 
-  handle(FILES_WRITE, "save", (_event, ...args) => {
+  handle(FILES_WRITE, "save", (event, ...args) => {
+    if (!allowRate(`files:${event.sender.id}`, 20, 1000)) {
+      throw errorWithCode("Too many requests", "INVALID");
+    }
     const id = requireString(args[0], "id");
     const content = requireString(args[1], "content");
     return deps.writeDrawingFile(id, content);

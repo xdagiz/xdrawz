@@ -77,8 +77,9 @@ export const drawingTimestamp = (date: Date) => {
   return `${year}-${month}-${day}-${hr}${min}`;
 };
 
-const isNameTaken = (entries: FileEntry[], parentId: string | null, candidate: string) =>
-  entries.some((e) => e.parentId === parentId && e.name.toLowerCase() === candidate.toLowerCase());
+export const isNameTaken = (entries: FileEntry[], parentId: string | null, candidate: string) => {
+  return entries.some((e) => e.parentId === parentId && e.name === candidate);
+};
 
 const sameIdList = (a: string[], b: string[]): boolean =>
   a.length === b.length && a.every((id, i) => b[i] === id);
@@ -89,12 +90,13 @@ export const nextDefaultName = (
   kind: "file" | "directory",
   now: Date = new Date(),
 ) => {
+  const nameSet = new Set(entries.filter((e) => e.parentId === parentId).map((e) => e.name));
   const base = kind === "directory" ? "New Folder" : `Untitled-${drawingTimestamp(now)}`;
   const suffix = kind === "directory" ? "" : ".excalidraw";
 
   let n = 1;
   let candidate = `${base}${suffix}`;
-  while (isNameTaken(entries, parentId, candidate)) {
+  while (nameSet.has(candidate)) {
     n += 1;
     candidate = `${base} ${n}${suffix}`;
   }
@@ -221,6 +223,7 @@ export const useStore = create<State>((set, get) => {
 
     loadSnapshot: (snapshot, recentFileIdsJson) => {
       resetConflicts();
+      filesRevision = 0;
       set((state) => {
         const openFileId =
           state.settings.reopenLastDrawing &&
@@ -535,6 +538,7 @@ export const useStore = create<State>((set, get) => {
 
       sessionOwner.getSession()?.setAutosavePaused(true);
       resetConflicts();
+      filesRevision = 0;
 
       set({
         drawings: info,

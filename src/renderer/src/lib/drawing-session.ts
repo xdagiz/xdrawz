@@ -152,6 +152,14 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     revision: number,
     origin: SaveOrigin = "auto",
   ) => {
+    if (latestDrawing && (revision !== latestRevision || latestDrawing[0] !== elements)) {
+      const [le, la, lf] = latestDrawing;
+      elements = le;
+      appState = la;
+      files = lf;
+      revision = latestRevision;
+    }
+
     const json = serializeAsJSON(elements, appState, files, "local");
     const epochAtStart = retargetEpoch;
     savesInFlight += 1;
@@ -171,11 +179,17 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
         setDirty(true);
         if (epochAtStart !== retargetEpoch) {
           saveFailures = 0;
-          debounced(elements, appState, files, revision);
+          if (latestDrawing && !disposed) {
+            const [le, la, lf] = latestDrawing;
+            debounced(le, la, lf, latestRevision);
+          }
         } else {
           saveFailures += 1;
           if (saveFailures === MAX_SAVE_RETRIES + 1) onSaveGaveUp?.(currentFileId);
-          if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
+          if (saveFailures <= MAX_SAVE_RETRIES && !disposed && latestDrawing) {
+            const [le, la, lf] = latestDrawing;
+            debounced(le, la, lf, latestRevision);
+          } else if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
             debounced(elements, appState, files, revision);
           }
         }
@@ -206,7 +220,10 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
     const force = opts?.force === true;
     if (!force && blocked) return;
-    if (!dirty && !force) return;
+    if (!dirty && !force) {
+      if (savesInFlight > 0) await debounced.flush({ force: true });
+      return;
+    }
 
     const temporarilyUnblocked = force && blocked;
     if (temporarilyUnblocked) blocked = false;
@@ -226,7 +243,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   };
 
   const saveNow = async () => {
-    if (disposed || blocked || !latestDrawing || diskBaseline === null) return false;
+    if (disposed || blocked || !latestDrawing) return false;
 
     runPendingEvaluation();
 
