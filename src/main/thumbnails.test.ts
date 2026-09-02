@@ -1,4 +1,4 @@
-import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -28,6 +28,8 @@ import {
 const PNG_PREFIX = "data:image/png;base64,";
 
 const oversizedDataUrl = (prefix: string) => `${prefix}${"A".repeat(MAX_THUMBNAIL_DATA_URL_CHARS)}`;
+
+const longId = `${"a/".repeat(80)}drawing.excalidraw`;
 
 const record = (fileId: string) => ({
   fileId,
@@ -120,6 +122,46 @@ describe("thumbnails cache", () => {
       cacheDir: dir,
     });
     expect(remaining.map((r) => r.fileId)).toEqual(["keep.excalidraw"]);
+  });
+
+  it("removes stale-named files but keeps current hash-named records", async () => {
+    const legacyName = `${Buffer.from(longId, "utf8").toString("base64url")}.json`;
+    await writeFile(path.join(dir, legacyName), JSON.stringify(record(longId)));
+    await writeThumbnailRecord(record(longId), { cacheDir: dir });
+    await writeThumbnailRecord(record("fresh.excalidraw"), { cacheDir: dir });
+
+    const result = await pruneThumbnailCache(new Set([longId, "fresh.excalidraw"]), 2000, {
+      cacheDir: dir,
+    });
+
+    expect(result.removed).toBe(1);
+    await expect(stat(path.join(dir, legacyName))).rejects.toThrow();
+    const hits = await readThumbnailRecords([longId, "fresh.excalidraw"], { cacheDir: dir });
+    expect(hits.map((r) => r.fileId).toSorted()).toEqual([longId, "fresh.excalidraw"]);
+  });
+
+  it("evicts oldest records first when over the byte cap", async () => {
+    const ids = ["a.excalidraw", "b.excalidraw", "c.excalidraw"];
+    for (const [index, id] of ids.entries()) {
+      const file = path.join(dir, thumbnailKey(id));
+      await writeFile(file, JSON.stringify(record(id)));
+      const stamp = 1_000_000 + index * 1_000;
+      await utimes(file, stamp / 1000, stamp / 1000);
+    }
+    const sizes = await Promise.all(
+      ids.map((id) => stat(path.join(dir, thumbnailKey(id))).then((s) => s.size)),
+    );
+
+    const result = await pruneThumbnailCache(new Set(ids), 2000, {
+      cacheDir: dir,
+      byteCap: sizes[1] + sizes[2],
+    });
+
+    expect(result.removed).toBe(1);
+    const survivors = (await readThumbnailRecords(ids, { cacheDir: dir }))
+      .map((r) => r.fileId)
+      .toSorted();
+    expect(survivors).toEqual(["b.excalidraw", "c.excalidraw"]);
   });
 
   it("evicts oldest records first when over the cap", async () => {

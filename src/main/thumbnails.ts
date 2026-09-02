@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Dirent } from "node:fs";
 import { readdir, readFile, mkdir, stat, rm } from "node:fs/promises";
 import path from "node:path";
@@ -9,6 +10,7 @@ import { atomicWriteFile } from "./files";
 
 export const THUMBNAIL_CACHE_DIR_NAME = "thumbnails";
 export const MAX_THUMBNAIL_DATA_URL_CHARS = 512 * 1024;
+export const MAX_THUMBNAIL_CACHE_BYTES = 200 * 1024 * 1024;
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 
 const isValidThumbnailDataUrl = (value: unknown): value is string =>
@@ -18,6 +20,7 @@ const isValidThumbnailDataUrl = (value: unknown): value is string =>
 
 export type ThumbnailCacheOptions = {
   cacheDir?: string;
+  byteCap?: number;
 };
 
 export const getThumbnailCacheDir = () => {
@@ -29,7 +32,11 @@ const resolveCacheDir = (opts: ThumbnailCacheOptions) => {
 };
 
 export const thumbnailKey = (fileId: string) => {
-  return `${Buffer.from(fileId, "utf8").toString("base64url")}.json`;
+  const b64 = Buffer.from(fileId, "utf8").toString("base64url");
+  if (b64.length > 200) {
+    return `${createHash("sha256").update(fileId).digest("hex")}.json`;
+  }
+  return `${b64}.json`;
 };
 
 export const decodeThumbnailKey = (fileName: string) => {
@@ -72,6 +79,8 @@ const parseRecordFile = async (filePath: string): Promise<ThumbnailRecord | null
   }
 };
 
+const READ_BATCH_SIZE = 50;
+
 export const readThumbnailRecords = async (
   ids: string[],
   opts: ThumbnailCacheOptions = {},
@@ -79,15 +88,17 @@ export const readThumbnailRecords = async (
   if (ids.length === 0) return [];
 
   const dir = resolveCacheDir(opts);
-  const records = await Promise.all(
-    ids.map((fileId) =>
-      parseRecordFile(path.join(dir, thumbnailKey(fileId))).then((record) =>
-        record ? ([fileId, record] as const) : null,
-      ),
-    ),
-  );
 
-  return records.flatMap((item) => (item ? [item[1]] : []));
+  const out: ThumbnailRecord[] = [];
+  for (let i = 0; i < ids.length; i += READ_BATCH_SIZE) {
+    const batch = ids.slice(i, i + READ_BATCH_SIZE);
+    const records = await Promise.all(
+      batch.map((fileId) => parseRecordFile(path.join(dir, thumbnailKey(fileId)))),
+    );
+    for (const record of records) if (record) out.push(record);
+  }
+
+  return out;
 };
 
 const ensureCacheDir = async (opts: ThumbnailCacheOptions) => {
@@ -104,7 +115,37 @@ export const writeThumbnailRecord = async (
   await atomicWriteFile(path.join(dir, thumbnailKey(record.fileId)), JSON.stringify(record));
 };
 
-type KeptRecord = { name: string; mtimeMs: number };
+type KeptRecord = {
+  name: string;
+  mtimeMs: number;
+  size: number;
+};
+
+const removeRecordFiles = async (dir: string, names: string[]) => {
+  await Promise.all(names.map((name) => rm(path.join(dir, name), { force: true }).catch(() => {})));
+};
+
+const evictOverCap = async (dir: string, kept: KeptRecord[], cap: number, byteCap: number) => {
+  kept.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+  let totalBytes = kept.reduce((sum, item) => sum + item.size, 0);
+  const evicted: KeptRecord[] = [];
+  for (const item of kept) {
+    if (kept.length - evicted.length <= cap && totalBytes <= byteCap) break;
+    evicted.push(item);
+    totalBytes -= item.size;
+  }
+
+  if (evicted.length > 0) {
+    await removeRecordFiles(
+      dir,
+      evicted.map((item) => item.name),
+    );
+    kept.splice(0, evicted.length);
+  }
+
+  return evicted.length;
+};
 
 export const pruneThumbnailCache = async (
   validIds: Set<string>,
@@ -112,6 +153,7 @@ export const pruneThumbnailCache = async (
   opts: ThumbnailCacheOptions = {},
 ) => {
   const dir = resolveCacheDir(opts);
+  const byteCap = opts.byteCap ?? MAX_THUMBNAIL_CACHE_BYTES;
 
   let entries: Dirent[];
   try {
@@ -121,44 +163,51 @@ export const pruneThumbnailCache = async (
   }
 
   let removed = 0;
-  const removeJobs: Promise<void>[] = [];
+  const staleNames: string[] = [];
+  const undecodable: { name: string; filePath: string }[] = [];
   const keptJobs: Promise<KeptRecord | null>[] = [];
 
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-
-    const filePath = path.join(dir, entry.name);
-    const fileId = decodeThumbnailKey(entry.name);
-
-    if (fileId === null || !validIds.has(fileId)) {
+  const keepOrStale = (name: string, fileId: string | null) => {
+    if (fileId === null || !validIds.has(fileId) || name !== thumbnailKey(fileId)) {
       removed += 1;
-      removeJobs.push(rm(filePath, { force: true }).catch(() => {}));
-      continue;
+      staleNames.push(name);
+      return;
     }
 
     keptJobs.push(
-      stat(filePath).then(
-        (stats) => ({ name: entry.name, mtimeMs: stats.mtimeMs }),
+      stat(path.join(dir, name)).then(
+        (stats) => ({ name, mtimeMs: stats.mtimeMs, size: stats.size }),
         () => {
           removed += 1;
           return null;
         },
       ),
     );
+  };
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const fileId = decodeThumbnailKey(entry.name);
+    if (fileId === null) {
+      undecodable.push({ name: entry.name, filePath: path.join(dir, entry.name) });
+    } else {
+      keepOrStale(entry.name, fileId);
+    }
   }
 
-  await Promise.all(removeJobs);
+  const parsed = await Promise.all(
+    undecodable.map(async (item) => ({
+      name: item.name,
+      fileId: (await parseRecordFile(item.filePath))?.fileId ?? null,
+    })),
+  );
+
+  for (const item of parsed) keepOrStale(item.name, item.fileId);
+
+  await removeRecordFiles(dir, staleNames);
   const settled = await Promise.all(keptJobs);
   const kept = settled.filter((item): item is KeptRecord => item !== null);
-
-  if (kept.length > cap) {
-    kept.sort((a, b) => a.mtimeMs - b.mtimeMs);
-    const excess = kept.slice(0, kept.length - cap);
-    await Promise.all(
-      excess.map((item) => rm(path.join(dir, item.name), { force: true }).catch(() => {})),
-    );
-    removed += excess.length;
-  }
+  removed += await evictOverCap(dir, kept, cap, byteCap);
 
   return { removed };
 };
