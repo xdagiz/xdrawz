@@ -35,7 +35,6 @@ import {
   isTrustedRendererUrl,
   registerAppScheme,
   registerIpcHandlers,
-  shouldQuitAfterFatal,
 } from "./ipc";
 import { initLogger, log } from "./logger";
 import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
@@ -49,6 +48,7 @@ import {
   destroyWindow,
   ensureMainWindow,
   getMainWindow,
+  isCloseFlowActive,
   isQuittingNow,
   isWindowReady,
   markWindowReady,
@@ -73,33 +73,59 @@ app.on("render-process-gone", (_event, webContents, details) => {
   log.error("[render-process-gone]", details);
 
   const win = BrowserWindow.fromWebContents(webContents);
-  if (win && !win.isDestroyed()) {
-    try {
-      win.webContents.reload();
-    } catch (error) {
-      log.error("[render-process-gone] reload failed", error);
-    }
-  }
+  if (win === null || win.isDestroyed()) return;
+  if (isCloseFlowActive(win)) return;
 
-  if (shouldQuitAfterFatal(Date.now())) {
-    void dialog
-      .showMessageBox({
-        type: "error",
-        buttons: ["Quit", "Continue"],
-        defaultId: 0,
-        cancelId: 1,
-        message: "xdrawz renderer crashed",
-        detail: `${details.reason} (${details.exitCode})`,
-      })
-      .then(({ response }) => {
-        if (response === 0) app.quit();
-      });
-  }
+  void dialog
+    .showMessageBox({
+      type: "error",
+      buttons: ["Reload window", "Quit"],
+      defaultId: 0,
+      cancelId: 1,
+      message: "xdrawz renderer crashed",
+      detail: `${details.reason} (${details.exitCode}). Your saved drawings are safe, but unsaved changes may be lost.`,
+    })
+    .then(({ response }) => {
+      if (win.isDestroyed()) return;
+      if (response === 0) {
+        try {
+          win.webContents.reload();
+        } catch (error) {
+          log.error("[render-process-gone] reload failed", error);
+        }
+        return;
+      }
+      app.quit();
+    });
 });
 
 app.on("child-process-gone", (_event, details) => {
   log.error("[child-process-gone]", details);
 });
+
+let watcher: DrawingsWatcher | null = null;
+let lastWatcherErrorAt = 0;
+let queuedWatcherError: string | null = null;
+let queuedWatcherTimer: NodeJS.Timeout | null = null;
+
+const WATCHER_ERROR_INTERVAL_MS = 10_000;
+
+const LIBRARY_CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://www.googletagmanager.com",
+  "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net",
+  "img-src 'self' data:",
+  "font-src 'self' data: https://excalidraw.com",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+].join("; ");
+
+const APP_ALLOWED_PERMISSIONS = new Set([
+  "fullscreen",
+  "clipboard-read",
+  "clipboard-sanitized-write",
+]);
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) app.quit();
@@ -121,13 +147,6 @@ function sendWatcherError(event: WatcherErrorEvent) {
     win.webContents.send(WATCHER_ERROR, event);
   }
 }
-
-let watcher: DrawingsWatcher | null = null;
-let lastWatcherErrorAt = 0;
-let queuedWatcherError: string | null = null;
-let queuedWatcherTimer: NodeJS.Timeout | null = null;
-
-const WATCHER_ERROR_INTERVAL_MS = 10_000;
 
 function broadcastWatcherError(error: unknown) {
   log.error("[watcher]", error);
@@ -223,23 +242,6 @@ const surfacePrimaryUi = async () => {
   }
 };
 
-const LIBRARY_CSP = [
-  "default-src 'self'",
-  "script-src 'self' https://www.googletagmanager.com",
-  "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net",
-  "img-src 'self' data:",
-  "font-src 'self' data: https://excalidraw.com",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'none'",
-].join("; ");
-
-const APP_ALLOWED_PERMISSIONS = new Set([
-  "fullscreen",
-  "clipboard-read",
-  "clipboard-sanitized-write",
-]);
-
 const installPermissionHandlers = () => {
   const handlePermissionRequest = (
     webContents: Electron.WebContents,
@@ -334,15 +336,6 @@ void app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(win, { zoom: true });
   });
 
-  const writeDrawingFileWatched = withWatchIgnore(writeDrawingFile);
-  const writeDrawingFileRecoverWatched = withWatchIgnore(writeDrawingFileRecover);
-  const renameEntryWatched = withWatchIgnore(renameEntry);
-  const createEntryWatched = withWatchIgnore(createEntry);
-  const deleteEntryWatched = withWatchIgnore(
-    (id: string, mode: Parameters<typeof deleteEntry>[1], hooks: FsMutationHooks | undefined) =>
-      deleteEntry(id, mode, hooks, (trashPath) => shell.trashItem(trashPath)),
-  );
-
   registerIpcHandlers({
     getDrawings,
     loadDrawings: async () => {
@@ -358,11 +351,14 @@ void app.whenReady().then(async () => {
     },
     listEntries,
     readDrawingFile,
-    writeDrawingFile: writeDrawingFileWatched,
-    renameEntry: renameEntryWatched,
-    createEntry: createEntryWatched,
-    deleteEntry: deleteEntryWatched,
-    writeDrawingFileRecover: writeDrawingFileRecoverWatched,
+    writeDrawingFile: withWatchIgnore(writeDrawingFile),
+    renameEntry: withWatchIgnore(renameEntry),
+    createEntry: withWatchIgnore(createEntry),
+    deleteEntry: withWatchIgnore(
+      (id: string, mode: Parameters<typeof deleteEntry>[1], hooks: FsMutationHooks | undefined) =>
+        deleteEntry(id, mode, hooks, (trashPath) => shell.trashItem(trashPath)),
+    ),
+    writeDrawingFileRecover: withWatchIgnore(writeDrawingFileRecover),
     destroyWindow,
     markWindowReady,
     cancelQuit,

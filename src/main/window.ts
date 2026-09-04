@@ -15,14 +15,8 @@ import { APP_GREETING_URL, APP_INDEX_URL, isTrustedRendererUrl } from "./ipc";
 import { log } from "./logger";
 import { windowBgColor } from "./settings";
 
-const CHECK_TIMEOUT_MS = 5000;
-const FLUSH_SILENCE_TIMEOUT_MS = 2000;
-const FLUSH_WRITE_TIMEOUT_MS = 30_000;
-
-const approvedCloses = new WeakSet<BrowserWindow>();
-const readyWindows = new WeakSet<BrowserWindow>();
-
 type QuitState = "idle" | "pending";
+
 type CloseState = {
   awaitingRenderer: boolean;
   requestId: number;
@@ -41,6 +35,18 @@ type CloseState = {
 let quitState: QuitState = "idle";
 let isQuitting = false;
 let nextCloseRequestId = 0;
+let mainWindow: BrowserWindow | null = null;
+let libraryBrowserWindow: BrowserWindow | null = null;
+
+const CHECK_TIMEOUT_MS = 5000;
+const FLUSH_SILENCE_TIMEOUT_MS = 2000;
+const FLUSH_WRITE_TIMEOUT_MS = 30_000;
+const MAX_LIBRARY_HASH_LENGTH = 2048;
+export const LIBRARY_BROWSE_HOST = "libraries.excalidraw.com";
+export const LIBRARY_PARTITION = "xdrawz-library";
+
+const approvedCloses = new WeakSet<BrowserWindow>();
+const readyWindows = new WeakSet<BrowserWindow>();
 const closeStates = new WeakMap<BrowserWindow, CloseState>();
 
 const closeStateFor = (win: BrowserWindow) => {
@@ -77,6 +83,11 @@ const clearCloseRequest = (win: BrowserWindow) => {
   state.kind = null;
   state.pendingAnswer = null;
   state.pendingFlushStarted = false;
+};
+
+export const isCloseFlowActive = (win: BrowserWindow) => {
+  const state = closeStates.get(win);
+  return state !== undefined && state.awaitingRenderer && !approvedCloses.has(win);
 };
 
 const sendToRenderer = (win: BrowserWindow, channel: string, ...args: unknown[]) => {
@@ -142,7 +153,10 @@ const onRendererSilent = async (win: BrowserWindow) => {
   if (win.isDestroyed()) return;
 
   const state = closeStateFor(win);
-  state.timer = null;
+  if (state.timer) {
+    clearTimeout(state.timer);
+    state.timer = null;
+  }
 
   if (approvedCloses.has(win)) return;
   if (!state.awaitingRenderer) return;
@@ -219,6 +233,7 @@ const beginCloseFlow = (win: BrowserWindow) => {
   state.awaitingRenderer = true;
   state.requestId = ++nextCloseRequestId;
   state.kind = "check";
+
   const request: WindowCloseRequest = { requestId: state.requestId, kind: "check" };
   sendToRenderer(win, WINDOW_WILL_CLOSE, request);
   armSilentTimer(win, CHECK_TIMEOUT_MS);
@@ -240,13 +255,25 @@ export const installCloseGuard = (win: BrowserWindow) => {
     closeStates.delete(win);
   });
 
-  const onRendererGone = () => {
-    if (!closeStateFor(win).awaitingRenderer || approvedCloses.has(win)) return;
+  const onRendererCrashed = () => {
+    if (!isCloseFlowActive(win)) return;
     closeWindow(win, "force-closing window: renderer crashed during the close prompt");
   };
 
-  win.webContents.on("unresponsive", onRendererGone);
-  win.webContents.on("render-process-gone", onRendererGone);
+  const onRendererUnresponsive = () => {
+    if (!isCloseFlowActive(win)) return;
+    if (closeStateFor(win).silentDialogOpen) return;
+    log.warn(
+      "[close-guard] renderer unresponsive during the close prompt, showing keep-waiting dialog",
+    );
+    void onRendererSilent(win);
+  };
+
+  win.webContents.on("unresponsive", onRendererUnresponsive);
+  win.webContents.on("render-process-gone", onRendererCrashed);
+  win.webContents.on("responsive", () => {
+    log.warn("[close-guard] renderer responsive again", win.id);
+  });
 
   win.on("close", (event) => {
     if (isQuitting) return;
@@ -353,8 +380,6 @@ export const destroyWindow = (win: BrowserWindow, requestId: number) => {
   closeWindow(win);
 };
 
-let mainWindow: BrowserWindow | null = null;
-
 export const getMainWindow = (): BrowserWindow | null => mainWindow;
 
 export function ensureMainWindow(): BrowserWindow {
@@ -368,9 +393,6 @@ export function ensureMainWindow(): BrowserWindow {
 
   return mainWindow;
 }
-
-export const LIBRARY_BROWSE_HOST = "libraries.excalidraw.com";
-export const LIBRARY_PARTITION = "xdrawz-library";
 
 export const isLibraryBrowseUrl = (urlString: string) => {
   try {
@@ -400,8 +422,6 @@ export const parseLibraryReturnHash = (urlString: string) => {
   return url.hash;
 };
 
-const MAX_LIBRARY_HASH_LENGTH = 2048;
-
 const isAllowedLibraryUrl = (urlString: string) => {
   let url: URL;
   try {
@@ -428,8 +448,6 @@ export const validateLibraryReturnHash = (urlString: string) => {
     return null;
   }
 };
-
-let libraryBrowserWindow: BrowserWindow | null = null;
 
 const closeLibraryBrowserWindow = () => {
   if (libraryBrowserWindow && !libraryBrowserWindow.isDestroyed()) {
