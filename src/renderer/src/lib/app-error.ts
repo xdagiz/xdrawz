@@ -78,7 +78,7 @@ const friendlyDetail = (error: unknown): string | null => {
 
   if (code === "ENOSPC") return "The disk is full. Free up space and try again.";
   if (code === "EFBIG" || /Content exceeds \d+ bytes/.test(raw)) {
-    return "The drawing exceeds the 50 MB size limit.";
+    return "The drawing exceeds the 10 MB size limit.";
   }
 
   if (code === "ENOENT" || code === "NOT_FOUND" || raw.includes(FILE_NOT_FOUND_MESSAGE)) {

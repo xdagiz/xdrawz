@@ -25,7 +25,8 @@ import {
 
 import { getDrawings } from "./drawings";
 
-const MAX_FILE_CONTENT_BYTES = 50 * 1024 * 1024;
+const MAX_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
+export const MAX_WALK_ENTRIES = 20_000;
 
 const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
@@ -222,9 +223,16 @@ const resolveInsideRoot = async (id: string) => {
   return { root, rootReal, absPath, candidateReal };
 };
 
-const walkEntries = async (root: string): Promise<FileEntry[]> => {
+const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]> => {
   const out: FileEntry[] = [];
   const rootReal = await getCanonicalRoot();
+  let fileCount = 0;
+  const countFile = () => {
+    fileCount += 1;
+    if (fileCount > cap) {
+      throw errorWithCode(`The drawings folder contains too many files (max ${cap})`, "TOO_LARGE");
+    }
+  };
 
   const walk = async (dirAbs: string) => {
     let dirents: Dirent[];
@@ -249,7 +257,6 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
       }
 
       if (lst.isSymbolicLink()) continue;
-      if (lst.isFile() && lst.nlink > 1) continue;
 
       const id = toRelativeId(root, absPath);
 
@@ -273,6 +280,7 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
       }
 
       if (lst.isFile() && isExcalidrawFileName(dirent.name)) {
+        countFile();
         out.push({
           id,
           name: normalizeFsName(dirent.name),
@@ -287,6 +295,56 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
 
   await walk(root);
   return sortFileEntries(out);
+};
+
+const walkEntries = async (root: string): Promise<FileEntry[]> => {
+  return walkEntriesCapped(root, MAX_WALK_ENTRIES);
+};
+
+export const countEntriesFlat = async (rootAbs: string, cap: number) => {
+  let count = 0;
+  const pending: string[] = [rootAbs];
+
+  while (pending.length > 0) {
+    const dirAbs = pending.pop();
+    if (dirAbs === undefined) continue;
+
+    let dirents: Dirent[];
+    try {
+      dirents = await readdir(dirAbs, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const dirent of dirents) {
+      if (dirent.name.startsWith(".")) continue;
+      const absPath = path.join(dirAbs, dirent.name);
+      let lst: Stats;
+      try {
+        lst = await lstat(absPath);
+      } catch {
+        continue;
+      }
+
+      if (lst.isSymbolicLink()) continue;
+      if (lst.isDirectory()) {
+        pending.push(absPath);
+        continue;
+      }
+
+      if (lst.isFile() && isExcalidrawFileName(dirent.name)) {
+        count += 1;
+        if (count > cap) {
+          throw errorWithCode(
+            `The drawings folder contains too many files (max ${cap})`,
+            "TOO_LARGE",
+          );
+        }
+      }
+    }
+  }
+
+  return count;
 };
 
 const requireDrawingsRoot = async () => {

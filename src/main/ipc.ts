@@ -58,9 +58,17 @@ export const APP_ORIGIN = "app://renderer";
 export const APP_HOST = "renderer";
 export const APP_INDEX_URL = `${APP_ORIGIN}/index.html`;
 export const APP_GREETING_URL = `${APP_ORIGIN}/greeting.html`;
-export const MAX_LIBRARY_STORE_BYTES = 20 * 1024 * 1024;
+export const MAX_LIBRARY_STORE_BYTES = 2 * 1024 * 1024;
+export const MAX_LIBRARY_BYTES_PER_MINUTE = 8 * 1024 * 1024;
+export const LIBRARY_BYTE_WINDOW_MS = 60_000;
 
 const MAX_CONTEXT_MENU_ITEMS = 32;
+const RATE_CLEANUP_INTERVAL_MS = 60_000;
+const RATE_MAX_ENTRIES = 10_000;
+const rateMap = new Map<string, { count: number; resetAt: number }>();
+
+let lastRateCleanupAt = 0;
+let lastFatalAt = 0;
 
 export const registerAppScheme = () => {
   protocol.registerSchemesAsPrivileged([
@@ -260,11 +268,6 @@ const withIpcResult = async <T>(
   }
 };
 
-const rateMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_CLEANUP_INTERVAL_MS = 60_000;
-const RATE_MAX_ENTRIES = 10_000;
-let lastRateCleanupAt = 0;
-
 const cleanupRateMap = (now: number) => {
   if (now - lastRateCleanupAt < RATE_CLEANUP_INTERVAL_MS) return;
   lastRateCleanupAt = now;
@@ -293,7 +296,33 @@ const allowRate = (key: string, limit = 20, windowMs = 1000) => {
   return true;
 };
 
-let lastFatalAt = 0;
+export const createByteLimiter = (
+  byteBudget: number,
+  windowMs: number,
+  now: () => number = Date.now,
+) => {
+  const used = new Map<string, { bytes: number; resetAt: number }>();
+
+  return (key: string, bytes: number): boolean => {
+    const at = now();
+    if (used.size > RATE_MAX_ENTRIES) {
+      for (const [knownKey, entry] of used) {
+        if (at >= entry.resetAt) used.delete(knownKey);
+      }
+      if (used.size > RATE_MAX_ENTRIES) used.clear();
+    }
+    const entry = used.get(key);
+    if (!entry || at >= entry.resetAt) {
+      used.set(key, { bytes, resetAt: at + windowMs });
+      return bytes <= byteBudget;
+    }
+
+    entry.bytes += bytes;
+    return entry.bytes <= byteBudget;
+  };
+};
+
+const libraryByteLimiter = createByteLimiter(MAX_LIBRARY_BYTES_PER_MINUTE, LIBRARY_BYTE_WINDOW_MS);
 
 export const shouldQuitAfterFatal = (now = Date.now()) => {
   const previous = lastFatalAt;
@@ -342,14 +371,22 @@ export const registerIpcHandlers = (deps: Deps) => {
 
     const key = args[0];
     assertRendererStoreKey(key);
+
     const value = requireOptionalString(args[1], "value");
-    if (
-      key === "libraryItems" &&
-      value !== null &&
-      Buffer.byteLength(value, "utf8") > MAX_LIBRARY_STORE_BYTES
-    ) {
-      throw errorWithCode("Library is too large to store", "TOO_LARGE");
+    if (key === "libraryItems" && value !== null) {
+      const bytes = Buffer.byteLength(value, "utf8");
+      if (bytes > MAX_LIBRARY_STORE_BYTES) {
+        throw errorWithCode(
+          `Library is too large to store (max ${MAX_LIBRARY_STORE_BYTES} bytes)`,
+          "TOO_LARGE",
+        );
+      }
+
+      if (!libraryByteLimiter(`store-library:${event.sender.id}`, bytes)) {
+        throw errorWithCode("Library writes exceeded the per-minute budget", "TOO_LARGE");
+      }
     }
+
     store.set(key, value);
   });
 
@@ -570,9 +607,14 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(THUMBNAILS_GET, "read", (_event, ...args) => deps.getThumbnails(requireIdArray(args[0])));
 
-  handle(THUMBNAILS_PUT, "save", (_event, ...args) => {
+  handle(THUMBNAILS_PUT, "save", (event, ...args) => {
+    if (!allowRate(`thumbnails:${event.sender.id}`, 20, 1000)) {
+      throw errorWithCode("Too many requests", "INVALID");
+    }
+
     const record = args[0];
     if (!isValidThumbnailRecord(record)) throw errorWithCode("Invalid thumbnail record", "INVALID");
+
     return deps.saveThumbnail(record);
   });
 

@@ -4,6 +4,7 @@ import { resolve, basename } from "node:path";
 import { DrawingInfo } from "@shared/ipc";
 import { app, dialog, type BrowserWindow } from "electron";
 
+import { countEntriesFlat, MAX_WALK_ENTRIES } from "./files";
 import { getDrawingPath, setDrawingPath } from "./store";
 
 export const getDrawings = async (): Promise<DrawingInfo> => {
@@ -54,6 +55,8 @@ export const pickDrawings = async (win: BrowserWindow | null): Promise<DrawingIn
   const chosen = resolve(result.filePaths[0]);
   const stats = await stat(chosen).catch(() => null);
   if (!stats?.isDirectory()) throw new Error(`Not a directory: ${chosen}`);
+
+  await countEntriesFlat(chosen, MAX_WALK_ENTRIES);
 
   setDrawingPath(chosen);
   return getDrawings();

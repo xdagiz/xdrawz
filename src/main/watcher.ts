@@ -67,15 +67,14 @@ export const createDrawingsWatcher = (
   let revision = 0;
   let chokidarInstance: FSWatcher | null = null;
   let lifecycleEpoch = 0;
-
-  const ignored = new Map<string, number>();
-
   let coalesceTimer: ReturnType<typeof setTimeout> | null = null;
   let coalesceArmed = false;
 
   let listing = false;
   let pending = false;
   let stopped = false;
+
+  const ignored = new Map<string, number>();
 
   const isIgnored = (absPath: string) => {
     const exp = ignored.get(absPath);

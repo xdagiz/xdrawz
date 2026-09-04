@@ -141,6 +141,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       gridStep: appState.gridStep,
       gridModeEnabled: appState.gridModeEnabled,
     };
+
     cachedSignature = drawingSignature(elements, appState, files);
     return cachedSignature;
   };
