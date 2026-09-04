@@ -146,6 +146,57 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     return cachedSignature;
   };
 
+  type SaveTarget = {
+    snapshot: DrawingSnapshot;
+    revision: number;
+  };
+
+  type SaveFailure = SaveTarget & {
+    epochAtStart: number;
+  };
+
+  const resolveTarget = (
+    elements: readonly OrderedExcalidrawElement[],
+    appState: AppState,
+    files: BinaryFiles,
+    revision: number,
+  ): SaveTarget => {
+    if (latestDrawing && (revision !== latestRevision || latestDrawing[0] !== elements)) {
+      return { snapshot: latestDrawing, revision: latestRevision };
+    }
+    return { snapshot: [elements, appState, files], revision };
+  };
+
+  const retryLatest = () => {
+    if (!latestDrawing || disposed) return;
+    const [le, la, lf] = latestDrawing;
+    debounced(le, la, lf, latestRevision);
+  };
+
+  const retryAfterSaveFailure = ({ snapshot, revision, epochAtStart }: SaveFailure) => {
+    setDirty(true);
+    if (epochAtStart !== retargetEpoch) {
+      saveFailures = 0;
+      retryLatest();
+      return;
+    }
+
+    saveFailures += 1;
+    if (saveFailures === MAX_SAVE_RETRIES + 1) onSaveGaveUp?.(currentFileId);
+    if (saveFailures > MAX_SAVE_RETRIES || disposed) {
+      if (saveFailures > MAX_SAVE_RETRIES) debounced.cancel();
+      return;
+    }
+
+    if (latestDrawing) {
+      retryLatest();
+      return;
+    }
+
+    const [elements, appState, files] = snapshot;
+    debounced(elements, appState, files, revision);
+  };
+
   const persistDrawing = async (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -153,15 +204,15 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     revision: number,
     origin: SaveOrigin = "auto",
   ) => {
-    if (latestDrawing && (revision !== latestRevision || latestDrawing[0] !== elements)) {
-      const [le, la, lf] = latestDrawing;
-      elements = le;
-      appState = la;
-      files = lf;
-      revision = latestRevision;
-    }
+    const { snapshot: targetSnapshot, revision: targetRevision } = resolveTarget(
+      elements,
+      appState,
+      files,
+      revision,
+    );
+    const [targetElements, targetAppState, targetFiles] = targetSnapshot;
 
-    const json = serializeAsJSON(elements, appState, files, "local");
+    const json = serializeAsJSON(targetElements, targetAppState, targetFiles, "local");
     const epochAtStart = retargetEpoch;
     savesInFlight += 1;
 
@@ -170,33 +221,32 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       lastSaveOk = ok;
       if (ok) {
         saveFailures = 0;
-        if (revision === latestRevision) {
-          baseline = signatureFor(elements, appState, files);
+        if (targetRevision === latestRevision) {
+          baseline = signatureFor(targetElements, targetAppState, targetFiles);
           setDirty(false);
         } else {
           setDirty(true);
         }
-      } else if (revision === latestRevision) {
-        setDirty(true);
-        if (epochAtStart !== retargetEpoch) {
-          saveFailures = 0;
-          if (latestDrawing && !disposed) {
-            const [le, la, lf] = latestDrawing;
-            debounced(le, la, lf, latestRevision);
-          }
-        } else {
-          saveFailures += 1;
-          if (saveFailures === MAX_SAVE_RETRIES + 1) onSaveGaveUp?.(currentFileId);
-          if (saveFailures <= MAX_SAVE_RETRIES && !disposed && latestDrawing) {
-            const [le, la, lf] = latestDrawing;
-            debounced(le, la, lf, latestRevision);
-          } else if (saveFailures <= MAX_SAVE_RETRIES && !disposed) {
-            debounced(elements, appState, files, revision);
-          }
-        }
+      } else if (targetRevision === latestRevision) {
+        retryAfterSaveFailure({
+          snapshot: targetSnapshot,
+          revision: targetRevision,
+          epochAtStart,
+        });
       }
 
       return ok;
+    } catch {
+      lastSaveOk = false;
+      if (targetRevision === latestRevision) {
+        retryAfterSaveFailure({
+          snapshot: targetSnapshot,
+          revision: targetRevision,
+          epochAtStart,
+        });
+      }
+
+      return false;
     } finally {
       savesInFlight -= 1;
     }
@@ -312,10 +362,9 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     appState: AppState,
     files: BinaryFiles,
   ) => {
-    if (disposed) return;
+    if (disposed || appState.isLoading) return;
     latestDrawing = [elements, appState, files];
 
-    if (appState.isLoading) return;
     if (baseline === null) {
       evaluateLatest();
       return;

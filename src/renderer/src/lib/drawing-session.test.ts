@@ -493,20 +493,26 @@ describe("createDrawingSession", () => {
       expect(save).toHaveBeenCalledWith("f1", expect.stringContaining("#49"), "auto");
     });
 
-    it("skips a pending evaluation whose snapshot turned out to be loading", async () => {
+    it("evaluates the latest real snapshot when a loading snapshot arrives mid-flight", async () => {
       const frame = manualScheduler();
       const { session, dirty, save } = makeBaselineSession(frame);
 
       session.onChange([el("a")], appState(), emptyFiles);
-      session.onChange([el("a"), el("b")], appState(), emptyFiles);
-      session.onChange([el("a"), el("b")], { ...appState(), isLoading: true }, emptyFiles);
+      session.onChange([el("a"), el("b")], appState("#123456"), emptyFiles);
+      session.onChange([el("a"), el("b")], { ...appState("#999999"), isLoading: true }, emptyFiles);
 
       frame.fireFrame();
 
-      expect(dirty).not.toHaveBeenCalled();
+      expect(dirty).toHaveBeenCalledWith("f1", true);
 
       await vi.advanceTimersByTimeAsync(5100);
-      expect(save).not.toHaveBeenCalled();
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledWith("f1", expect.stringContaining("#123456"), "auto");
+      expect(save).not.toHaveBeenCalledWith(
+        "f1",
+        expect.stringContaining("#999999"),
+        expect.anything(),
+      );
     });
 
     it("flush persists unevaluated changes without waiting for the frame", async () => {

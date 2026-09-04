@@ -94,8 +94,6 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     content?: string,
     opts?: { force?: boolean },
   ): Promise<"recover" | "discard" | "cancel"> => {
-    if (content !== undefined) pendingRecoverContent = content;
-
     const force = opts?.force === true;
     const state = get();
     const conflict = state.externalConflict;
@@ -106,6 +104,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
 
     const fileName = fileNameOf(state.entries, conflict.fileId);
     const expectedFileId = conflict.fileId;
+    if (content !== undefined) pendingRecoverContent = content;
 
     return runRecoverDialog(async () => {
       try {
