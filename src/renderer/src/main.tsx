@@ -7,17 +7,17 @@ import { installRendererErrorHandlers } from "@/lib/report-error";
 import App from "./App";
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster } from "./components/ui/toast";
-import { setCloseHandshakeActive } from "./lib/close-handshake";
+import { createBeforeUnloadGuard, setCloseHandshakeActive } from "./lib/close-handshake";
 import { reportRendererError } from "./lib/report-error";
 import { sessionOwner } from "./lib/session-owner";
 import { useStore } from "./lib/store";
 
 installRendererErrorHandlers();
 
-window.addEventListener("beforeunload", (event) => {
-  event.preventDefault();
-  event.returnValue = "";
-});
+window.addEventListener(
+  "beforeunload",
+  createBeforeUnloadGuard(() => Object.keys(useStore.getState().dirtyById).length),
+);
 
 window.api.window.onWillClose((request) => {
   setCloseHandshakeActive(true);

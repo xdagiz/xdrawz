@@ -18,3 +18,16 @@ export const onCloseHandshakeStart = (listener: () => void) => {
     startListeners.delete(listener);
   };
 };
+
+type BeforeUnloadGuardEvent = {
+  preventDefault: () => void;
+  returnValue: unknown;
+};
+
+export const createBeforeUnloadGuard = (getDirtyCount: () => number) => {
+  return (event: BeforeUnloadGuardEvent) => {
+    if (getDirtyCount() <= 0) return;
+    event.preventDefault();
+    event.returnValue = "";
+  };
+};

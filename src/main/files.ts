@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { Dirent, Stats, constants as fsConstants } from "node:fs";
 import {
+  link,
   lstat,
   mkdir,
   open as fsOpen,
@@ -375,201 +376,249 @@ const ensureNotDirectory = async (absPath: string) => {
   if (existing?.isFile() && existing.nlink > 1) throw errorWithCode("Invalid file", "INVALID");
 };
 
+let mutationTail: Promise<void> = Promise.resolve();
+
+const withFileMutationLock = <T>(task: () => Promise<T>): Promise<T> => {
+  const run = mutationTail.then(task, task);
+  mutationTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+};
+
 export const writeDrawingFile = async (
   id: string,
   content: string,
   hooks?: FsMutationHooks,
-): Promise<FileEntry> => {
-  if (typeof content !== "string") throw new Error("Content must be a string");
+): Promise<FileEntry> =>
+  withFileMutationLock(async () => {
+    if (typeof content !== "string") throw new Error("Content must be a string");
 
-  assertContentSize(content);
-  assertDrawingJson(content);
+    assertContentSize(content);
+    assertDrawingJson(content);
 
-  const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
+    const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
-  if (!isExcalidrawFileName(path.basename(id))) {
-    throw new Error("Only .excalidraw files can be written");
-  }
+    if (!isExcalidrawFileName(path.basename(id))) {
+      throw new Error("Only .excalidraw files can be written");
+    }
 
-  const existing = await lstat(absPath).catch(() => null);
-  if (!existing) throw errorWithCode(FILE_NOT_FOUND_MESSAGE, "NOT_FOUND");
-  if (existing.isDirectory()) throw new Error("Cannot write over a directory");
+    const existing = await lstat(absPath).catch(() => null);
+    if (!existing) throw errorWithCode(FILE_NOT_FOUND_MESSAGE, "NOT_FOUND");
+    if (existing.isDirectory()) throw new Error("Cannot write over a directory");
 
-  await assertInsideRealRoot(rootReal, absPath);
-  await assertParentsNotSymlinks(root, rootReal, absPath);
-  await assertNotSymlink(absPath);
+    await assertInsideRealRoot(rootReal, absPath);
+    await assertParentsNotSymlinks(root, rootReal, absPath);
+    await assertNotSymlink(absPath);
 
-  await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
-  return entryFromAbs(root, absPath, "file");
-};
+    await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
+    return entryFromAbs(root, absPath, "file");
+  });
 
 export const writeDrawingFileRecover = async (
   id: string,
   content: string,
   hooks?: FsMutationHooks,
-): Promise<FileEntry> => {
-  if (typeof content !== "string") throw new Error("Content must be a string");
+): Promise<FileEntry> =>
+  withFileMutationLock(async () => {
+    if (typeof content !== "string") throw new Error("Content must be a string");
 
-  assertContentSize(content);
-  assertDrawingJson(content);
+    assertContentSize(content);
+    assertDrawingJson(content);
 
-  const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
+    const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
-  if (!isExcalidrawFileName(path.basename(id))) {
-    throw new Error("Only .excalidraw files can be written");
-  }
+    if (!isExcalidrawFileName(path.basename(id))) {
+      throw new Error("Only .excalidraw files can be written");
+    }
 
-  await assertParentsNotSymlinks(root, rootReal, absPath);
-  await mkdir(path.dirname(candidateReal), { recursive: true });
+    await assertParentsNotSymlinks(root, rootReal, absPath);
+    await mkdir(path.dirname(candidateReal), { recursive: true });
 
-  const parentRealAfter = await realpath(path.dirname(absPath)).catch(() => null);
-  if (parentRealAfter && !contains(rootReal, parentRealAfter)) {
-    await rm(path.dirname(candidateReal), { recursive: true, force: true }).catch(() => {});
-    throw errorWithCode("Symlink in path", "INVALID");
-  }
+    const parentRealAfter = await realpath(path.dirname(absPath)).catch(() => null);
+    if (parentRealAfter && !contains(rootReal, parentRealAfter)) {
+      await rm(path.dirname(candidateReal), { recursive: true, force: true }).catch(() => {});
+      throw errorWithCode("Symlink in path", "INVALID");
+    }
 
-  await assertInsideRealRoot(rootReal, absPath);
-  await assertParentsNotSymlinks(root, rootReal, absPath);
-  await ensureNotDirectory(absPath);
+    await assertInsideRealRoot(rootReal, absPath);
+    await assertParentsNotSymlinks(root, rootReal, absPath);
+    await ensureNotDirectory(absPath);
 
-  await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
-  return entryFromAbs(root, absPath, "file");
-};
+    await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
+    return entryFromAbs(root, absPath, "file");
+  });
 
 export const renameEntry = async (
   id: string,
   newName: string,
   hooks?: FsMutationHooks,
-): Promise<FileEntry> => {
-  const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
+): Promise<FileEntry> =>
+  withFileMutationLock(async () => {
+    const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
-  const lst = await lstat(absPath);
-  if (lst.isSymbolicLink()) throw errorWithCode("Symlinks not allowed", "INVALID");
-  if (lst.isFile() && lst.nlink > 1) throw errorWithCode("Hardlinks not allowed", "INVALID");
-  const isDirectory = lst.isDirectory();
+    const lst = await lstat(absPath);
+    if (lst.isSymbolicLink()) throw errorWithCode("Symlinks not allowed", "INVALID");
+    if (lst.isFile() && lst.nlink > 1) throw errorWithCode("Hardlinks not allowed", "INVALID");
+    const isDirectory = lst.isDirectory();
 
-  if (!isDirectory && !isExcalidrawFileName(path.basename(id))) {
-    throw new Error("Only .excalidraw files can be renamed");
-  }
-
-  const leaf = newName.trim();
-  if (!leaf) throw new Error("Name cannot be empty");
-  if (leaf.includes("/") || leaf.includes("\\")) {
-    throw new Error("Name cannot contain path separators");
-  }
-
-  const nameWithExt = isDirectory || isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
-  const nextAbs = path.join(path.dirname(absPath), nameWithExt);
-
-  if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
-
-  const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
-  await assertParentsNotSymlinks(root, rootReal, nextAbs);
-
-  if (nextAbs === absPath) return entryFromAbs(root, absPath, isDirectory ? "directory" : "file");
-  const kind = isDirectory ? "directory" : "file";
-
-  if (nextAbs.toLowerCase() === absPath.toLowerCase()) {
-    const tempAbs = `${candidateReal}.renaming-${process.pid}-${Date.now()}`;
-    hooks?.beforeMutate?.([candidateReal, tempAbs, nextReal]);
-    await rename(candidateReal, tempAbs);
-    try {
-      await rename(tempAbs, nextReal);
-    } catch (error) {
-      await rename(tempAbs, candidateReal).catch(() => {});
-      throw error;
+    if (!isDirectory && !isExcalidrawFileName(path.basename(id))) {
+      throw new Error("Only .excalidraw files can be renamed");
     }
+
+    const leaf = newName.trim();
+    if (!leaf) throw new Error("Name cannot be empty");
+    if (leaf.includes("/") || leaf.includes("\\")) {
+      throw new Error("Name cannot contain path separators");
+    }
+
+    const nameWithExt = isDirectory || isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
+    const nextAbs = path.join(path.dirname(absPath), nameWithExt);
+
+    if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
+
+    const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
+    await assertParentsNotSymlinks(root, rootReal, nextAbs);
+
+    if (nextAbs === absPath) return entryFromAbs(root, absPath, isDirectory ? "directory" : "file");
+    const kind = isDirectory ? "directory" : "file";
+
+    if (nextAbs.toLowerCase() === absPath.toLowerCase()) {
+      const tempAbs = path.join(
+        path.dirname(candidateReal),
+        `.${path.basename(candidateReal)}.renaming-${randomUUID()}.tmp`,
+      );
+      hooks?.beforeMutate?.([candidateReal, tempAbs, nextReal]);
+      await rename(candidateReal, tempAbs);
+      try {
+        await rename(tempAbs, nextReal);
+      } catch (error) {
+        await rename(tempAbs, candidateReal).catch(() => {});
+        throw error;
+      }
+      return entryFromAbs(root, nextAbs, kind);
+    }
+
+    hooks?.beforeMutate?.([candidateReal, nextReal]);
+    if (!isDirectory) {
+      try {
+        await link(candidateReal, nextReal);
+      } catch (error) {
+        const code = errorCodeOf(error);
+        if (code === "EEXIST") {
+          throw new Error("A file or folder with that name already exists", {
+            cause: error,
+          });
+        }
+        if (code !== "EPERM" && code !== "EOPNOTSUPP" && code !== "ENOSYS") {
+          throw error;
+        }
+        const exists = await lstat(nextAbs).catch(() => null);
+        if (exists) {
+          throw new Error("A file or folder with that name already exists", {
+            cause: error,
+          });
+        }
+        await rename(candidateReal, nextReal);
+        return entryFromAbs(root, nextAbs, kind);
+      }
+      try {
+        await unlink(candidateReal);
+      } catch (error) {
+        await unlink(nextReal).catch(() => {});
+        throw error;
+      }
+    } else {
+      const exists = await lstat(nextAbs).catch(() => null);
+      if (exists) throw new Error("A file or folder with that name already exists");
+      await rename(candidateReal, nextReal);
+    }
+
     return entryFromAbs(root, nextAbs, kind);
-  }
-
-  const exists = await lstat(nextAbs).catch(() => null);
-  if (exists) throw new Error("A file or folder with that name already exists");
-
-  hooks?.beforeMutate?.([candidateReal, nextReal]);
-  await rename(candidateReal, nextReal);
-
-  return entryFromAbs(root, nextAbs, kind);
-};
+  });
 
 export const createEntry = async (
   parentId: string | null,
   name: string,
   kind: "file" | "directory",
   hooks?: FsMutationHooks,
-): Promise<FileEntry> => {
-  const leaf = name.trim();
-  if (!leaf) throw new Error("Name cannot be empty");
-  if (leaf.includes("/") || leaf.includes("\\")) {
-    throw new Error("Name cannot contain path separators");
-  }
-
-  const root = await requireDrawingsRoot();
-  const rootReal = await getCanonicalRoot();
-
-  let parentAbs = root;
-  if (parentId !== null) {
-    const normalizedParent = normalizeId(parentId);
-    assertSafeIdString(normalizedParent);
-
-    parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
-    if (!contains(path.resolve(root), parentAbs)) throw new Error("Path escapes drawings root");
-
-    await assertInsideRealRoot(rootReal, parentAbs);
-    await assertParentsNotSymlinks(root, rootReal, parentAbs);
-
-    const parentStats = await lstat(parentAbs).catch(() => null);
-    if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
-      throw errorWithCode("Parent folder not found", "NOT_FOUND");
+): Promise<FileEntry> =>
+  withFileMutationLock(async () => {
+    const leaf = name.trim();
+    if (!leaf) throw new Error("Name cannot be empty");
+    if (leaf.includes("/") || leaf.includes("\\")) {
+      throw new Error("Name cannot contain path separators");
     }
-  }
 
-  const nameForFs = kind === "file" && !isExcalidrawFileName(leaf) ? `${leaf}.excalidraw` : leaf;
-  const nextAbs = path.join(parentAbs, nameForFs);
-  if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
+    const root = await requireDrawingsRoot();
+    const rootReal = await getCanonicalRoot();
 
-  const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
-  await assertParentsNotSymlinks(root, rootReal, nextAbs);
+    let parentAbs = root;
+    if (parentId !== null) {
+      const normalizedParent = normalizeId(parentId);
+      assertSafeIdString(normalizedParent);
 
-  const exists = await lstat(nextAbs).catch(() => null);
-  if (exists) throw new Error("A file or folder with that name already exists");
+      parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
+      if (!contains(path.resolve(root), parentAbs)) throw new Error("Path escapes drawings root");
 
-  if (kind === "directory") {
-    hooks?.beforeMutate?.([nextReal]);
-    await mkdir(nextReal);
-  } else {
-    await atomicWriteFile(nextReal, `${EMPTY_DRAWING_CONTENT}\n`, hooks);
-  }
+      await assertInsideRealRoot(rootReal, parentAbs);
+      await assertParentsNotSymlinks(root, rootReal, parentAbs);
 
-  return entryFromAbs(root, nextAbs, kind);
-};
+      const parentStats = await lstat(parentAbs).catch(() => null);
+      if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
+        throw errorWithCode("Parent folder not found", "NOT_FOUND");
+      }
+    }
+
+    const nameForFs = kind === "file" && !isExcalidrawFileName(leaf) ? `${leaf}.excalidraw` : leaf;
+    const nextAbs = path.join(parentAbs, nameForFs);
+    if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
+
+    const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
+    await assertParentsNotSymlinks(root, rootReal, nextAbs);
+
+    const exists = await lstat(nextAbs).catch(() => null);
+    if (exists) throw new Error("A file or folder with that name already exists");
+
+    if (kind === "directory") {
+      hooks?.beforeMutate?.([nextReal]);
+      await mkdir(nextReal);
+    } else {
+      await atomicWriteFile(nextReal, `${EMPTY_DRAWING_CONTENT}\n`, hooks);
+    }
+
+    return entryFromAbs(root, nextAbs, kind);
+  });
 
 export const deleteEntry = async (
   id: string,
   mode: FileDeleteMode = "trash",
   hooks?: FsMutationHooks,
   trashItem?: (path: string) => Promise<void>,
-) => {
-  const { rootReal, candidateReal } = await resolveInsideRoot(id);
-  if (candidateReal === rootReal) throw new Error("Cannot delete drawings root");
+) =>
+  withFileMutationLock(async () => {
+    const { rootReal, candidateReal } = await resolveInsideRoot(id);
+    if (candidateReal === rootReal) throw new Error("Cannot delete drawings root");
 
-  hooks?.beforeMutate?.([candidateReal]);
+    hooks?.beforeMutate?.([candidateReal]);
 
-  const lst = await lstat(candidateReal).catch(() => null);
-  if (!lst) return;
+    const lst = await lstat(candidateReal).catch(() => null);
+    if (!lst) return;
 
-  if (lst.isSymbolicLink()) {
-    await unlink(candidateReal);
-    return;
-  }
+    if (lst.isSymbolicLink()) {
+      await unlink(candidateReal);
+      return;
+    }
 
-  if (mode === "permanent") {
-    await rm(candidateReal, { recursive: true, force: false, maxRetries: 2 });
-    return;
-  }
+    if (mode === "permanent") {
+      await rm(candidateReal, { recursive: true, force: false, maxRetries: 2 });
+      return;
+    }
 
-  if (!trashItem) throw errorWithCode("Trash is unavailable", "UNKNOWN");
-  await trashItem(candidateReal);
-};
+    if (!trashItem) throw errorWithCode("Trash is unavailable", "UNKNOWN");
+    await trashItem(candidateReal);
+  });
 
 export const listEntries = async (root?: string): Promise<FileEntry[]> => {
   const info = await getDrawings();
