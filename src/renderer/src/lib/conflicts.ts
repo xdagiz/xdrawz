@@ -22,10 +22,17 @@ export const conflictBelongsTo = (
   conflict: ExternalConflict,
   dismissedKey: string | null,
   fileId: string,
-) =>
-  conflict?.fileId === fileId ||
-  dismissedKey === `missing:${fileId}` ||
-  (dismissedKey?.startsWith(`changed:${fileId}:`) ?? false);
+) => {
+  if (conflict?.fileId === fileId) return true;
+  if (dismissedKey === `missing:${fileId}`) return true;
+  if (dismissedKey?.startsWith("changed:") ?? false) {
+    const rest = (dismissedKey as string).slice("changed:".length);
+    const idx = rest.lastIndexOf(":");
+    if (idx === -1) return false;
+    return rest.slice(0, idx) === fileId;
+  }
+  return false;
+};
 
 export const fileNameOf = (entries: FileEntry[], id: string) => {
   const entry = entries.find((e) => e.id === id);

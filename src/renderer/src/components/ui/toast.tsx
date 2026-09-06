@@ -15,7 +15,9 @@ import { Button } from "./button";
 
 const toastManager = ToastPrimitive.createToastManager();
 const pendingToasts: Parameters<ToastManager["add"]>[0][] = [];
+
 let toastListeners = 0;
+let toastIdCounter = 0;
 
 const subscribe: ToastManager[" subscribe"] = (listener) => {
   toastListeners += 1;
@@ -32,12 +34,15 @@ const subscribe: ToastManager[" subscribe"] = (listener) => {
 };
 
 const add: ToastManager["add"] = (options) => {
+  const id = options.id ?? `toast-${(toastIdCounter += 1)}`;
+  const optionsWithId = { ...options, id };
+
   if (toastListeners === 0) {
-    pendingToasts.push(options);
-    return "";
+    pendingToasts.push(optionsWithId);
+    return id;
   }
 
-  return toastManager.add(options);
+  return toastManager.add(optionsWithId);
 };
 
 const toast: ToastManager = {

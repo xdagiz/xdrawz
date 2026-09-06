@@ -103,6 +103,22 @@ export type ThumbnailRecord = {
 };
 
 export const MAX_THUMBNAIL_BATCH = 5000;
+export const MAX_DRAWING_CONTENT_BYTES = 10 * 1024 * 1024;
+
+export const validateDrawingRecord = (record: unknown): void => {
+  if (record === null || typeof record !== "object" || Array.isArray(record)) {
+    throw new Error("Drawing must be a JSON object");
+  }
+  if ("elements" in record && !Array.isArray(record.elements)) {
+    throw new Error("Drawing elements must be an array when present");
+  }
+  if (
+    "files" in record &&
+    (record.files === null || typeof record.files !== "object" || Array.isArray(record.files))
+  ) {
+    throw new Error("Drawing files must be an object when present");
+  }
+};
 
 export type LibraryReturnedEvent = {
   hash: string;

@@ -12,6 +12,7 @@ export const THUMBNAIL_CACHE_DIR_NAME = "thumbnails";
 export const MAX_THUMBNAIL_DATA_URL_CHARS = 512 * 1024;
 export const MAX_THUMBNAIL_CACHE_BYTES = 200 * 1024 * 1024;
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+const REMOVE_BATCH_SIZE = 50;
 
 const isValidThumbnailDataUrl = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -60,10 +61,13 @@ export const isValidThumbnailRecord = (value: unknown): value is ThumbnailRecord
   return (
     typeof record.fileId === "string" &&
     record.fileId.length > 0 &&
+    record.fileId.length <= 512 &&
     typeof record.mtimeMs === "number" &&
     Number.isFinite(record.mtimeMs) &&
+    record.mtimeMs >= 0 &&
     typeof record.size === "number" &&
     Number.isFinite(record.size) &&
+    record.size >= 0 &&
     isValidThumbnailDataUrl(record.light) &&
     isValidThumbnailDataUrl(record.dark)
   );
@@ -122,7 +126,22 @@ type KeptRecord = {
 };
 
 const removeRecordFiles = async (dir: string, names: string[]) => {
-  await Promise.all(names.map((name) => rm(path.join(dir, name), { force: true }).catch(() => {})));
+  let removed = 0;
+  for (let i = 0; i < names.length; i += REMOVE_BATCH_SIZE) {
+    const batch = names.slice(i, i + REMOVE_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (name) => {
+        try {
+          await rm(path.join(dir, name), { force: true });
+          return 1;
+        } catch {
+          return 0;
+        }
+      }),
+    );
+    for (const result of results) removed += result;
+  }
+  return removed;
 };
 
 const evictOverCap = async (dir: string, kept: KeptRecord[], cap: number, byteCap: number) => {
@@ -137,14 +156,15 @@ const evictOverCap = async (dir: string, kept: KeptRecord[], cap: number, byteCa
   }
 
   if (evicted.length > 0) {
-    await removeRecordFiles(
+    const deleted = await removeRecordFiles(
       dir,
       evicted.map((item) => item.name),
     );
     kept.splice(0, evicted.length);
+    return deleted;
   }
 
-  return evicted.length;
+  return 0;
 };
 
 export const pruneThumbnailCache = async (
@@ -169,7 +189,6 @@ export const pruneThumbnailCache = async (
 
   const keepOrStale = (name: string, fileId: string | null) => {
     if (fileId === null || !validIds.has(fileId) || name !== thumbnailKey(fileId)) {
-      removed += 1;
       staleNames.push(name);
       return;
     }
@@ -178,7 +197,7 @@ export const pruneThumbnailCache = async (
       stat(path.join(dir, name)).then(
         (stats) => ({ name, mtimeMs: stats.mtimeMs, size: stats.size }),
         () => {
-          removed += 1;
+          staleNames.push(name);
           return null;
         },
       ),
@@ -204,8 +223,8 @@ export const pruneThumbnailCache = async (
 
   for (const item of parsed) keepOrStale(item.name, item.fileId);
 
-  await removeRecordFiles(dir, staleNames);
   const settled = await Promise.all(keptJobs);
+  removed += await removeRecordFiles(dir, staleNames);
   const kept = settled.filter((item): item is KeptRecord => item !== null);
   removed += await evictOverCap(dir, kept, cap, byteCap);
 

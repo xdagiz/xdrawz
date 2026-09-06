@@ -166,7 +166,7 @@ export const useStore = create<State>((set, get) => {
     commitEntries: sortFileEntries,
   });
 
-  let filesRevision = 0;
+  let filesRevision = -1;
 
   const persistDrawingToDisk = async (id: string, content: string, origin: SaveOrigin) => {
     try {
@@ -217,7 +217,7 @@ export const useStore = create<State>((set, get) => {
 
     loadSnapshot: (snapshot) => {
       resetConflicts();
-      filesRevision = 0;
+      filesRevision = -1;
       set((state) => {
         const openFileId =
           state.settings.reopenLastDrawing &&
@@ -434,6 +434,7 @@ export const useStore = create<State>((set, get) => {
         return;
       }
 
+      sessionOwner.getSession(openFileId)?.resetBaseline();
       set({
         externalConflict: null,
         dirtyById: removeKey(dirtyById, openFileId),
@@ -513,26 +514,31 @@ export const useStore = create<State>((set, get) => {
       if (info === null) return false;
       if (info.path !== null && info.path === previousPath && info.configured) return true;
 
-      sessionOwner.getSession()?.setAutosavePaused(true);
-      resetConflicts();
-      filesRevision = 0;
-
-      set({
-        drawings: info,
-        entries: [],
-        openFileId: null,
-        homeReturnFileId: null,
-        dirtyById: {},
-        error: null,
-        watcherDown: null,
-      });
-      void window.api.store.set("lastOpenedFileId", null);
-
+      const pausedSession = sessionOwner.getSession();
+      pausedSession?.setAutosavePaused(true);
       try {
-        const snapshot = await window.api.drawings.load();
-        get().loadSnapshot(snapshot);
-      } catch (error) {
-        get().reportError(error, "load");
+        resetConflicts();
+        filesRevision = -1;
+
+        set({
+          drawings: info,
+          entries: [],
+          openFileId: null,
+          homeReturnFileId: null,
+          dirtyById: {},
+          error: null,
+          watcherDown: null,
+        });
+        void window.api.store.set("lastOpenedFileId", null);
+
+        try {
+          const snapshot = await window.api.drawings.load();
+          get().loadSnapshot(snapshot);
+        } catch (error) {
+          get().reportError(error, "load");
+        }
+      } finally {
+        pausedSession?.setAutosavePaused(false);
       }
 
       return true;

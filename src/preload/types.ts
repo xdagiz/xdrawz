@@ -20,6 +20,7 @@ export type ContextMenuItem = { id: string; label: string };
 export type FileRecoverChoice = "recover" | "discard" | "cancel";
 export type FileChangedChoice = "reload" | "overwrite" | "cancel";
 export type StoreKey = keyof StoreType;
+export type RendererStoreKey = "lastOpenedFileId" | "libraryItems";
 
 export interface NativeApi {
   app: {
@@ -46,9 +47,9 @@ export interface NativeApi {
     onWatcherError: (cb: (event: WatcherErrorEvent) => void) => () => void;
   };
   store: {
-    get: (key: StoreKey) => Promise<string | null>;
-    set: (key: StoreKey, value: string | null) => Promise<void>;
-    delete: (key: StoreKey) => Promise<void>;
+    get: (key: RendererStoreKey) => Promise<string | null>;
+    set: (key: RendererStoreKey, value: string | null) => Promise<void>;
+    delete: (key: RendererStoreKey) => Promise<void>;
   };
   settings: {
     get: () => Promise<AppSettings>;

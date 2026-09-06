@@ -164,6 +164,21 @@ const NON_RETRYABLE: ReadonlySet<ErrorCode> = new Set([
   "CANCELLED",
 ]);
 
+export const errorWithCode = (message: string, code: ErrorCode): Error => {
+  const error = new Error(message);
+  Object.assign(error, { code });
+  return error;
+};
+
+export const toRendererSafe = (error: SerializedAppError): SerializedAppError => ({
+  $isAppError: true,
+  name: error.name,
+  message: error.message,
+  code: error.code,
+  operation: error.operation,
+  retryable: error.retryable,
+});
+
 export const toSerialized = (
   error: unknown,
   operation: ErrorOperation = "unexpected",

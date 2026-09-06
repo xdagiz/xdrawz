@@ -403,6 +403,77 @@ describe("createDrawingSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f2", false);
   });
 
+  it("keeps dirty and retries under the new id when retarget lands mid-save", async () => {
+    const deferred: { resolve?: (ok: boolean) => void } = {};
+    const save = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            deferred.resolve = resolve;
+          }),
+      )
+      .mockResolvedValue(true);
+    const dirty = vi.fn();
+    const session = createDrawingSession({
+      fileId: "f1",
+      save,
+      onDirtyChange: dirty,
+    });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0]).toBe("f1");
+
+    session.retarget("f2");
+    deferred.resolve?.(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(dirty.mock.calls.some((call) => call[1] === false)).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1][0]).toBe("f2");
+    expect(dirty).toHaveBeenLastCalledWith("f2", false);
+  });
+
+  it("saveNow calls report their own result under concurrency", async () => {
+    const resolvers: Array<(ok: boolean) => void> = [];
+    const save = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const { session } = makeSession({
+      save,
+      initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
+    });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const first = session.saveNow();
+    const second = session.saveNow();
+
+    expect(save).toHaveBeenCalledTimes(1);
+
+    resolvers[0]?.(true);
+    await expect(first).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(save).toHaveBeenCalledTimes(2);
+
+    resolvers[1]?.(false);
+    await expect(second).resolves.toBe(false);
+  });
+
   it("setAutosaveInterval keeps a pending save on its original deadline", async () => {
     const { session, save } = makeSession();
 

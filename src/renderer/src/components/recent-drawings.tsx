@@ -14,6 +14,17 @@ import { stripExcalidraw } from "@/lib/utils";
 
 import { Skeleton } from "./ui/skeleton";
 
+const formatDateAttr = (value: number) => {
+  if (!Number.isFinite(value)) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  try {
+    return date.toISOString();
+  } catch {
+    return "";
+  }
+};
+
 export const RecentDrawings = ({ files }: { files: FileEntry[] }) => {
   const resolvedTheme = useTheme();
   const setOpenFileId = useStore((s) => s.setOpenFileId);
@@ -64,7 +75,7 @@ export const RecentDrawings = ({ files }: { files: FileEntry[] }) => {
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{label}</p>
               <time
-                dateTime={new Date(file.modifiedAt).toISOString()}
+                dateTime={formatDateAttr(file.modifiedAt)}
                 className="text-muted-foreground mt-0.5 block text-xs"
               >
                 {formatRelativeTime(file.modifiedAt)}

@@ -66,6 +66,8 @@ process.on("uncaughtException", (error) => {
 
 process.on("unhandledRejection", (reason) => {
   log.error("[main:unhandledRejection]", reason);
+  dialog.showErrorBox("xdrawz crashed", reason instanceof Error ? reason.message : String(reason));
+  app.exit(1);
 });
 
 app.on("render-process-gone", (_event, webContents, details) => {

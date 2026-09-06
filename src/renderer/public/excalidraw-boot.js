@@ -1,6 +1,8 @@
 const stripRemoteSources = (source) =>
   typeof source === "string"
-    ? source.replace(/,\s*url\(["']?https?:\/\/[^)"']+["']?\)(?:\s*format\([^)]*\))?/g, "")
+    ? source
+        .replace(/@import\s+(?:url\(\s*["']?https?:[^)]+\)|["']https?:[^"']+["']);?/g, "")
+        .replace(/url\(\s*["']?https?:[^)]+\)/g, "")
     : source;
 
 (function () {
