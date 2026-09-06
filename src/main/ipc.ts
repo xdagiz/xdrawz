@@ -32,9 +32,15 @@ import {
   WINDOW_READY,
   WINDOW_REPORT_FATAL,
 } from "@shared/channels";
-import { isRecord, isSerializedAppError, toSerialized } from "@shared/errors";
+import {
+  errorWithCode,
+  isRecord,
+  isSerializedAppError,
+  toRendererSafe,
+  toSerialized,
+} from "@shared/errors";
 import type { ErrorOperation, SerializedAppError } from "@shared/errors";
-import { MAX_THUMBNAIL_BATCH } from "@shared/ipc";
+import { MAX_DRAWING_CONTENT_BYTES, MAX_THUMBNAIL_BATCH } from "@shared/ipc";
 import type {
   AppSettings,
   DrawingInfo,
@@ -48,7 +54,6 @@ import type {
 } from "@shared/ipc";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
-import { errorWithCode } from "./files";
 import { log } from "./logger";
 import { validateSettingsUpdate } from "./settings";
 import { store } from "./store";
@@ -59,16 +64,96 @@ export const APP_HOST = "renderer";
 export const APP_INDEX_URL = `${APP_ORIGIN}/index.html`;
 export const APP_GREETING_URL = `${APP_ORIGIN}/greeting.html`;
 export const MAX_LIBRARY_STORE_BYTES = 2 * 1024 * 1024;
-export const MAX_LIBRARY_BYTES_PER_MINUTE = 8 * 1024 * 1024;
-export const LIBRARY_BYTE_WINDOW_MS = 60_000;
 
-const MAX_CONTEXT_MENU_ITEMS = 32;
-const RATE_CLEANUP_INTERVAL_MS = 60_000;
-const RATE_MAX_ENTRIES = 10_000;
-const rateMap = new Map<string, { count: number; resetAt: number }>();
-
-let lastRateCleanupAt = 0;
 let lastFatalAt = 0;
+
+const requireString = (value: unknown, field: string) => {
+  if (typeof value !== "string" || value.length === 0) {
+    throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
+  }
+  return value;
+};
+
+const requireOptionalString = (value: unknown, field: string) => {
+  if (value === null) return null;
+  return requireString(value, field);
+};
+
+const requireBoolean = (value: unknown, field: string) => {
+  if (typeof value !== "boolean") {
+    throw errorWithCode(`${field} must be a boolean`, "INVALID");
+  }
+  return value;
+};
+
+const requireContent = (value: unknown, field: string) => {
+  const content = requireString(value, field);
+  if (Buffer.byteLength(content, "utf8") > MAX_DRAWING_CONTENT_BYTES) {
+    throw errorWithCode(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, "TOO_LARGE");
+  }
+  return content;
+};
+
+const requireIdArray = (value: unknown) => {
+  if (!Array.isArray(value)) throw errorWithCode("ids must be an array", "INVALID");
+  if (value.length > MAX_THUMBNAIL_BATCH) {
+    throw errorWithCode(`Too many ids, max ${MAX_THUMBNAIL_BATCH}`, "INVALID");
+  }
+  return [...new Set(value.map((item) => requireString(item, "id")))];
+};
+
+const requireDeleteMode = (value: unknown): FileDeleteMode => {
+  if (value !== "trash" && value !== "permanent") {
+    throw errorWithCode("Delete mode must be trash or permanent", "INVALID");
+  }
+  return value;
+};
+
+const requireInteger = (value: unknown, field: string) => {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    throw errorWithCode(`${field} must be a finite integer`, "INVALID");
+  }
+  return value;
+};
+
+const requireContextMenuRequest = (request: unknown) => {
+  if (!isRecord(request)) {
+    throw errorWithCode("Context menu request must be an object", "INVALID");
+  }
+  const { items, x, y } = request;
+  if (!Array.isArray(items) || items.length === 0) {
+    throw errorWithCode("Context menu items must be a non-empty array", "INVALID");
+  }
+  if (
+    typeof x !== "number" ||
+    typeof y !== "number" ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y)
+  ) {
+    throw errorWithCode("Context menu position must be finite numbers", "INVALID");
+  }
+  return {
+    items: items.map((item) => {
+      if (!isRecord(item)) {
+        throw errorWithCode("Context menu item must be an object", "INVALID");
+      }
+      if (typeof item.id !== "string" || item.id.length === 0) {
+        throw errorWithCode("Context menu item id must be a non-empty string", "INVALID");
+      }
+      if (typeof item.label !== "string" || item.label.length === 0) {
+        throw errorWithCode("Context menu item label must be a non-empty string", "INVALID");
+      }
+      return { id: item.id, label: item.label };
+    }),
+    x,
+    y,
+  };
+};
 
 export const registerAppScheme = () => {
   protocol.registerSchemesAsPrivileged([
@@ -204,56 +289,6 @@ function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId"
   }
 }
 
-const requireString = (value: unknown, field: string) => {
-  if (typeof value !== "string" || value.length === 0) {
-    throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
-  }
-
-  if (value.includes("\0")) {
-    throw errorWithCode(`${field} must not contain null bytes`, "INVALID");
-  }
-
-  return value;
-};
-
-const requireOptionalString = (value: unknown, field: string) => {
-  if (value === null) return null;
-  return requireString(value, field);
-};
-
-const requireIdArray = (value: unknown) => {
-  if (!Array.isArray(value)) throw errorWithCode("ids must be an array", "INVALID");
-  if (value.length > MAX_THUMBNAIL_BATCH) {
-    throw errorWithCode(`Too many ids, max ${MAX_THUMBNAIL_BATCH}`, "INVALID");
-  }
-
-  return [...new Set(value.map((item) => requireString(item, "id")))];
-};
-
-const isFileDeleteMode = (value: unknown): value is FileDeleteMode =>
-  value === "trash" || value === "permanent";
-
-const requireDeleteMode = (value: unknown): FileDeleteMode => {
-  if (!isFileDeleteMode(value)) {
-    throw errorWithCode("Delete mode must be trash or permanent", "INVALID");
-  }
-
-  return value;
-};
-
-const requireInteger = (value: unknown, field: string) => {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
-    value < 0
-  ) {
-    throw errorWithCode(`${field} must be a finite integer`, "INVALID");
-  }
-
-  return value;
-};
-
 type Result<T> = { ok: true; value: T } | { ok: false; error: SerializedAppError };
 
 const withIpcResult = async <T>(
@@ -264,65 +299,16 @@ const withIpcResult = async <T>(
     const value = await fn();
     return { ok: true, value };
   } catch (error) {
-    return { ok: false, error: toSerialized(error, operation) };
-  }
-};
-
-const cleanupRateMap = (now: number) => {
-  if (now - lastRateCleanupAt < RATE_CLEANUP_INTERVAL_MS) return;
-  lastRateCleanupAt = now;
-  for (const [key, entry] of rateMap) {
-    if (now >= entry.resetAt) rateMap.delete(key);
-  }
-};
-
-const allowRate = (key: string, limit = 20, windowMs = 1000) => {
-  const now = Date.now();
-  cleanupRateMap(now);
-
-  if (rateMap.size > RATE_MAX_ENTRIES) rateMap.clear();
-  const entry = rateMap.get(key);
-  if (!entry || now >= entry.resetAt) {
-    rateMap.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-
-  if (entry.count >= limit) {
-    log.debug("rate limit hit:", key, "count:", entry.count, "limit:", limit);
-    return false;
-  }
-
-  entry.count += 1;
-  return true;
-};
-
-export const createByteLimiter = (
-  byteBudget: number,
-  windowMs: number,
-  now: () => number = Date.now,
-) => {
-  const used = new Map<string, { bytes: number; resetAt: number }>();
-
-  return (key: string, bytes: number): boolean => {
-    const at = now();
-    if (used.size > RATE_MAX_ENTRIES) {
-      for (const [knownKey, entry] of used) {
-        if (at >= entry.resetAt) used.delete(knownKey);
-      }
-      if (used.size > RATE_MAX_ENTRIES) used.clear();
+    const full = toSerialized(error, operation);
+    const safe = toRendererSafe(full);
+    if (full.code === "UNKNOWN") {
+      log.warn("[ipc:error]", operation, full);
+    } else {
+      log.debug("[ipc:error]", operation, safe);
     }
-    const entry = used.get(key);
-    if (!entry || at >= entry.resetAt) {
-      used.set(key, { bytes, resetAt: at + windowMs });
-      return bytes <= byteBudget;
-    }
-
-    entry.bytes += bytes;
-    return entry.bytes <= byteBudget;
-  };
+    return { ok: false, error: safe };
+  }
 };
-
-const libraryByteLimiter = createByteLimiter(MAX_LIBRARY_BYTES_PER_MINUTE, LIBRARY_BYTE_WINDOW_MS);
 
 export const shouldQuitAfterFatal = (now = Date.now()) => {
   const previous = lastFatalAt;
@@ -364,27 +350,29 @@ export const registerIpcHandlers = (deps: Deps) => {
     return typeof value === "string" ? value : null;
   });
 
-  handle(STORE_SET, "unexpected", (event, ...args) => {
-    if (!allowRate(`store:${event.sender.id}`, 20, 1000)) {
-      throw errorWithCode("Too many requests", "INVALID");
-    }
-
+  handle(STORE_SET, "unexpected", (_event, ...args) => {
     const key = args[0];
     assertRendererStoreKey(key);
 
-    const value = requireOptionalString(args[1], "value");
-    if (key === "libraryItems" && value !== null) {
-      const bytes = Buffer.byteLength(value, "utf8");
-      if (bytes > MAX_LIBRARY_STORE_BYTES) {
-        throw errorWithCode(
-          `Library is too large to store (max ${MAX_LIBRARY_STORE_BYTES} bytes)`,
-          "TOO_LARGE",
-        );
+    let value: string | null;
+    if (key === "libraryItems") {
+      const raw = args[1];
+      if (raw === null) {
+        value = null;
+      } else {
+        if (typeof raw !== "string" || raw.length === 0) {
+          throw errorWithCode("value must be a non-empty string", "INVALID");
+        }
+        if (Buffer.byteLength(raw, "utf8") > MAX_LIBRARY_STORE_BYTES) {
+          throw errorWithCode(
+            `Library is too large to store (max ${MAX_LIBRARY_STORE_BYTES} bytes)`,
+            "TOO_LARGE",
+          );
+        }
+        value = raw;
       }
-
-      if (!libraryByteLimiter(`store-library:${event.sender.id}`, bytes)) {
-        throw errorWithCode("Library writes exceeded the per-minute budget", "TOO_LARGE");
-      }
+    } else {
+      value = requireOptionalString(args[1], "value");
     }
 
     store.set(key, value);
@@ -420,12 +408,9 @@ export const registerIpcHandlers = (deps: Deps) => {
     return deps.createEntry(parentId, name, kindRaw);
   });
 
-  handle(FILES_WRITE, "save", (event, ...args) => {
-    if (!allowRate(`files:${event.sender.id}`, 20, 1000)) {
-      throw errorWithCode("Too many requests", "INVALID");
-    }
+  handle(FILES_WRITE, "save", (_event, ...args) => {
     const id = requireString(args[0], "id");
-    const content = requireString(args[1], "content");
+    const content = requireContent(args[1], "content");
     return deps.writeDrawingFile(id, content);
   });
 
@@ -442,43 +427,7 @@ export const registerIpcHandlers = (deps: Deps) => {
     const win = windowFromEvent(event);
     if (!win) return null;
 
-    const request = args[0];
-    if (!isRecord(request)) {
-      throw errorWithCode("Context menu request must be an object", "INVALID");
-    }
-
-    const itemsRaw = request.items;
-    const xRaw = request.x;
-    const yRaw = request.y;
-    if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
-      throw errorWithCode("Context menu items must be a non-empty array", "INVALID");
-    }
-
-    if (itemsRaw.length > MAX_CONTEXT_MENU_ITEMS) {
-      throw errorWithCode("Too many context menu items", "INVALID");
-    }
-
-    if (typeof xRaw !== "number" || typeof yRaw !== "number") {
-      throw errorWithCode("Context menu position must be numbers", "INVALID");
-    }
-
-    const items = itemsRaw.map((item) => {
-      if (!isRecord(item)) {
-        throw errorWithCode("Context menu item must be an object", "INVALID");
-      }
-
-      const id = item.id;
-      const label = item.label;
-      if (typeof id !== "string" || id.length === 0) {
-        throw errorWithCode("Context menu item id must be a non-empty string", "INVALID");
-      }
-
-      if (typeof label !== "string" || label.length === 0) {
-        throw errorWithCode("Context menu item label must be a non-empty string", "INVALID");
-      }
-
-      return { id, label };
-    });
+    const { items, x: xRaw, y: yRaw } = requireContextMenuRequest(args[0]);
 
     return new Promise<string | null>((resolveSelection) => {
       let resolved = false;
@@ -539,8 +488,8 @@ export const registerIpcHandlers = (deps: Deps) => {
       deps.onDirtyState(
         win,
         requireInteger(args[0], "requestId"),
-        Boolean(args[1]),
-        Boolean(args[2]),
+        requireBoolean(args[1], "dirty"),
+        args[2] === undefined ? false : requireBoolean(args[2], "skipPrompt"),
       );
   });
 
@@ -557,7 +506,7 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(FILES_WRITE_RECOVER, "recover", (_event, ...args) => {
     const id = requireString(args[0], "id");
-    const content = requireString(args[1], "content");
+    const content = requireContent(args[1], "content");
     return deps.writeDrawingFileRecover(id, content);
   });
 
@@ -607,11 +556,7 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(THUMBNAILS_GET, "read", (_event, ...args) => deps.getThumbnails(requireIdArray(args[0])));
 
-  handle(THUMBNAILS_PUT, "save", (event, ...args) => {
-    if (!allowRate(`thumbnails:${event.sender.id}`, 20, 1000)) {
-      throw errorWithCode("Too many requests", "INVALID");
-    }
-
+  handle(THUMBNAILS_PUT, "save", (_event, ...args) => {
     const record = args[0];
     if (!isValidThumbnailRecord(record)) throw errorWithCode("Invalid thumbnail record", "INVALID");
 
@@ -621,8 +566,6 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(WINDOW_REPORT_FATAL, "unexpected", (_event, ...args) => {
     const payload = args[0];
     if (!isSerializedAppError(payload)) throw errorWithCode("Invalid fatal payload", "INVALID");
-
-    const message = typeof payload.message === "string" ? payload.message : "Unknown fatal";
     log.error("[renderer:fatal]", payload);
 
     const shouldQuit = shouldQuitAfterFatal(Date.now());
@@ -634,7 +577,7 @@ export const registerIpcHandlers = (deps: Deps) => {
           defaultId: 0,
           cancelId: 1,
           message: "xdrawz encountered a fatal error",
-          detail: message,
+          detail: payload.message,
         })
         .then(({ response }) => {
           if (response === 0) app.quit();

@@ -16,6 +16,7 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
+import { MAX_DRAWING_CONTENT_BYTES, validateDrawingRecord } from "@shared/ipc";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -79,15 +80,20 @@ type Props = {
 };
 
 const invert = (c: number) => Math.round(c * 0.07 + (255 - c) * 0.93);
-const toHex = (c: number) => c.toString(16).padStart(2, "0");
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const toHex = (c: number) => {
+  const clamped = Number.isFinite(c) ? Math.max(0, Math.min(255, Math.round(c))) : 0;
+  return clamped.toString(16).padStart(2, "0");
+};
 
 // Excalidraw renders the canvas background via `invert(0.93) hue-rotate(180deg)` in
 // dark mode but stores the original color, so we replicate it to match the cushion.
 const applyExcalidrawDarkModeFilter = (color: string) => {
+  if (typeof color !== "string") return color;
   if (color.toLowerCase() === "transparent") return color;
+  if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color)) return color;
 
-  const hex = color.replace("#", "");
+  const hex = color.slice(1);
   const full =
     hex.length === 3
       ? hex
@@ -206,14 +212,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         for (const file of sceneFiles) {
           try {
             const content = await file.text();
+            if (new TextEncoder().encode(content).length > MAX_DRAWING_CONTENT_BYTES) {
+              throw new Error("Drawing exceeds the size limit");
+            }
             const parsed: unknown = JSON.parse(content);
-            if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-              throw new Error("Drawing must be a JSON object");
-            }
-            const record = parsed as { elements?: unknown; files?: unknown };
-            if ("elements" in record && !Array.isArray(record.elements)) {
-              throw new Error("Drawing elements must be an array");
-            }
+            validateDrawingRecord(parsed);
             const created = await window.api.files.create(null, stripExcalidraw(file.name), "file");
             const saved = await useStore.getState().saveFile(created.id, content, "explicit");
             if (saved) opened.push(created.id);

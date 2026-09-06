@@ -157,6 +157,26 @@ describe("files", () => {
     expect(entries.map((e) => e.id)).toEqual(["mixedcase"]);
   });
 
+  it("rejects case-only renames that collide with a distinct entry", async () => {
+    await mkdir(path.join(ctx.root, "MixedCase"));
+    await mkdir(path.join(ctx.root, "mixedcase"));
+    await writeFile(path.join(ctx.root, "CaseFile.excalidraw"), SCENE);
+    await writeFile(path.join(ctx.root, "casefile.excalidraw"), SCENE);
+
+    await expect(renameEntry("MixedCase", "mixedcase")).rejects.toThrow(
+      "A file or folder with that name already exists",
+    );
+    await expect(renameEntry("CaseFile.excalidraw", "casefile")).rejects.toThrow(
+      "A file or folder with that name already exists",
+    );
+
+    const entries = await listEntries();
+    expect(entries.map((e) => e.id)).toContain("MixedCase");
+    expect(entries.map((e) => e.id)).toContain("mixedcase");
+    await expect(readDrawingFile("CaseFile.excalidraw")).resolves.toBe(SCENE);
+    await expect(readDrawingFile("casefile.excalidraw")).resolves.toBe(SCENE);
+  });
+
   it("trashes files and folders through the injected trash target", async () => {
     await mkdir(path.join(ctx.root, "folder"));
     await writeFile(path.join(ctx.root, "folder", "nested.excalidraw"), SCENE);

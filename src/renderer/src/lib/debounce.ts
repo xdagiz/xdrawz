@@ -9,12 +9,26 @@ export function debounceAsync<TArgs extends unknown[]>(
   let frozenRemainingMs: number | null = null;
   let deadlineMs: number | null = null;
   let wait = initialWait;
+  let lastRun: Promise<void> | null = null;
 
-  const run = (args: TArgs) => {
-    pending = pending
+  const run = (args: TArgs): Promise<void> => {
+    const watched = pending
       .then(() => fn(...args))
-      .catch((error) => console.error("debounced save failed", error));
-    return pending;
+      .catch((error) => {
+        console.error("debounced save failed", error);
+        throw error;
+      });
+    lastRun = watched;
+    watched.then(
+      () => {
+        if (lastRun === watched) lastRun = null;
+      },
+      () => {
+        if (lastRun === watched) lastRun = null;
+      },
+    );
+    pending = watched.catch(() => undefined);
+    return watched;
   };
 
   const armTimer = (delay: number) => {
@@ -28,7 +42,7 @@ export function debounceAsync<TArgs extends unknown[]>(
         if (paused || !lastArgs) return;
         const argsToRun = lastArgs;
         lastArgs = null;
-        void run(argsToRun);
+        void run(argsToRun).catch(() => undefined);
       },
       Math.max(0, delay),
     );
@@ -58,6 +72,8 @@ export function debounceAsync<TArgs extends unknown[]>(
       const argsToRun = lastArgs;
       lastArgs = null;
       await run(argsToRun);
+    } else if (lastRun) {
+      await lastRun;
     } else {
       await pending;
     }

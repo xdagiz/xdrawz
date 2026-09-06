@@ -136,6 +136,9 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     },
 
     hydrate: async (entries) => {
+      const byId = new Map(
+        entries.filter((entry) => entry.kind === "file").map((entry) => [entry.id, entry] as const),
+      );
       const ids = entries
         .filter((entry) => entry.kind === "file" && !covers(records.get(entry.id), entry))
         .map((entry) => entry.id);
@@ -144,12 +147,39 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
       const fetched = await deps.apiFetch(ids);
       const now = Date.now();
       for (const record of fetched) {
+        const entry = byId.get(record.fileId);
+        if (entry && covers(records.get(record.fileId), entry)) continue;
+        if (entry && (record.mtimeMs !== entry.modifiedAt || record.size !== entry.size)) continue;
         records.set(record.fileId, { ...record, fetchedAt: now });
       }
       notify();
     },
 
     syncWithEntries: (entries) => {
+      const present = new Set<string>();
+      for (const entry of entries) {
+        if (entry.kind !== "file") continue;
+        present.add(entry.id);
+      }
+      for (const id of [...records.keys()]) {
+        if (!present.has(id)) records.delete(id);
+      }
+      for (const id of [...known.keys()]) {
+        if (!present.has(id)) known.delete(id);
+      }
+      for (const id of [...queue.keys()]) {
+        if (!present.has(id)) queue.delete(id);
+      }
+      while (records.size > 1000) {
+        const oldest = records.keys().next().value;
+        if (oldest === undefined) break;
+        records.delete(oldest);
+      }
+      while (known.size > 1000) {
+        const oldest = known.keys().next().value;
+        if (oldest === undefined) break;
+        known.delete(oldest);
+      }
       for (const entry of entries) {
         if (entry.kind !== "file") continue;
         known.set(entry.id, entry);
@@ -225,7 +255,9 @@ export const generateThumbnailPair: GenerateThumbnails = async (fileId) => {
         elements,
         appState: {
           exportBackground: true,
-          viewBackgroundColor: THUMBNAIL_CANVAS_BG.light,
+          viewBackgroundColor: variant.exportWithDarkMode
+            ? THUMBNAIL_CANVAS_BG.dark
+            : THUMBNAIL_CANVAS_BG.light,
           exportWithDarkMode: variant.exportWithDarkMode,
         },
         files,

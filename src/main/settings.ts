@@ -1,8 +1,8 @@
+import { errorWithCode } from "@shared/errors";
 import { DEFAULT_SETTINGS, isAutosavePresetMs, type ThemePreference } from "@shared/ipc";
 import type { AppSettings, SettingsUpdate } from "@shared/ipc";
 import { BrowserWindow, nativeTheme } from "electron";
 
-import { errorWithCode } from "./files";
 import { store } from "./store";
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["light", "dark", "system"];

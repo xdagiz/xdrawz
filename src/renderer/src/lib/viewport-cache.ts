@@ -21,10 +21,13 @@ export const createViewportCache = (): ViewportCache => {
         return undefined;
       }
       if (!Number.isFinite(viewport.zoom) || viewport.zoom <= 0) return undefined;
-      return viewport;
+      return { ...viewport };
     },
     set: (fileId, viewport) => {
-      entries.set(fileId, viewport);
+      if (!viewport || typeof viewport !== "object") return;
+      if (!Number.isFinite(viewport.scrollX) || !Number.isFinite(viewport.scrollY)) return;
+      if (!Number.isFinite(viewport.zoom) || viewport.zoom <= 0) return;
+      entries.set(fileId, { ...viewport });
     },
     delete: (fileId) => {
       entries.delete(fileId);

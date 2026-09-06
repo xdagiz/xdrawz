@@ -21,9 +21,6 @@ export type ConflictSlice = {
   externalConflict: ExternalConflict;
 };
 
-const runChangedDialog = createSingleFlight<"reload" | "overwrite" | "cancel">();
-const runRecoverDialog = createSingleFlight<"recover" | "discard" | "cancel">();
-
 type ResolverDeps = {
   get: () => ConflictSlice;
   set: (patch: Partial<ConflictSlice>) => void;
@@ -36,7 +33,8 @@ export type SaveGate = { action: "proceed" } | { action: "stop"; result: boolean
 
 export const createConflictResolver = (deps: ResolverDeps) => {
   const { get, set } = deps;
-  let pendingRecoverContent: string | undefined;
+  const runChangedDialog = createSingleFlight<"reload" | "overwrite" | "cancel">();
+  const runRecoverDialog = createSingleFlight<"recover" | "discard" | "cancel">();
   let dismissedKey: string | null = null;
 
   const performRecover = async (fileId: string, body: string) => {
@@ -66,13 +64,13 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     if (!force && dismissedKey === key) return "cancel";
 
     const fileName = fileNameOf(state.entries, conflict.fileId);
-    const expectedFileId = conflict.fileId;
+    const expectedKey = key;
 
     return runChangedDialog(async () => {
       const choice = await window.api.dialog.fileChanged(fileName);
 
       const current = get().externalConflict;
-      if (!current || current.type !== "changed" || current.fileId !== expectedFileId) {
+      if (!current || current.type !== "changed" || conflictKeyOf(current) !== expectedKey) {
         return "cancel" as const;
       }
 
@@ -103,43 +101,38 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     if (!force && dismissedKey === key) return "cancel";
 
     const fileName = fileNameOf(state.entries, conflict.fileId);
-    const expectedFileId = conflict.fileId;
-    if (content !== undefined) pendingRecoverContent = content;
+    const expectedKey = key;
+    const recoverContent = content;
 
     return runRecoverDialog(async () => {
-      try {
-        const choice = await window.api.dialog.fileRecover(fileName);
+      const choice = await window.api.dialog.fileRecover(fileName);
 
-        const current = get().externalConflict;
-        if (!current || current.type !== "missing" || current.fileId !== expectedFileId) {
-          return "cancel" as const;
-        }
-
-        if (choice === "cancel") {
-          dismissedKey = conflictKeyOf(current);
-          return "cancel";
-        }
-
-        if (choice === "discard") {
-          dismissedKey = null;
-          deps.discardMissingOpenFile();
-          return "discard";
-        }
-
-        const body =
-          pendingRecoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
-
-        if (!body) {
-          set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
-          return "cancel";
-        }
-
-        dismissedKey = null;
-        const ok = await performRecover(expectedFileId, body);
-        return ok ? ("recover" as const) : ("cancel" as const);
-      } finally {
-        pendingRecoverContent = undefined;
+      const current = get().externalConflict;
+      if (!current || current.type !== "missing" || conflictKeyOf(current) !== expectedKey) {
+        return "cancel" as const;
       }
+
+      if (choice === "cancel") {
+        dismissedKey = conflictKeyOf(current);
+        return "cancel";
+      }
+
+      if (choice === "discard") {
+        dismissedKey = null;
+        deps.discardMissingOpenFile();
+        return "discard";
+      }
+
+      const body = recoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
+
+      if (!body) {
+        set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
+        return "cancel";
+      }
+
+      dismissedKey = null;
+      const ok = await performRecover(current.fileId, body);
+      return ok ? ("recover" as const) : ("cancel" as const);
     });
   };
 

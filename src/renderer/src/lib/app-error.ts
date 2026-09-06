@@ -60,11 +60,20 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
 
 export const saveErrorToastId = (fileId: string) => `save:${fileId}`;
 
+const toBasename = (clean: string) => clean.split(/[\\/]/).pop() ?? clean;
+
 const stripPaths = (msg: string) => {
-  return msg.replace(/['"]?\/[^'"\s]+['"]?/g, (m) => {
+  let out = msg.replace(/['"]?\\\\[^'"\s]+['"]?/g, (m) => {
     const clean = m.replace(/^['"]|['"]$/g, "");
-    const base = clean.split("/").pop() ?? clean;
-    return `'${base}'`;
+    return `'${toBasename(clean)}'`;
+  });
+  out = out.replace(/['"]?[A-Za-z]:\\[^'"\s]*['"]?/g, (m) => {
+    const clean = m.replace(/^['"]|['"]$/g, "");
+    return `'${toBasename(clean)}'`;
+  });
+  return out.replace(/['"]?\/[^'"\s]+['"]?/g, (m) => {
+    const clean = m.replace(/^['"]|['"]$/g, "");
+    return `'${toBasename(clean)}'`;
   });
 };
 

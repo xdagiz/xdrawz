@@ -93,11 +93,14 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   let latestSignature: string | null = null;
   let latestRevision = 0;
   let savesInFlight = 0;
+  let saveSeq = 0;
+  let appliedSeq = 0;
   let disposed = false;
   let blocked = false;
   let dirty = false;
   let saveFailures = 0;
-  let lastSaveOk = false;
+  let saveNowTail: Promise<void> = Promise.resolve();
+  let explicitSaveInFlight = false;
   let cancelScheduledEvaluation: (() => void) | null = null;
 
   const setDirty = (next: boolean) => {
@@ -174,6 +177,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   };
 
   const retryAfterSaveFailure = ({ snapshot, revision, epochAtStart }: SaveFailure) => {
+    if (disposed) return;
     setDirty(true);
     if (epochAtStart !== retargetEpoch) {
       saveFailures = 0;
@@ -212,20 +216,30 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     );
     const [targetElements, targetAppState, targetFiles] = targetSnapshot;
 
-    const json = serializeAsJSON(targetElements, targetAppState, targetFiles, "local");
     const epochAtStart = retargetEpoch;
+    const mySeq = ++saveSeq;
     savesInFlight += 1;
 
     try {
+      const json = serializeAsJSON(targetElements, targetAppState, targetFiles, "local");
       const ok = await save(currentFileId, json, origin);
-      lastSaveOk = ok;
+      if (mySeq <= appliedSeq || disposed) return ok;
+      appliedSeq = mySeq;
       if (ok) {
         saveFailures = 0;
-        if (targetRevision === latestRevision) {
+        if (targetRevision === latestRevision && epochAtStart === retargetEpoch) {
           baseline = signatureFor(targetElements, targetAppState, targetFiles);
           setDirty(false);
         } else {
           setDirty(true);
+          if (
+            targetRevision === latestRevision &&
+            epochAtStart !== retargetEpoch &&
+            latestDrawing &&
+            !disposed
+          ) {
+            retryLatest();
+          }
         }
       } else if (targetRevision === latestRevision) {
         retryAfterSaveFailure({
@@ -237,7 +251,8 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
       return ok;
     } catch {
-      lastSaveOk = false;
+      if (mySeq <= appliedSeq || disposed) return false;
+      appliedSeq = mySeq;
       if (targetRevision === latestRevision) {
         retryAfterSaveFailure({
           snapshot: targetSnapshot,
@@ -297,12 +312,49 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     if (disposed || blocked || !latestDrawing) return false;
 
     runPendingEvaluation();
+    if (!latestDrawing) return false;
 
-    const [elements, appState, files] = latestDrawing;
     debounced.cancel();
-    debounced(elements, appState, files, latestRevision, "explicit");
-    await debounced.flush({ force: true });
-    return lastSaveOk;
+    const run = async (): Promise<boolean> => {
+      const current = latestDrawing;
+      if (!current || disposed) return false;
+      const [currentElements, currentAppState, currentFiles] = current;
+      return persistDrawing(
+        currentElements,
+        currentAppState,
+        currentFiles,
+        latestRevision,
+        "explicit",
+      );
+    };
+    if (!explicitSaveInFlight) {
+      explicitSaveInFlight = true;
+      const started = run();
+      saveNowTail = started.then(
+        () => undefined,
+        () => undefined,
+      );
+      const drain = async () => {
+        try {
+          let observed = saveNowTail;
+          for (;;) {
+            await observed;
+            if (observed === saveNowTail) break;
+            observed = saveNowTail;
+          }
+        } finally {
+          explicitSaveInFlight = false;
+        }
+      };
+      void drain();
+      return started;
+    }
+    const queued = saveNowTail.then(run);
+    saveNowTail = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
   };
 
   const getSerializedContent = () => {
@@ -403,6 +455,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       const [elements, appState, files] = latestDrawing;
       baseline = signatureFor(elements, appState, files);
     }
+    latestSignature = baseline;
     setDirty(false);
   };
 

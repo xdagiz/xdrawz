@@ -1,4 +1,5 @@
 export const formatRelativeTime = (timestamp: number) => {
+  if (!Number.isFinite(timestamp)) return "";
   const diff = Date.now() - timestamp;
   if (diff <= 0) return "just now";
 

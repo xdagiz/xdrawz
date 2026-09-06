@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { Dirent, Stats, constants as fsConstants } from "node:fs";
 import {
-  link,
+  copyFile,
   lstat,
   mkdir,
   open as fsOpen,
@@ -14,10 +14,12 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import type { ErrorCode } from "@shared/errors";
+import { errorWithCode } from "@shared/errors";
 import {
   FILE_NOT_FOUND_MESSAGE,
+  MAX_DRAWING_CONTENT_BYTES,
   parentIdOf,
+  validateDrawingRecord,
   type FileDeleteMode,
   type FileEntry,
   sortFileEntries,
@@ -25,8 +27,8 @@ import {
 
 import { getDrawings } from "./drawings";
 
-const MAX_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
 export const MAX_WALK_ENTRIES = 20_000;
+const MAX_MUTATION_QUEUE = 100;
 
 const isWindows = process.platform === "win32";
 const isMac = process.platform === "darwin";
@@ -34,17 +36,17 @@ const isMac = process.platform === "darwin";
 const normalizeId = (id: string) => (isMac ? id.normalize("NFC") : id);
 const normalizeFsName = (name: string) => (isMac ? name.normalize("NFC") : name);
 
-export const errorWithCode = (message: string, code: ErrorCode): Error => {
-  const error = new Error(message);
-  Object.assign(error, { code });
-  return error;
-};
-
 const errorCodeOf = (error: unknown) => {
   if (typeof error !== "object" || error === null) return undefined;
   if (!("code" in error)) return undefined;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
+};
+
+const throwExists = (cause?: unknown): never => {
+  const error = errorWithCode("A file or folder with that name already exists", "INVALID");
+  if (cause !== undefined) Object.assign(error, { cause });
+  throw error;
 };
 
 const contains = (parent: string, child: string) => {
@@ -226,20 +228,28 @@ const resolveInsideRoot = async (id: string) => {
 const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]> => {
   const out: FileEntry[] = [];
   const rootReal = await getCanonicalRoot();
-  let fileCount = 0;
-  const countFile = () => {
-    fileCount += 1;
-    if (fileCount > cap) {
-      throw errorWithCode(`The drawings folder contains too many files (max ${cap})`, "TOO_LARGE");
+
+  let entryCount = 0;
+  const countEntry = () => {
+    entryCount += 1;
+    if (entryCount > cap) {
+      throw errorWithCode(
+        `TOO_MANY_ENTRIES: The drawings folder contains too many files (max ${cap})`,
+        "TOO_LARGE",
+      );
     }
   };
 
-  const walk = async (dirAbs: string) => {
+  const pending: string[] = [root];
+  while (pending.length > 0) {
+    const dirAbs = pending.pop();
+    if (dirAbs === undefined) continue;
+
     let dirents: Dirent[];
     try {
       dirents = await readdir(dirAbs, { withFileTypes: true });
     } catch {
-      return;
+      continue;
     }
 
     for (const dirent of dirents) {
@@ -266,6 +276,7 @@ const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]
           if (realChild === null || !contains(rootReal, realChild)) continue;
         }
 
+        countEntry();
         out.push({
           id,
           name: normalizeFsName(dirent.name),
@@ -275,12 +286,12 @@ const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]
           size: 0,
         });
 
-        await walk(absPath);
+        pending.push(absPath);
         continue;
       }
 
       if (lst.isFile() && isExcalidrawFileName(dirent.name)) {
-        countFile();
+        countEntry();
         out.push({
           id,
           name: normalizeFsName(dirent.name),
@@ -291,9 +302,8 @@ const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]
         });
       }
     }
-  };
+  }
 
-  await walk(root);
   return sortFileEntries(out);
 };
 
@@ -303,8 +313,17 @@ const walkEntries = async (root: string): Promise<FileEntry[]> => {
 
 export const countEntriesFlat = async (rootAbs: string, cap: number) => {
   let count = 0;
-  const pending: string[] = [rootAbs];
+  const countEntry = () => {
+    count += 1;
+    if (count > cap) {
+      throw errorWithCode(
+        `TOO_MANY_ENTRIES: The drawings folder contains too many files (max ${cap})`,
+        "TOO_LARGE",
+      );
+    }
+  };
 
+  const pending: string[] = [rootAbs];
   while (pending.length > 0) {
     const dirAbs = pending.pop();
     if (dirAbs === undefined) continue;
@@ -328,19 +347,12 @@ export const countEntriesFlat = async (rootAbs: string, cap: number) => {
 
       if (lst.isSymbolicLink()) continue;
       if (lst.isDirectory()) {
+        countEntry();
         pending.push(absPath);
         continue;
       }
 
-      if (lst.isFile() && isExcalidrawFileName(dirent.name)) {
-        count += 1;
-        if (count > cap) {
-          throw errorWithCode(
-            `The drawings folder contains too many files (max ${cap})`,
-            "TOO_LARGE",
-          );
-        }
-      }
+      if (lst.isFile() && isExcalidrawFileName(dirent.name)) countEntry();
     }
   }
 
@@ -363,28 +375,17 @@ const assertDrawingJson = (content: string) => {
   } catch {
     throw errorWithCode("Drawing content is not valid JSON", "INVALID");
   }
-
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw errorWithCode("Drawing must be a JSON object", "INVALID");
-  }
-
-  const drawing = parsed;
-  if ("elements" in drawing && !Array.isArray(drawing.elements)) {
-    throw errorWithCode("Drawing elements must be an array when present", "INVALID");
-  }
-
-  if (
-    "files" in drawing &&
-    (drawing.files === null || typeof drawing.files !== "object" || Array.isArray(drawing.files))
-  ) {
-    throw errorWithCode("Drawing files must be an object when present", "INVALID");
+  try {
+    validateDrawingRecord(parsed);
+  } catch (error) {
+    throw errorWithCode(error instanceof Error ? error.message : "Invalid drawing", "INVALID");
   }
 };
 
 const assertContentSize = (content: string) => {
   const bytes = Buffer.byteLength(content, "utf8");
-  if (bytes > MAX_FILE_CONTENT_BYTES) {
-    throw errorWithCode(`Content exceeds ${MAX_FILE_CONTENT_BYTES} bytes`, "TOO_LARGE");
+  if (bytes > MAX_DRAWING_CONTENT_BYTES) {
+    throw errorWithCode(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, "TOO_LARGE");
   }
 };
 
@@ -415,7 +416,7 @@ export const readDrawingFile = async (id: string) => {
       throw errorWithCode("Hardlinks not allowed", "INVALID");
     }
 
-    if (stats.size > MAX_FILE_CONTENT_BYTES) {
+    if (stats.size > MAX_DRAWING_CONTENT_BYTES) {
       throw errorWithCode("File is too large to load", "TOO_LARGE");
     }
 
@@ -435,14 +436,32 @@ const ensureNotDirectory = async (absPath: string) => {
 };
 
 let mutationTail: Promise<void> = Promise.resolve();
+let mutationDepth = 0;
 
 const withFileMutationLock = <T>(task: () => Promise<T>): Promise<T> => {
+  if (mutationDepth >= MAX_MUTATION_QUEUE) {
+    const busy = errorWithCode("TOO_BUSY: Too many pending file operations", "UNKNOWN");
+    Object.assign(busy, { code: "TOO_BUSY" });
+    return Promise.reject(busy);
+  }
+
+  mutationDepth += 1;
   const run = mutationTail.then(task, task);
   mutationTail = run.then(
     () => undefined,
     () => undefined,
   );
-  return run;
+
+  return run.then(
+    (value) => {
+      mutationDepth -= 1;
+      return value;
+    },
+    (error) => {
+      mutationDepth -= 1;
+      throw error;
+    },
+  );
 };
 
 export const writeDrawingFile = async (
@@ -492,11 +511,9 @@ export const writeDrawingFileRecover = async (
     }
 
     await assertParentsNotSymlinks(root, rootReal, absPath);
-    await mkdir(path.dirname(candidateReal), { recursive: true });
 
     const parentRealAfter = await realpath(path.dirname(absPath)).catch(() => null);
     if (parentRealAfter && !contains(rootReal, parentRealAfter)) {
-      await rm(path.dirname(candidateReal), { recursive: true, force: true }).catch(() => {});
       throw errorWithCode("Symlink in path", "INVALID");
     }
 
@@ -504,6 +521,7 @@ export const writeDrawingFileRecover = async (
     await assertParentsNotSymlinks(root, rootReal, absPath);
     await ensureNotDirectory(absPath);
 
+    await mkdir(path.dirname(candidateReal), { recursive: true });
     await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
     return entryFromAbs(root, absPath, "file");
   });
@@ -543,6 +561,10 @@ export const renameEntry = async (
     const kind = isDirectory ? "directory" : "file";
 
     if (nextAbs.toLowerCase() === absPath.toLowerCase()) {
+      const nextLst = await lstat(nextAbs).catch(() => null);
+      if (nextLst && (nextLst.dev !== lst.dev || nextLst.ino !== lst.ino)) {
+        throwExists();
+      }
       const tempAbs = path.join(
         path.dirname(candidateReal),
         `.${path.basename(candidateReal)}.renaming-${randomUUID()}.tmp`,
@@ -559,38 +581,52 @@ export const renameEntry = async (
     }
 
     hooks?.beforeMutate?.([candidateReal, nextReal]);
+    // Same-device rename is atomic with no hardlink window where both names
+    // resolve to one inode. The EXDEV copy+fsync+unlink fallback below has a
+    // crash window where both paths exist as separate files.
     if (!isDirectory) {
+      const nextExists = await lstat(nextAbs).catch(() => null);
+      if (nextExists) throwExists();
+
       try {
-        await link(candidateReal, nextReal);
+        await rename(candidateReal, nextReal);
       } catch (error) {
         const code = errorCodeOf(error);
-        if (code === "EEXIST") {
-          throw new Error("A file or folder with that name already exists", {
-            cause: error,
-          });
+        if (code === "EEXIST" || code === "ENOTEMPTY") throwExists(error);
+        if (code !== "EXDEV") throw error;
+
+        try {
+          await copyFile(candidateReal, nextReal, fsConstants.COPYFILE_EXCL);
+        } catch (copyError) {
+          if (errorCodeOf(copyError) === "EEXIST") throwExists(copyError);
+          throw copyError;
         }
-        if (code !== "EPERM" && code !== "EOPNOTSUPP" && code !== "ENOSYS") {
-          throw error;
+
+        const copiedFh = await fsOpen(nextReal, "r").catch(() => null);
+        if (copiedFh) {
+          await copiedFh.sync().catch(() => {});
+          await copiedFh.close().catch(() => {});
         }
-        const exists = await lstat(nextAbs).catch(() => null);
-        if (exists) {
-          throw new Error("A file or folder with that name already exists", {
-            cause: error,
-          });
+
+        try {
+          await unlink(candidateReal);
+        } catch (unlinkError) {
+          await unlink(nextReal).catch(() => {});
+          throw unlinkError;
         }
-        await rename(candidateReal, nextReal);
-        return entryFromAbs(root, nextAbs, kind);
       }
-      try {
-        await unlink(candidateReal);
-      } catch (error) {
-        await unlink(nextReal).catch(() => {});
-        throw error;
-      }
+
+      return entryFromAbs(root, nextAbs, kind);
     } else {
       const exists = await lstat(nextAbs).catch(() => null);
-      if (exists) throw new Error("A file or folder with that name already exists");
-      await rename(candidateReal, nextReal);
+      if (exists) throwExists();
+      try {
+        await rename(candidateReal, nextReal);
+      } catch (renameError) {
+        const renameCode = errorCodeOf(renameError);
+        if (renameCode === "EEXIST" || renameCode === "ENOTEMPTY") throwExists(renameError);
+        throw renameError;
+      }
     }
 
     return entryFromAbs(root, nextAbs, kind);

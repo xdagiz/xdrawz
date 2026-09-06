@@ -73,8 +73,18 @@ export const createDrawingsWatcher = (
   let listing = false;
   let pending = false;
   let stopped = false;
+  let listErrorCount = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const LIST_RETRY_DELAYS_MS = [500, 2000, 10000];
 
   const ignored = new Map<string, number>();
+
+  const purgeExpiredIgnored = () => {
+    const at = now();
+    for (const [key, exp] of ignored) {
+      if (at > exp) ignored.delete(key);
+    }
+  };
 
   const isIgnored = (absPath: string) => {
     const exp = ignored.get(absPath);
@@ -87,10 +97,12 @@ export const createDrawingsWatcher = (
   };
 
   const ignorePath = (absPath: string, ttlMs = defaultIgnoreTtlMs) => {
+    if (ignored.size > 1000) purgeExpiredIgnored();
     ignored.set(normalizePath(absPath), now() + ttlMs);
   };
 
   const ignorePaths = (absPaths: string[], ttlMs = defaultIgnoreTtlMs) => {
+    if (ignored.size > 1000) purgeExpiredIgnored();
     const deadline = now() + ttlMs;
     for (const p of absPaths) ignored.set(normalizePath(p), deadline);
   };
@@ -127,6 +139,24 @@ export const createDrawingsWatcher = (
     }, coalesceMs);
   };
 
+  const clearRetry = () => {
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+  };
+
+  const scheduleRetry = () => {
+    if (stopped || !currentRoot) return;
+    if (retryTimer !== null) return;
+    const delay =
+      LIST_RETRY_DELAYS_MS[Math.min(listErrorCount, LIST_RETRY_DELAYS_MS.length) - 1] ?? 500;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      void refresh();
+    }, delay);
+  };
+
   const clearCoalesce = () => {
     if (coalesceTimer !== null) {
       clearTimeout(coalesceTimer);
@@ -153,9 +183,14 @@ export const createDrawingsWatcher = (
         let entries: FileEntry[];
         try {
           entries = await listEntries(root);
+          listErrorCount = 0;
         } catch (error) {
+          listErrorCount += 1;
           callbacks.onError?.(error);
-          if (!pending || stopped || !currentRoot) return;
+          if (!pending || stopped || !currentRoot) {
+            scheduleRetry();
+            return;
+          }
           continue;
         }
 
@@ -206,6 +241,8 @@ export const createDrawingsWatcher = (
     lifecycleEpoch += 1;
     stopped = true;
     clearCoalesce();
+    clearRetry();
+    listErrorCount = 0;
     ignored.clear();
 
     if (chokidarInstance) {
@@ -230,6 +267,10 @@ export const createDrawingsWatcher = (
 
     if (chokidarInstance && currentRoot === canonicalRoot) return;
     if (chokidarInstance) await stopInternal();
+
+    if (currentRoot !== canonicalRoot) ignored.clear();
+    purgeExpiredIgnored();
+    listErrorCount = 0;
 
     stopped = false;
     currentRoot = canonicalRoot;

@@ -157,6 +157,31 @@ describe("resolveChangedConflict", () => {
     expect(await second).toBe("reload");
     expect(dialog.fileChanged).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores a stale choice when the disk version changes mid-dialog", async () => {
+    const { dialog, slice, resolver } = await makeHarness({
+      externalConflict: changedAt(200),
+    });
+
+    let release!: (choice: "overwrite") => void;
+    dialog.fileChanged.mockImplementation(
+      () =>
+        new Promise<"overwrite">((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    const pending = resolver.resolveChangedConflict();
+    slice.externalConflict = changedAt(500);
+    release("overwrite");
+
+    expect(await pending).toBe("cancel");
+    expect(slice.externalConflict).toEqual(changedAt(500));
+
+    dialog.fileChanged.mockResolvedValue("reload");
+    expect(await resolver.resolveChangedConflict()).toBe("reload");
+    expect(dialog.fileChanged).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("resolveMissingConflict", () => {
@@ -208,6 +233,26 @@ describe("resolveMissingConflict", () => {
 
     expect(await resolver.resolveMissingConflict()).toBe("cancel");
     expect(slice.error).not.toBeNull();
+  });
+
+  it("ignores a stale choice when the conflict changes mid-dialog", async () => {
+    const { dialog, files, slice, resolver } = await makeHarness({
+      externalConflict: missing,
+    });
+    let release!: (choice: "recover") => void;
+    dialog.fileRecover.mockImplementation(
+      () =>
+        new Promise<"recover">((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = resolver.resolveMissingConflict("<json/>");
+    slice.externalConflict = { type: "missing", fileId: "b.excalidraw" };
+    release("recover");
+
+    expect(await pending).toBe("cancel");
+    expect(slice.externalConflict).toEqual({ type: "missing", fileId: "b.excalidraw" });
+    expect(files.writeRecover).not.toHaveBeenCalled();
   });
 });
 
