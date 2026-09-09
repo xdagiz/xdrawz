@@ -49,7 +49,7 @@ export function Greeting() {
       </div>
 
       <main className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-        <div className="bg-primary text-primary-foreground flex size-12 items-center justify-center rounded-xl shadow-sm">
+        <div className="bg-primary text-primary-foreground border-border-quiet flex size-12 items-center justify-center rounded-xl border shadow-sm">
           <Folder className="size-6" />
         </div>
 
@@ -72,7 +72,9 @@ export function Greeting() {
           </Button>
         </div>
 
-        {error && <p className="text-destructive max-w-xs text-sm break-words">{error}</p>}
+        {error && (
+          <p className="text-destructive max-w-xs font-mono text-xs break-words">{error}</p>
+        )}
       </main>
     </div>
   );

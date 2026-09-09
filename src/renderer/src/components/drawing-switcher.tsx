@@ -57,18 +57,18 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
 
   return (
     <div
-      className="animate-in fade-in bg-popover/40 fixed inset-0 z-50 flex items-center justify-center p-6 duration-150 motion-reduce:animate-none"
+      className="animate-in fade-in bg-popover/40 fixed inset-0 z-50 flex items-center justify-center p-4 duration-150 motion-reduce:animate-none"
       onClick={onCancel}
     >
       <div
         role="dialog"
         aria-label="Switch drawing"
-        className="animate-in fade-in zoom-in-95 bg-popover/90 text-popover-foreground w-full max-w-md rounded-xl border p-4 shadow-2xl backdrop-blur-xl duration-150 outline-none motion-reduce:animate-none"
+        className="animate-in fade-in zoom-in-95 bg-popover/90 text-popover-foreground border-border-float w-full max-w-md rounded-xl border p-4 shadow-[var(--shadow-float)] backdrop-blur-xl duration-150 outline-none motion-reduce:animate-none"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex flex-col gap-3">
           <div
-            className="border-border/60 flex aspect-[4/3] max-h-52 w-full items-center justify-center overflow-hidden rounded-lg border"
+            className="border-border-quiet flex aspect-[4/3] max-h-52 w-full items-center justify-center overflow-hidden rounded-lg border"
             style={{ backgroundColor: canvasBg }}
           >
             {focusPreview.image ? (
@@ -101,8 +101,8 @@ export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherPr
                   onClick={() => commitAt(tileIndex)}
                   className={`flex w-20 shrink-0 flex-col items-stretch gap-1 rounded-md border p-1 outline-none ${
                     activeTile
-                      ? "border-foreground/60 bg-foreground/10 ring-foreground/40 ring-1"
-                      : "border-border/60 bg-foreground/[0.04] opacity-50 hover:opacity-90"
+                      ? "border-border-selected bg-foreground/10 ring-border-selected/40 ring-1"
+                      : "border-border-quiet bg-foreground/[0.04] opacity-50 hover:opacity-90"
                   }`}
                 >
                   <span

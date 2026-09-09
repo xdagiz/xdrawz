@@ -6,7 +6,7 @@ import {
   type TreeInstance,
 } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react";
 import type { KeyboardEventHandler, MouseEvent, MouseEventHandler, ReactNode } from "react";
 import { useCallback, useMemo } from "react";
 
@@ -115,6 +115,8 @@ export const TreeRow = ({
   isActive,
   isDirty,
   indentPx = 16,
+  timeLabel,
+  onMenuClick,
   onContextMenu,
 }: {
   item: FileTreeItem;
@@ -122,12 +124,15 @@ export const TreeRow = ({
   isActive?: boolean;
   isDirty?: boolean;
   indentPx?: number;
-  onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
+  timeLabel?: string;
+  onMenuClick?: (event: MouseEvent<HTMLButtonElement>) => void;
+  onContextMenu?: MouseEventHandler<HTMLElement>;
 }) => {
   const meta = item.getItemMeta();
   const level = meta.level;
   const isFolder = item.isFolder();
   const expanded = isFolder && item.isExpanded();
+
   const isLastSibling = meta.posInSet === meta.setSize - 1;
 
   const guides: ReactNode[] = [];
@@ -138,7 +143,7 @@ export const TreeRow = ({
       <span
         key={depth}
         className={cn(
-          "absolute border-l border-sidebar-border",
+          "absolute border-l border-border-quiet",
           isParentColumn && isLastSibling ? "top-0 h-1/2" : "inset-y-0",
         )}
         style={{ left: depth * indentPx + indentPx / 2 - 1 }}
@@ -146,42 +151,119 @@ export const TreeRow = ({
     );
   }
 
+  if (isFolder) {
+    return (
+      <div
+        data-active={isActive ? "true" : undefined}
+        onContextMenu={onContextMenu}
+        className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 transition-colors outline-hidden hover:bg-sidebar-accent/60 focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[active=true]:bg-sidebar-accent"
+      >
+        <button
+          {...item.getProps()}
+          type="button"
+          title={label}
+          style={{ paddingLeft: `${level * indentPx}px` }}
+          className="relative flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-sm outline-hidden group-data-[active=true]/row:font-medium"
+        >
+        {level > 0 && (
+          <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0">
+            {guides}
+            <span
+              className="absolute top-1/2 border-t border-border-quiet"
+              style={{
+                left: (level - 1) * indentPx + indentPx / 2 - 1,
+                width: indentPx - 6,
+              }}
+            />
+          </span>
+        )}
+        <span
+          aria-hidden
+          className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+        >
+          <ChevronRightIcon
+            className={cn("size-3.5 transition-transform", expanded && "rotate-90")}
+          />
+        </span>
+        <span className="truncate text-sidebar-foreground/90 transition-colors group-hover/row:text-sidebar-foreground group-data-[active=true]/row:text-sidebar-foreground">{label}</span>
+        </button>
+        {onMenuClick ? (
+          <button
+            type="button"
+            aria-label={`Actions for ${label}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onMenuClick(event);
+            }}
+            className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:block group-hover/row:block group-focus-within/row:block"
+          >
+            <MoreHorizontalIcon className="size-3.5" />
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <button
-      {...item.getProps()}
-      type="button"
-      title={label}
+    <div
       data-active={isActive ? "true" : undefined}
       data-dirty={isDirty ? "true" : undefined}
       onContextMenu={onContextMenu}
-      style={{ paddingLeft: `${level * indentPx}px` }}
-      className={cn(
-        "relative flex h-8 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm outline-hidden transition-colors hover:bg-sidebar-accent focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium",
-        isDirty && "dirty-dot",
-      )}
+      className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 transition-colors outline-hidden hover:bg-sidebar-accent/60 focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[active=true]:bg-sidebar-accent"
     >
-      {level > 0 && (
-        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0">
-          {guides}
-          <span
-            className="absolute top-1/2 border-t border-sidebar-border"
-            style={{
-              left: (level - 1) * indentPx + indentPx / 2 - 1,
-              width: indentPx - 6,
-            }}
-          />
-        </span>
-      )}
-      <span
-        aria-hidden
-        className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+      <button
+        {...item.getProps()}
+        type="button"
+        title={label}
+        style={{ paddingLeft: `${level * indentPx}px` }}
+        className="relative flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-sm outline-hidden group-data-[active=true]/row:font-medium"
       >
-        {isFolder ? (
-          <ChevronRightIcon className={cn("size-3.5 transition-transform", expanded && "rotate-90")} />
+        {level > 0 && (
+          <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0">
+            {guides}
+            <span
+              className="absolute top-1/2 border-t border-border-quiet"
+              style={{
+                left: (level - 1) * indentPx + indentPx / 2 - 1,
+                width: indentPx - 6,
+              }}
+            />
+          </span>
+        )}
+        <span
+          aria-hidden
+          className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+        />
+        <span className="relative min-w-0 flex-1 truncate text-sidebar-foreground/90 transition-colors group-hover/row:text-sidebar-foreground group-data-[active=true]/row:text-sidebar-foreground">
+          {label}
+        </span>
+        {isDirty ? (
+          <>
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+            <span className="sr-only">(unsaved changes)</span>
+          </>
+        ) : timeLabel ? (
+          <span
+            data-testid="tree-row-time"
+            className="shrink-0 font-mono text-[10.5px] text-muted-foreground/80 group-hover/row:hidden group-focus-within/row:hidden"
+          >
+            {timeLabel}
+          </span>
         ) : null}
-      </span>
-      <span className="relative truncate">{label}</span>
-      {isDirty ? <span className="sr-only">(unsaved changes)</span> : null}
-    </button>
+      </button>
+      {onMenuClick ? (
+        <button
+          type="button"
+          aria-label={`Actions for ${label}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onMenuClick(event);
+          }}
+          className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:block group-hover/row:block group-focus-within/row:block"
+        >
+          <MoreHorizontalIcon className="size-3.5" />
+        </button>
+      ) : null}
+    </div>
   );
 };

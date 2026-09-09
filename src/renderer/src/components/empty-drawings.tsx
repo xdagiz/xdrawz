@@ -11,7 +11,7 @@ import {
 } from "./ui/empty";
 
 export const EmptyDrawings = ({ action }: { action?: ReactNode }) => (
-  <Empty className="border-0">
+  <Empty className="border-0 px-1">
     <EmptyHeader>
       <EmptyMedia variant="icon">
         <FilePlus2Icon />

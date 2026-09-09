@@ -12,10 +12,12 @@ import { CommandDeleteDialog, CommandRenameDialog } from "./command-dialogs";
 import {
   Command,
   CommandDialog,
+  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
   CommandShortcut,
 } from "./ui/command";
 import { Kbd, KbdGroup } from "./ui/kbd";
@@ -94,8 +96,6 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     (entry) => entry.modifiedAt,
   ).slice(0, MAX_HITS_PER_SOURCE);
 
-  const noHits = drawingHits.length === 0 && commandHits.length === 0;
-
   const runCommand = async (command: CommandDef) => {
     try {
       await command.perform({
@@ -141,9 +141,10 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
           >
             {conflictActive && (
               <p className="text-destructive px-3 pb-2 text-xs font-medium">
-                File commands are limited until the conflict is resolved (see the banner)
+                File commands are limited until the conflict is resolved in its dialog
               </p>
             )}
+            <CommandEmpty>No results found.</CommandEmpty>
             {commandHits.length > 0 && (
               <CommandGroup heading="Actions">
                 {commandHits.map((command) => (
@@ -165,6 +166,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
                 ))}
               </CommandGroup>
             )}
+            <CommandSeparator />
             {drawingHits.length > 0 && (
               <CommandGroup heading="Drawings">
                 {drawingHits.map((file) => (
@@ -179,11 +181,8 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
                 ))}
               </CommandGroup>
             )}
-            {noHits && (
-              <p className="text-muted-foreground py-6 text-center text-sm">No matching results</p>
-            )}
           </CommandList>
-          <div className="text-muted-foreground bg-foreground/[0.025] [&_[data-slot=kbd]]:bg-foreground/[0.08] [&_[data-slot=kbd]]:text-foreground flex items-center gap-3 px-4 py-2.5 text-sm font-medium">
+          <div className="text-muted-foreground border-border-quiet bg-foreground/[0.025] [&_[data-slot=kbd]]:bg-foreground/[0.08] [&_[data-slot=kbd]]:text-foreground flex items-center gap-3 border-t px-4 py-2.5 text-sm font-medium">
             <KbdGroup className="items-center gap-1.5">
               <Kbd>
                 <ArrowUpIcon />

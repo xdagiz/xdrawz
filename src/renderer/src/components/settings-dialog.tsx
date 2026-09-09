@@ -231,7 +231,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
           <Field orientation="horizontal" className="mt-3">
             <FieldContent>
               <FieldLabel>Drawings folder</FieldLabel>
-              <FieldDescription className="break-all">
+              <FieldDescription className="font-mono text-xs break-all">
                 {drawings?.path ?? "Not set"}
               </FieldDescription>
             </FieldContent>

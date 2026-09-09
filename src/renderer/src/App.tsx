@@ -37,12 +37,13 @@ const App = () => {
   const editorGeneration = useStore((s) => s.editorGeneration);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
+  const paletteOpen = useStore((s) => s.paletteOpen);
+  const setPaletteOpen = useStore((s) => s.setPaletteOpen);
   const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
 
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const switcher = useSwitcher({ paletteOpen });
 
   const folderMissing = drawings?.missing === true && entries.length === 0;
@@ -57,8 +58,11 @@ const App = () => {
   }, [pickAndSwitchFolder]);
 
   useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
-  useHotkey("Mod+W", () => void setOpenFileId(null), { requireReset: true });
-  useHotkey("Mod+K", () => setPaletteOpen((current) => !current));
+  useHotkey("Mod+W", () => void setOpenFileId(null), {
+    enabled: !settingsDialogOpen && !paletteOpen,
+    requireReset: true,
+  });
+  useHotkey("Mod+K", () => setPaletteOpen(!paletteOpen));
 
   useEffect(() => {
     if (!openFileId) {
@@ -184,8 +188,8 @@ const App = () => {
               <EditorView />
             </ErrorBoundary>
             {folderMissing && (
-              <div className="bg-background/80 absolute inset-0 flex items-center justify-center p-6">
-                <div className="bg-card flex flex-col items-center gap-3 rounded-lg border p-6 shadow-sm">
+              <div className="bg-background/80 absolute inset-0 flex items-center justify-center p-4">
+                <div className="bg-card flex flex-col items-center gap-3 rounded-lg border p-4 shadow-sm">
                   <p className="text-sm font-medium">Drawings folder is unavailable</p>
                   <p className="text-muted-foreground max-w-xs text-center text-sm">
                     Choose the folder again to keep working.

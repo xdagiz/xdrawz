@@ -255,9 +255,7 @@ export const generateThumbnailPair: GenerateThumbnails = async (fileId) => {
         elements,
         appState: {
           exportBackground: true,
-          viewBackgroundColor: variant.exportWithDarkMode
-            ? THUMBNAIL_CANVAS_BG.dark
-            : THUMBNAIL_CANVAS_BG.light,
+          viewBackgroundColor: THUMBNAIL_CANVAS_BG.light,
           exportWithDarkMode: variant.exportWithDarkMode,
         },
         files,

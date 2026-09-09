@@ -108,9 +108,11 @@ export type State = {
   error: AppError | null;
   externalConflict: ExternalConflict;
   watcherDown: string | null;
+  isLoadingDrawings: boolean;
   editorGeneration: number;
   settings: AppSettings;
   settingsDialogOpen: boolean;
+  paletteOpen: boolean;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
@@ -123,6 +125,7 @@ export type State = {
   overwriteOpenFileFromSession: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
+  setPaletteOpen: (open: boolean) => void;
   reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
   reloadOpenFileFromDisk: () => void;
   discardMissingOpenFile: () => void;
@@ -208,8 +211,10 @@ export const useStore = create<State>((set, get) => {
     error: null,
     externalConflict: null,
     watcherDown: null,
+    isLoadingDrawings: true,
     editorGeneration: 0,
     settingsDialogOpen: false,
+    paletteOpen: false,
     settings:
       typeof window !== "undefined"
         ? { ...DEFAULT_SETTINGS, theme: readStoredTheme(window.localStorage) }
@@ -233,6 +238,7 @@ export const useStore = create<State>((set, get) => {
           dirtyById: {},
           error: null,
           watcherDown: null,
+          isLoadingDrawings: false,
           editorGeneration: state.editorGeneration + 1,
         };
       });
@@ -420,9 +426,14 @@ export const useStore = create<State>((set, get) => {
       });
     },
 
-    reportError: (error, operation) => set({ error: toAppError(error, operation) }),
+    reportError: (error, operation) =>
+      set({
+        error: toAppError(error, operation),
+        ...(operation === "load" ? { isLoadingDrawings: false } : {}),
+      }),
     reportWatcherError: (event) => set({ watcherDown: event.message }),
     setSettingsDialogOpen: (open) => set({ settingsDialogOpen: open }),
+    setPaletteOpen: (open) => set({ paletteOpen: open }),
     resolveChangedConflict,
     resolveMissingConflict,
     recoverMissingOpenFile,
@@ -528,6 +539,7 @@ export const useStore = create<State>((set, get) => {
           dirtyById: {},
           error: null,
           watcherDown: null,
+          isLoadingDrawings: true,
         });
         void window.api.store.set("lastOpenedFileId", null);
 

@@ -131,6 +131,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const theme = useTheme();
   const saveFile = useStore((s) => s.saveFile);
   const setFileDirty = useStore((s) => s.setFileDirty);
+  const fileName = useStore((s) => s.entries.find((e) => e.id === fileId)?.name ?? fileId);
   const { toggleSidebar, open } = useSidebar();
 
   const sessionRef = useRef<BoundDrawingSession | null>(null);
@@ -341,7 +342,10 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
               <TriangleAlertIcon className="text-destructive" />
             </EmptyMedia>
             <EmptyTitle>{loadError.title}</EmptyTitle>
-            <EmptyDescription>{loadError.message}</EmptyDescription>
+            <EmptyDescription>
+              {loadError.message}
+              <span className="mt-1 block font-mono text-xs break-all">{fileName}</span>
+            </EmptyDescription>
           </EmptyHeader>
           <EmptyContent className="flex-row justify-center">
             <Button

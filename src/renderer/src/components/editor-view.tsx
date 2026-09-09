@@ -15,7 +15,13 @@ export const EditorView = () => {
   if (!openFileId) return <Home />;
 
   return (
-    <Suspense fallback={<div className="bg-background h-full w-full" />}>
+    <Suspense
+      fallback={
+        <div className="bg-background pointer-events-none absolute inset-0 z-10 flex h-full w-full flex-col items-center justify-center">
+          <p className="text-muted-foreground text-sm">Loading editor...</p>
+        </div>
+      }
+    >
       <ExcalidrawEditor key={`${editorGeneration}`} fileId={openFileId} />
     </Suspense>
   );

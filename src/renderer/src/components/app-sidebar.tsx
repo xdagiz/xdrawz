@@ -1,9 +1,11 @@
-import type { FileDeleteMode } from "@shared/ipc";
+import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
+import type { FileDeleteMode, FileEntry } from "@shared/ipc";
 import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
 import { PlusIcon, SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyDrawings } from "@/components/empty-drawings";
+import { SidebarLoading } from "@/components/sidebar-loading";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,11 +22,11 @@ import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   Sidebar,
-  SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -33,6 +35,7 @@ import { toast } from "@/components/ui/toast";
 import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/components/ui/tree";
 import { useExpandedFolders } from "@/hooks/use-expanded-folders";
 import { toAppError, type AppError } from "@/lib/app-error";
+import { formatRelativeTimeShort } from "@/lib/relative-time";
 import { useStore } from "@/lib/store";
 import {
   TYPEAHEAD_RESET_MS,
@@ -55,6 +58,9 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const renameEntry = useStore((s) => s.renameEntry);
   const createEntry = useStore((s) => s.createEntry);
   const deleteEntry = useStore((s) => s.deleteEntry);
+  const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
+  const paletteOpen = useStore((s) => s.paletteOpen);
+  const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<AppError | null>(null);
@@ -66,6 +72,14 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const [deleteOpen, setDeleteOpen] = useState(false);
   const typeahead = useRef({ buffer: "", at: 0 });
 
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [bottomFade, setBottomFade] = useState(false);
+
+  const updateBottomFade = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    setBottomFade(el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  }, []);
   const entriesById = useMemo(() => buildEntriesById(entries), [entries]);
   const childIndex = useMemo(() => buildSortedChildIndex(entries), [entries]);
   const { expandedIds, expandIds, setExpandedItems } = useExpandedFolders();
@@ -273,15 +287,38 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     [handleCreate],
   );
 
-  useHotkey("Mod+N", () => void handleCreate(null, "file"));
-  useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"));
+  const dialogsOpen = settingsDialogOpen || paletteOpen;
+  useHotkey("Mod+N", () => void handleCreate(null, "file"), { enabled: !dialogsOpen });
+  useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"), {
+    enabled: !dialogsOpen,
+  });
 
-  const handleContextMenu = useCallback(
-    async (event: React.MouseEvent, fileId: string) => {
+  const menuAction = useCallback(
+    async (action: string | null, entry: FileEntry) => {
+      switch (action) {
+        case "new-drawing":
+          await handleCreate(entry.id, "file");
+          break;
+        case "new-folder":
+          await handleCreate(entry.id, "directory");
+          break;
+        case "rename":
+          startRename(entry.id);
+          break;
+        case "delete": {
+          const name = stripExcalidraw(entry.name);
+          openDelete(entry.id, name, "trash");
+          break;
+        }
+      }
+    },
+    [handleCreate, startRename, openDelete],
+  );
+
+  const openMenuFor = useCallback(
+    async (fileId: string, x: number, y: number) => {
       const entry = entriesById.get(fileId);
       if (!entry) return;
-
-      event.preventDefault();
 
       const items =
         entry.kind === "directory"
@@ -296,117 +333,156 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
               { id: "delete", label: "Delete" },
             ];
 
-      const id = await window.api.contextMenu.show(items, event.clientX, event.clientY);
-
-      switch (id) {
-        case "new-drawing":
-          void handleCreate(fileId, "file");
-          break;
-        case "new-folder":
-          void handleCreate(fileId, "directory");
-          break;
-        case "rename":
-          startRename(fileId);
-          break;
-        case "delete": {
-          const name = entry ? stripExcalidraw(entry.name) : fileId;
-          openDelete(fileId, name, "trash");
-          break;
-        }
-      }
+      const action = await window.api.contextMenu.show(items, x, y);
+      await menuAction(action, entry);
     },
-    [entriesById, startRename, openDelete, handleCreate],
+    [entriesById, menuAction],
   );
+
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent, fileId: string) => {
+      event.preventDefault();
+      void openMenuFor(fileId, event.clientX, event.clientY);
+    },
+    [openMenuFor],
+  );
+
+  const handleMenuClick = useCallback(
+    (fileId: string, x: number, y: number) => {
+      void openMenuFor(fileId, x, y);
+    },
+    [openMenuFor],
+  );
+
+  const handleContentScroll = useCallback(() => {
+    updateBottomFade();
+  }, [updateBottomFade]);
+
+  useEffect(() => {
+    updateBottomFade();
+  }, [updateBottomFade, entries.length, openFileId, expandedIds]);
 
   return (
     <>
       <Sidebar side="left" variant="floating">
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel className="flex items-center justify-between">
-              <button
-                type="button"
-                title="Show recent drawings"
-                data-home-active={openFileId === null ? "true" : undefined}
-                className="focus-visible:ring-sidebar-ring data-[home-active=true]:text-sidebar-foreground rounded outline-none focus-visible:ring-2"
-                onClick={() => void openHome()}
-              >
-                Drawings
-              </button>
-              <button
-                type="button"
-                aria-label="New drawing or folder"
-                title="New drawing or folder"
-                className="text-muted-foreground hover:text-foreground -mr-1 rounded p-0.5 transition-colors"
-                onClick={(e) => void openRootMenu(e.clientX, e.clientY)}
-              >
-                <PlusIcon className="size-3.5" />
-              </button>
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              {entries.length === 0 ? (
-                <div className="flex justify-center py-2">
-                  <EmptyDrawings
-                    action={
-                      <Button onClick={() => void handleCreate(null, "file")}>
-                        Create drawing
-                      </Button>
-                    }
-                  />
-                </div>
-              ) : (
-                <TreeContainer
-                  tree={tree}
-                  onKeyDown={handleContainerKeyDown}
-                  onContextMenu={(e) => {
-                    if (e.target === e.currentTarget) void openRootMenu(e.clientX, e.clientY);
-                  }}
-                >
-                  {tree.getItems().map((item) => {
-                    const entry = item.getItemData();
-                    if (!entry || !entry.name) return null;
+        <SidebarHeader className="pb-0">
+          <SidebarGroupLabel className="flex items-center justify-between">
+            <button
+              type="button"
+              title="Show recent drawings"
+              className="text-sidebar-foreground focus-visible:ring-sidebar-ring rounded outline-none focus-visible:ring-2"
+              onClick={() => void openHome()}
+            >
+              Drawings
+            </button>
+            <button
+              type="button"
+              aria-label="New drawing or folder"
+              title="New drawing or folder"
+              disabled={isLoadingDrawings}
+              className="text-muted-foreground hover:text-foreground -mr-1 rounded p-0.5 transition-colors disabled:opacity-40"
+              onClick={(e) => void openRootMenu(e.clientX, e.clientY)}
+            >
+              <PlusIcon className="size-3.5" />
+            </button>
+          </SidebarGroupLabel>
+        </SidebarHeader>
+        <ScrollAreaPrimitive.Root
+          data-slot="sidebar-scroll"
+          className="relative flex min-h-0 flex-1 flex-col"
+        >
+          <ScrollAreaPrimitive.Viewport
+            ref={contentRef}
+            onScroll={handleContentScroll}
+            data-slot="sidebar-scroll-viewport"
+            className={
+              bottomFade
+                ? "min-h-0 w-full flex-1 [mask-image:linear-gradient(to_bottom,black_calc(100%-2rem),transparent)]"
+                : "min-h-0 w-full flex-1"
+            }
+          >
+            <SidebarGroup className="pt-0">
+              <SidebarGroupContent>
+                {isLoadingDrawings && entries.length === 0 ? (
+                  <SidebarLoading />
+                ) : entries.length === 0 ? (
+                  <div className="flex justify-center py-2">
+                    <EmptyDrawings
+                      action={
+                        <Button onClick={() => void handleCreate(null, "file")}>
+                          Create drawing
+                        </Button>
+                      }
+                    />
+                  </div>
+                ) : (
+                  <TreeContainer
+                    tree={tree}
+                    onKeyDown={handleContainerKeyDown}
+                    onContextMenu={(e) => {
+                      if (e.target === e.currentTarget) void openRootMenu(e.clientX, e.clientY);
+                    }}
+                  >
+                    {tree.getItems().map((item) => {
+                      const entry = item.getItemData();
+                      if (!entry || !entry.name) return null;
 
-                    return (
-                      <Fragment key={item.getKey()}>
-                        {renamingId === entry.id ? (
-                          <div
-                            style={{
-                              paddingLeft: `${item.getItemMeta().level * 16 + 16 + 6 - 11}px`,
-                            }}
-                            className="pr-2"
-                          >
-                            <RenameInput
-                              initial={stripExcalidraw(entry.name)}
-                              error={renameError}
-                              treatUnchangedAsCommit={freshDrawingIdRef.current === entry.id}
-                              onValueChange={(v) => {
-                                renameValueRef.current = v;
+                      return (
+                        <Fragment key={item.getKey()}>
+                          {renamingId === entry.id ? (
+                            <div
+                              style={{
+                                paddingLeft: `${item.getItemMeta().level * 16 + 16 + 6 - 11}px`,
                               }}
-                              onCommit={(v) => handleRename(entry.id, v)}
-                              onCancel={() => {
-                                clearFreshMarker(entry.id);
-                                setRenameError(null);
-                                setRenamingId(null);
-                              }}
+                              className="flex h-7 items-center pr-2"
+                            >
+                              <RenameInput
+                                initial={stripExcalidraw(entry.name)}
+                                error={renameError}
+                                treatUnchangedAsCommit={freshDrawingIdRef.current === entry.id}
+                                onValueChange={(v) => {
+                                  renameValueRef.current = v;
+                                }}
+                                onCommit={(v) => handleRename(entry.id, v)}
+                                onCancel={() => {
+                                  clearFreshMarker(entry.id);
+                                  setRenameError(null);
+                                  setRenamingId(null);
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <TreeRow
+                              item={item}
+                              label={stripExcalidraw(entry.name)}
+                              isActive={entry.id === openFileId}
+                              isDirty={dirtyById[entry.id] !== undefined}
+                              timeLabel={
+                                entry.kind === "file"
+                                  ? formatRelativeTimeShort(entry.modifiedAt)
+                                  : undefined
+                              }
+                              onMenuClick={(event) =>
+                                handleMenuClick(entry.id, event.clientX, event.clientY)
+                              }
+                              onContextMenu={(e) => handleContextMenu(e, entry.id)}
                             />
-                          </div>
-                        ) : (
-                          <TreeRow
-                            item={item}
-                            label={stripExcalidraw(entry.name)}
-                            isActive={entry.id === openFileId}
-                            isDirty={dirtyById[entry.id] !== undefined}
-                            onContextMenu={(e) => handleContextMenu(e, entry.id)}
-                          />
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </TreeContainer>
-              )}
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </TreeContainer>
+                )}
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </ScrollAreaPrimitive.Viewport>
+          <ScrollAreaPrimitive.Scrollbar
+            orientation="vertical"
+            className="absolute top-2 right-1 bottom-2 flex w-1.5 touch-none rounded-full opacity-0 transition-opacity select-none group-hover/sidebar-wrapper:opacity-100"
+          >
+            <ScrollAreaPrimitive.Thumb className="bg-border-quiet hover:bg-border-strong flex-1 rounded-full" />
+          </ScrollAreaPrimitive.Scrollbar>
+        </ScrollAreaPrimitive.Root>
 
         <SidebarFooter>
           <SidebarMenu>
@@ -512,7 +588,7 @@ const RenameInput = ({
   return (
     <Field data-invalid={error ? "true" : undefined} className="gap-1">
       <Input
-        className="h-8 text-xs"
+        className="h-7 text-xs"
         ref={ref}
         value={value}
         aria-invalid={error ? true : undefined}

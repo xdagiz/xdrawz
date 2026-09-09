@@ -12,7 +12,7 @@ import { Button } from "./ui/button";
 import { toast } from "./ui/toast";
 
 export const Home = () => {
-  const { recentFiles, totalDrawings } = useRecentDrawings();
+  const { recentFiles } = useRecentDrawings();
   const entries = useStore((s) => s.entries);
   const homeReturnFileId = useStore((s) => s.homeReturnFileId);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
@@ -47,31 +47,30 @@ export const Home = () => {
     );
   }
 
-  const scopeLabel =
-    recentFiles.length === totalDrawings
-      ? `${totalDrawings} drawing${totalDrawings === 1 ? "" : "s"}`
-      : `${recentFiles.length} of ${totalDrawings} drawings`;
-
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="thin-scroll h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-8 py-8">
-        <header className="mb-7 flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            {returnEntry && (
+        <header className="mb-7 flex flex-col gap-3">
+          {returnEntry && (
+            <div>
               <Button
                 variant="ghost"
                 size="sm"
+                className="text-muted-foreground hover:text-foreground -ml-2"
                 title={`Back to ${stripExcalidraw(returnEntry.name)}`}
                 aria-label={`Back to ${stripExcalidraw(returnEntry.name)}`}
                 onClick={() => void setOpenFileId(returnEntry.id)}
               >
                 <ArrowLeftIcon data-icon="inline-start" />
-                Back
+                <span className="max-w-64 truncate">{stripExcalidraw(returnEntry.name)}</span>
               </Button>
-            )}
-            <h2 className="text-foreground text-sm font-medium">Recent drawings</h2>
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <h2 className="text-foreground text-xl font-semibold tracking-tight">
+              Recent drawings
+            </h2>
           </div>
-          <p className="text-muted-foreground text-xs">{scopeLabel}</p>
         </header>
         <RecentDrawings files={recentFiles} />
       </div>

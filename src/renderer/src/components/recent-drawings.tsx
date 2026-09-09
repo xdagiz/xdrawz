@@ -7,10 +7,10 @@ import {
   useThumbnailRefresh,
   useThumbnailVisibility,
 } from "@/hooks/use-thumbnails";
-import { formatRelativeTime } from "@/lib/relative-time";
+import { formatRelativeTimeShort } from "@/lib/relative-time";
 import { useStore } from "@/lib/store";
 import { THUMBNAIL_CANVAS_BG } from "@/lib/thumbnails";
-import { stripExcalidraw } from "@/lib/utils";
+import { formatFileSize, stripExcalidraw } from "@/lib/utils";
 
 import { Skeleton } from "./ui/skeleton";
 
@@ -35,7 +35,7 @@ export const RecentDrawings = ({ files }: { files: FileEntry[] }) => {
   const observeTile = useThumbnailVisibility();
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-x-5 gap-y-7">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-4 gap-y-6">
       {files.map((file) => {
         const { image, pending } = resolveThumbnailPreview(file.id, resolvedTheme);
         const label = stripExcalidraw(file.name);
@@ -45,17 +45,17 @@ export const RecentDrawings = ({ files }: { files: FileEntry[] }) => {
           <button
             key={file.id}
             type="button"
-            title={file.name}
+            title={label}
             ref={observeTile(file.id)}
             onClick={() => void setOpenFileId(file.id)}
-            className="group hover:bg-muted/50 focus-visible:ring-ring/50 flex flex-col items-stretch gap-2.5 rounded-lg p-2 text-left transition-colors outline-none focus-visible:ring-3"
+            className="group focus-visible:ring-ring/50 focus-visible:ring-1.5 flex flex-col items-stretch gap-2 rounded-lg p-1.5 text-left transition-colors outline-none"
           >
             <div
               style={{
                 backgroundColor:
                   resolvedTheme === "dark" ? THUMBNAIL_CANVAS_BG.dark : THUMBNAIL_CANVAS_BG.light,
               }}
-              className="border-border/60 group-hover:border-muted-foreground/40 relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md border transition-colors"
+              className="border-border-quiet group-hover:border-border-strong relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md border shadow-[var(--shadow-raised)] transition-colors"
             >
               {image ? (
                 <img
@@ -72,14 +72,17 @@ export const RecentDrawings = ({ files }: { files: FileEntry[] }) => {
                 </span>
               )}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 px-0.5">
               <p className="truncate text-sm font-medium">{label}</p>
-              <time
-                dateTime={formatDateAttr(file.modifiedAt)}
-                className="text-muted-foreground mt-0.5 block text-xs"
-              >
-                {formatRelativeTime(file.modifiedAt)}
-              </time>
+              <p className="text-muted-foreground mt-0.5 truncate font-mono text-[11px]">
+                <time
+                  dateTime={formatDateAttr(file.modifiedAt)}
+                  title={new Date(file.modifiedAt).toLocaleString()}
+                >
+                  {formatRelativeTimeShort(file.modifiedAt)}
+                </time>
+                {` · ${formatFileSize(file.size)}`}
+              </p>
             </div>
           </button>
         );

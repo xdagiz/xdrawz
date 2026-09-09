@@ -55,11 +55,7 @@ const shouldSilence = (error: unknown) => {
   return false;
 };
 
-export const reportRendererError = (
-  error: unknown,
-  operation: ErrorOperation = "unexpected",
-  opts?: { fatal?: boolean },
-) => {
+export const reportRendererError = (error: unknown, operation: ErrorOperation = "unexpected") => {
   if (shouldSilence(error)) return;
   console.error(`${operation} error:`, error);
 
@@ -70,11 +66,14 @@ export const reportRendererError = (
     description: appError.detail,
     type: "error",
   });
+};
 
-  if (opts?.fatal) {
-    const payload = toSerialized(error, operation);
-    void window.api.window.reportFatal(payload).catch(() => {});
-  }
+export const reportFatalToMain = (error: unknown, operation: ErrorOperation = "unexpected") => {
+  if (shouldSilence(error)) return;
+  console.error(`${operation} error:`, error);
+
+  const payload = toSerialized(error, operation);
+  void window.api.window.reportFatal(payload).catch(() => {});
 };
 
 export const installRendererErrorHandlers = () => {

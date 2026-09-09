@@ -22,7 +22,6 @@ type ErrorBoundaryProps = {
   onError?: (error: AppError) => void;
   resetKeys?: unknown[];
   onReset?: () => void;
-  fatal?: boolean;
 };
 
 const toBoundaryError = (error: unknown): AppError => toAppError(error, "unexpected", true);
@@ -34,10 +33,9 @@ export const ErrorBoundary = ({
   onError,
   resetKeys,
   onReset,
-  fatal = false,
 }: ErrorBoundaryProps) => {
   const handleError = (error: unknown) => {
-    reportRendererError(error, "unexpected", { fatal });
+    reportRendererError(error);
     onError?.(toBoundaryError(error));
   };
 
