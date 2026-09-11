@@ -94,6 +94,9 @@ const requireContent = (value: unknown, field: string) => {
   return content;
 };
 
+const MAX_CONTEXT_MENU_ITEMS = 20;
+const MAX_CONTEXT_MENU_TEXT_LENGTH = 200;
+
 const requireIdArray = (value: unknown) => {
   if (!Array.isArray(value)) throw errorWithCode("ids must be an array", "INVALID");
   if (value.length > MAX_THUMBNAIL_BATCH) {
@@ -121,13 +124,16 @@ const requireInteger = (value: unknown, field: string) => {
   return value;
 };
 
-const requireContextMenuRequest = (request: unknown) => {
+export const requireContextMenuRequest = (request: unknown) => {
   if (!isRecord(request)) {
     throw errorWithCode("Context menu request must be an object", "INVALID");
   }
   const { items, x, y } = request;
   if (!Array.isArray(items) || items.length === 0) {
     throw errorWithCode("Context menu items must be a non-empty array", "INVALID");
+  }
+  if (items.length > MAX_CONTEXT_MENU_ITEMS) {
+    throw errorWithCode(`Context menu items must be at most ${MAX_CONTEXT_MENU_ITEMS}`, "INVALID");
   }
   if (
     typeof x !== "number" ||
@@ -137,15 +143,26 @@ const requireContextMenuRequest = (request: unknown) => {
   ) {
     throw errorWithCode("Context menu position must be finite numbers", "INVALID");
   }
+  if (x < 0 || y < 0) {
+    throw errorWithCode("Context menu position must not be negative", "INVALID");
+  }
   return {
     items: items.map((item) => {
       if (!isRecord(item)) {
         throw errorWithCode("Context menu item must be an object", "INVALID");
       }
-      if (typeof item.id !== "string" || item.id.length === 0) {
+      if (
+        typeof item.id !== "string" ||
+        item.id.length === 0 ||
+        item.id.length > MAX_CONTEXT_MENU_TEXT_LENGTH
+      ) {
         throw errorWithCode("Context menu item id must be a non-empty string", "INVALID");
       }
-      if (typeof item.label !== "string" || item.label.length === 0) {
+      if (
+        typeof item.label !== "string" ||
+        item.label.length === 0 ||
+        item.label.length > MAX_CONTEXT_MENU_TEXT_LENGTH
+      ) {
         throw errorWithCode("Context menu item label must be a non-empty string", "INVALID");
       }
       return { id: item.id, label: item.label };
@@ -283,9 +300,11 @@ export const normalizeContextMenuPos = (x: number, y: number, zoomFactor: number
   };
 };
 
-function assertRendererStoreKey(key: unknown): asserts key is "lastOpenedFileId" | "libraryItems" {
+export function assertRendererStoreKey(
+  key: unknown,
+): asserts key is "lastOpenedFileId" | "libraryItems" {
   if (key !== "lastOpenedFileId" && key !== "libraryItems") {
-    throw new Error("Store key is not allowed");
+    throw errorWithCode("Store key is not allowed", "INVALID");
   }
 }
 

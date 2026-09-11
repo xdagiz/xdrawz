@@ -10,6 +10,8 @@ export type ViewportCache = {
   delete: (fileId: string) => void;
 };
 
+export const MAX_VIEWPORT_CACHE_SIZE = 200;
+
 export const createViewportCache = (): ViewportCache => {
   const entries = new Map<string, Viewport>();
 
@@ -27,6 +29,10 @@ export const createViewportCache = (): ViewportCache => {
       if (!viewport || typeof viewport !== "object") return;
       if (!Number.isFinite(viewport.scrollX) || !Number.isFinite(viewport.scrollY)) return;
       if (!Number.isFinite(viewport.zoom) || viewport.zoom <= 0) return;
+      if (!entries.has(fileId) && entries.size >= MAX_VIEWPORT_CACHE_SIZE) {
+        const oldest = entries.keys().next().value;
+        if (oldest !== undefined) entries.delete(oldest);
+      }
       entries.set(fileId, { ...viewport });
     },
     delete: (fileId) => {

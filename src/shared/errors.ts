@@ -22,7 +22,7 @@ export interface SerializedAppError {
   readonly cause?: SerializedAppError;
 }
 
-const IPC_PREFIX_PATTERN = /^Error invoking remote method '[^']+': (Error: )?/;
+const IPC_PREFIX_PATTERN = /^Error invoking remote method ("[^"]+"|'[^']+'): (Error: )?/;
 
 const ERROR_CODES: ReadonlySet<string> = new Set([
   "NOT_FOUND",

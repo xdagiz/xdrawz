@@ -1,6 +1,7 @@
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileEntry, ThumbnailRecord } from "@shared/ipc";
+import { MAX_THUMBNAIL_BATCH } from "@shared/ipc";
 
 import type { ResolvedTheme } from "@/lib/theme";
 import { createSlotPump } from "@/lib/thumbnail-scheduler";
@@ -29,6 +30,7 @@ export type ThumbnailStore = {
 };
 
 export const THUMBNAIL_MAX_SIZE = 200;
+export const THUMBNAIL_MAX_QUEUE = 300;
 
 const MIN_REMAINING_MS = 4;
 
@@ -144,13 +146,16 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
         .map((entry) => entry.id);
       if (ids.length === 0) return;
 
-      const fetched = await deps.apiFetch(ids);
       const now = Date.now();
-      for (const record of fetched) {
-        const entry = byId.get(record.fileId);
-        if (entry && covers(records.get(record.fileId), entry)) continue;
-        if (entry && (record.mtimeMs !== entry.modifiedAt || record.size !== entry.size)) continue;
-        records.set(record.fileId, { ...record, fetchedAt: now });
+      for (let i = 0; i < ids.length; i += MAX_THUMBNAIL_BATCH) {
+        const slice = await deps.apiFetch(ids.slice(i, i + MAX_THUMBNAIL_BATCH));
+        for (const record of slice) {
+          const entry = byId.get(record.fileId);
+          if (entry && covers(records.get(record.fileId), entry)) continue;
+          if (entry && (record.mtimeMs !== entry.modifiedAt || record.size !== entry.size))
+            continue;
+          records.set(record.fileId, { ...record, fetchedAt: now });
+        }
       }
       notify();
     },
@@ -185,6 +190,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
         known.set(entry.id, entry);
         if (covers(records.get(entry.id), entry)) continue;
         if (!visible.has(entry.id)) continue;
+        if (queue.size >= THUMBNAIL_MAX_QUEUE) break;
         queue.set(entry.id, entry);
       }
 
@@ -192,8 +198,14 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     },
 
     setVisible: (fileId, isVisible) => {
-      if (isVisible) visible.add(fileId);
-      else visible.delete(fileId);
+      if (isVisible) {
+        if (visible.has(fileId)) visible.delete(fileId);
+        else if (visible.size >= 1000) {
+          const oldest = visible.values().next().value;
+          if (oldest !== undefined) visible.delete(oldest);
+        }
+        visible.add(fileId);
+      } else visible.delete(fileId);
 
       if (!isVisible) return;
 
@@ -264,9 +276,16 @@ export const generateThumbnailPair: GenerateThumbnails = async (fileId) => {
     ),
   );
 
+  const light = canvases[0].toDataURL("image/png");
+  const dark = canvases[1].toDataURL("image/png");
+  for (const canvas of canvases) {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+
   return {
-    light: canvases[0].toDataURL("image/png"),
-    dark: canvases[1].toDataURL("image/png"),
+    light,
+    dark,
   };
 };
 

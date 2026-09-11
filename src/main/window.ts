@@ -34,6 +34,7 @@ type CloseState = {
 
 let quitState: QuitState = "idle";
 let isQuitting = false;
+let osShutdown = false;
 let nextCloseRequestId = 0;
 let mainWindow: BrowserWindow | null = null;
 let libraryBrowserWindow: BrowserWindow | null = null;
@@ -41,6 +42,9 @@ let libraryBrowserWindow: BrowserWindow | null = null;
 const CHECK_TIMEOUT_MS = 5000;
 const FLUSH_SILENCE_TIMEOUT_MS = 2000;
 const FLUSH_WRITE_TIMEOUT_MS = 30_000;
+const SHUTDOWN_CHECK_TIMEOUT_MS = 1000;
+const SHUTDOWN_FLUSH_SILENCE_TIMEOUT_MS = 1000;
+const SHUTDOWN_FLUSH_WRITE_TIMEOUT_MS = 3000;
 const MAX_LIBRARY_HASH_LENGTH = 2048;
 export const LIBRARY_BROWSE_HOST = "libraries.excalidraw.com";
 export const LIBRARY_PARTITION = "xdrawz-library";
@@ -161,6 +165,11 @@ const onRendererSilent = async (win: BrowserWindow) => {
   if (approvedCloses.has(win)) return;
   if (!state.awaitingRenderer) return;
 
+  if (osShutdown) {
+    closeWindow(win, "closing window: os shutdown force close on unresponsive renderer");
+    return;
+  }
+
   if (state.silentDialogOpen) {
     armSilentTimer(win, CHECK_TIMEOUT_MS);
     return;
@@ -236,10 +245,20 @@ const beginCloseFlow = (win: BrowserWindow) => {
 
   const request: WindowCloseRequest = { requestId: state.requestId, kind: "check" };
   sendToRenderer(win, WINDOW_WILL_CLOSE, request);
-  armSilentTimer(win, CHECK_TIMEOUT_MS);
+  armSilentTimer(win, osShutdown ? SHUTDOWN_CHECK_TIMEOUT_MS : CHECK_TIMEOUT_MS);
 };
 
 export const isQuittingNow = () => isQuitting;
+
+export const enterOsShutdownMode = () => {
+  osShutdown = true;
+};
+
+export const isOsShutdown = () => osShutdown;
+
+export const resetOsShutdownForTest = () => {
+  osShutdown = false;
+};
 
 export const isWindowReady = (win: BrowserWindow) => readyWindows.has(win);
 
@@ -263,9 +282,11 @@ export const installCloseGuard = (win: BrowserWindow) => {
   const onRendererUnresponsive = () => {
     if (!isCloseFlowActive(win)) return;
     if (closeStateFor(win).silentDialogOpen) return;
-    log.warn(
-      "[close-guard] renderer unresponsive during the close prompt, showing keep-waiting dialog",
-    );
+    if (!osShutdown) {
+      log.warn(
+        "[close-guard] renderer unresponsive during the close prompt, showing keep-waiting dialog",
+      );
+    }
     void onRendererSilent(win);
   };
 
@@ -313,11 +334,11 @@ export const onDirtyState = (
     return;
   }
 
-  if (skipPrompt) {
+  if (skipPrompt || osShutdown) {
     state.kind = "flush";
     const request: WindowCloseRequest = { requestId: state.requestId, kind: "flush" };
     sendToRenderer(win, WINDOW_WILL_CLOSE, request);
-    armSilentTimer(win, FLUSH_SILENCE_TIMEOUT_MS);
+    armSilentTimer(win, osShutdown ? SHUTDOWN_FLUSH_SILENCE_TIMEOUT_MS : FLUSH_SILENCE_TIMEOUT_MS);
     return;
   }
 
@@ -327,6 +348,10 @@ export const onDirtyState = (
       choice = await showUnsavedChangesDialog(win, "quit");
     } catch (error) {
       log.error("[close-guard] unsaved-changes dialog failed", error);
+      if (osShutdown) {
+        closeWindow(win, "closing window: os shutdown force close after dialog failure");
+        return;
+      }
       clearCloseRequest(win);
       if (quitState === "pending") quitState = "idle";
       sendToRenderer(win, WINDOW_CLOSE_CANCELLED);
@@ -334,6 +359,14 @@ export const onDirtyState = (
     }
 
     if (win.isDestroyed() || !isCurrentCloseRequest(win, requestId)) return;
+
+    if (osShutdown) {
+      state.kind = "flush";
+      const request: WindowCloseRequest = { requestId: state.requestId, kind: "flush" };
+      sendToRenderer(win, WINDOW_WILL_CLOSE, request);
+      armSilentTimer(win, SHUTDOWN_FLUSH_SILENCE_TIMEOUT_MS);
+      return;
+    }
 
     if (choice === "cancel") {
       clearCloseRequest(win);
@@ -363,10 +396,11 @@ export const onFlushStarted = (win: BrowserWindow, requestId: number) => {
 
   if (!isCurrentCloseRequest(win, requestId) || state.kind !== "flush") return;
 
-  armSilentTimer(win, FLUSH_WRITE_TIMEOUT_MS);
+  armSilentTimer(win, osShutdown ? SHUTDOWN_FLUSH_WRITE_TIMEOUT_MS : FLUSH_WRITE_TIMEOUT_MS);
 };
 
 export const cancelQuit = (win: BrowserWindow, requestId: number) => {
+  if (osShutdown) return;
   if (!isCurrentCloseRequest(win, requestId)) return;
 
   clearCloseRequest(win);
@@ -624,7 +658,10 @@ export function createMainWindow() {
   showWhenReady(win);
   installCloseGuard(win);
 
-  win.once("closed", closeLibraryBrowserWindow);
+  win.once("closed", () => {
+    closeLibraryBrowserWindow();
+    if (mainWindow === win) mainWindow = null;
+  });
 
   wireNavigationPolicy(win);
   wireRendererDiagnostics(win);

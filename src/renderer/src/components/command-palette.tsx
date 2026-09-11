@@ -1,6 +1,6 @@
 import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildCommands, type CommandContext, type CommandDef } from "@/lib/commands";
 import { rankEntries } from "@/lib/fuzzy-rank";
@@ -61,12 +61,16 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     if (!open) setQuery("");
   }, [open]);
 
-  const commands = buildCommands({
-    openSettings: () => setSettingsDialogOpen(true),
-    openRenameDialog: () => setRenameOpen(true),
-    openDeleteDialog: () => setDeleteOpen(true),
-    toggleSidebar,
-  });
+  const commands = useMemo(
+    () =>
+      buildCommands({
+        openSettings: () => setSettingsDialogOpen(true),
+        openRenameDialog: () => setRenameOpen(true),
+        openDeleteDialog: () => setDeleteOpen(true),
+        toggleSidebar,
+      }),
+    [setSettingsDialogOpen, toggleSidebar],
+  );
 
   const conflictActive = externalConflict !== null;
   const trimmedQuery = query.trim();
@@ -89,12 +93,20 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
           () => 0,
         ).slice(0, MAX_HITS_PER_SOURCE);
 
-  const drawingHits = rankEntries(
-    trimmedQuery,
-    entries.filter((entry) => entry.kind === "file"),
-    (entry) => stripExcalidraw(entry.name),
-    (entry) => entry.modifiedAt,
-  ).slice(0, MAX_HITS_PER_SOURCE);
+  const drawingHits = useMemo(() => {
+    if (trimmedQuery.length === 0) {
+      return [...entries]
+        .filter((entry) => entry.kind === "file")
+        .sort((a, b) => b.modifiedAt - a.modifiedAt)
+        .slice(0, MAX_HITS_PER_SOURCE);
+    }
+    return rankEntries(
+      trimmedQuery,
+      entries.filter((entry) => entry.kind === "file"),
+      (entry) => stripExcalidraw(entry.name),
+      (entry) => entry.modifiedAt,
+    ).slice(0, MAX_HITS_PER_SOURCE);
+  }, [trimmedQuery, entries]);
 
   const runCommand = async (command: CommandDef) => {
     try {

@@ -61,6 +61,8 @@ export const RecentDrawings = ({ files }: { files: FileEntry[] }) => {
                 <img
                   src={image}
                   alt=""
+                  loading="lazy"
+                  decoding="async"
                   className="size-full object-contain p-2"
                   draggable={false}
                 />

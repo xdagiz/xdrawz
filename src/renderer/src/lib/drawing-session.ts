@@ -377,6 +377,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       if (diskBaseline != null && current !== diskBaseline) {
         latestRevision += 1;
         setDirty(true);
+        console.debug("[session] first evaluate persisted normalized baseline");
         void persistDrawing(elements, appState, files, latestRevision);
       }
 
@@ -498,6 +499,10 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     }
 
     debounced.cancel();
+    latestDrawing = null;
+    latestSignature = null;
+    cachedInputs = null;
+    cachedSignature = "";
   };
 
   return {

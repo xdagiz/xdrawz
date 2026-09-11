@@ -30,6 +30,7 @@ const App = () => {
   const themePreference = useStore((s) => s.settings.theme);
   const drawings = useStore((s) => s.drawings);
   const entries = useStore((s) => s.entries);
+  const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
   const watcherDown = useStore((s) => s.watcherDown);
   const reportWatcherError = useStore((s) => s.reportWatcherError);
   const openFileId = useStore((s) => s.openFileId);
@@ -46,7 +47,7 @@ const App = () => {
   const [pickingFolder, setPickingFolder] = useState(false);
   const switcher = useSwitcher({ paletteOpen });
 
-  const folderMissing = drawings?.missing === true && entries.length === 0;
+  const folderMissing = drawings?.missing === true && entries.length === 0 && !isLoadingDrawings;
 
   const pickFolder = useCallback(async () => {
     setPickingFolder(true);

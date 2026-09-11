@@ -23,7 +23,13 @@ import { saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createConflictResolver } from "@/lib/conflict-resolution";
 import { reduceEntries, removeKey, type ExternalConflict } from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
-import { applySubtreeDelete, applySubtreeRemap, isInsideSubtree, remapId } from "@/lib/entry-tree";
+import {
+  applySubtreeDelete,
+  applySubtreeRemap,
+  isInsideSubtree,
+  remapId,
+  remapNullableId,
+} from "@/lib/entry-tree";
 import { pushRecentId, remapRecentIds, removeRecentIds } from "@/lib/recent-files";
 import { sessionOwner } from "@/lib/session-owner";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
@@ -120,7 +126,16 @@ export type State = {
   openHome: () => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<boolean>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<boolean>;
-  createEntry: (parentId: string | null, kind: "file" | "directory") => Promise<string | null>;
+  createEntry: (
+    parentId: string | null,
+    kind: "file" | "directory",
+    requestedName?: string,
+  ) => Promise<string | null>;
+  createFileWithContent: (
+    parentId: string | null,
+    fileName: string,
+    content: string,
+  ) => Promise<string | null>;
   saveFile: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   overwriteOpenFileFromSession: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
@@ -249,11 +264,18 @@ export const useStore = create<State>((set, get) => {
       if (event.revision > 0 && event.revision <= filesRevision) return;
       const reduced = reduceEntries(state, event);
       syncDismissal(reduced.externalConflict);
+      const eventIds = event.root === null ? null : new Set(event.entries.map((entry) => entry.id));
+      const prunedRecentFileIds =
+        eventIds === null
+          ? state.recentFileIds
+          : removeRecentIds(state.recentFileIds, (rid) => !eventIds.has(rid));
+      const recentsChanged = prunedRecentFileIds.length !== state.recentFileIds.length;
       set({
         ...reduced,
         entries: sortFileEntries(reduced.entries),
         drawings: event.info ?? state.drawings,
         watcherDown: null,
+        ...(recentsChanged ? { recentFileIds: prunedRecentFileIds } : {}),
       });
       filesRevision = event.revision;
     },
@@ -279,7 +301,18 @@ export const useStore = create<State>((set, get) => {
         });
         void window.api.store.set("lastOpenedFileId", fileId);
       } else {
-        set({ error: null });
+        const staleRecentFileIds = removeRecentIds(get().recentFileIds, (rid) => rid === fileId);
+        set({
+          error: null,
+          ...(staleRecentFileIds.length !== get().recentFileIds.length
+            ? { recentFileIds: staleRecentFileIds }
+            : {}),
+        });
+        toast.add({
+          title: "Couldn’t open drawing",
+          description: "The file no longer exists.",
+          type: "error",
+        });
       }
     },
 
@@ -325,6 +358,7 @@ export const useStore = create<State>((set, get) => {
         entries: next.entries,
         openFileId: next.openFileId,
         dirtyById: next.dirtyById,
+        homeReturnFileId: remapNullableId(get().homeReturnFileId, id, entry.id),
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
@@ -357,11 +391,14 @@ export const useStore = create<State>((set, get) => {
       const next = applySubtreeDelete({ entries, openFileId, dirtyById }, id);
       const nextRecentFileIds = removeRecentIds(recentFileIds, (rid) => isInsideSubtree(id, rid));
       const recentChanged = nextRecentFileIds.length !== recentFileIds.length;
+      const homeReturnFileId = get().homeReturnFileId;
 
       set({
         entries: next.entries,
         openFileId: next.openFileId,
         dirtyById: next.dirtyById,
+        homeReturnFileId:
+          homeReturnFileId && isInsideSubtree(id, homeReturnFileId) ? null : homeReturnFileId,
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
       });
@@ -371,13 +408,34 @@ export const useStore = create<State>((set, get) => {
       return true;
     },
 
-    createEntry: async (parentId, kind) => {
-      const name = nextDefaultName(get().entries, parentId, kind);
+    createEntry: async (parentId, kind, requestedName) => {
+      const trimmed = requestedName?.trim();
+      const name =
+        trimmed && trimmed.length > 0 ? trimmed : nextDefaultName(get().entries, parentId, kind);
       const entry = await window.api.files.create(parentId, name, kind);
       set((state) => ({
         entries: sortFileEntries(upsertSorted(state.entries, entry)),
         error: null,
       }));
+      return entry.id;
+    },
+
+    createFileWithContent: async (parentId, fileName, content) => {
+      const entry = await window.api.files.create(parentId, fileName, "file");
+      set((state) => ({
+        entries: sortFileEntries(upsertSorted(state.entries, entry)),
+        error: null,
+      }));
+
+      const saved = await get().saveFile(entry.id, content, "explicit");
+      if (!saved) {
+        await window.api.files.delete(entry.id, "permanent").catch(() => undefined);
+        set((state) => ({
+          entries: state.entries.filter((e) => e.id !== entry.id),
+        }));
+        return null;
+      }
+
       return entry.id;
     },
 

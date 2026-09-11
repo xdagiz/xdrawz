@@ -81,6 +81,11 @@ const assertSafeIdString = (id: string) => {
     throw errorWithCode("UNC paths not allowed", "INVALID");
   }
   if (id.includes("\\")) throw errorWithCode("Invalid path", "INVALID");
+  const segments = id.split("/");
+  for (const [index, segment] of segments.entries()) {
+    if (segment === "." && segments.length > 1) throw errorWithCode("Invalid path", "INVALID");
+    if (segment === ".." && index > 0) throw errorWithCode("Invalid path", "INVALID");
+  }
 };
 
 const getCanonicalRoot = async () => {
@@ -201,7 +206,7 @@ const entryFromAbs = async (
   const stats = await lstat(absPath);
   return {
     id,
-    name: path.basename(absPath),
+    name: normalizeFsName(path.basename(absPath)),
     kind,
     parentId: parentIdOf(id),
     modifiedAt: stats.mtimeMs,
@@ -361,6 +366,7 @@ export const countEntriesFlat = async (rootAbs: string, cap: number) => {
 
 const requireDrawingsRoot = async () => {
   const info = await getDrawings();
+  if (info.missing) throw new Error("Drawings folder is missing");
   if (!info.configured || !info.path) throw new Error("Drawings folder not configured");
   return path.resolve(info.path);
 };
@@ -441,7 +447,6 @@ let mutationDepth = 0;
 const withFileMutationLock = <T>(task: () => Promise<T>): Promise<T> => {
   if (mutationDepth >= MAX_MUTATION_QUEUE) {
     const busy = errorWithCode("TOO_BUSY: Too many pending file operations", "UNKNOWN");
-    Object.assign(busy, { code: "TOO_BUSY" });
     return Promise.reject(busy);
   }
 
@@ -522,6 +527,10 @@ export const writeDrawingFileRecover = async (
     await ensureNotDirectory(absPath);
 
     await mkdir(path.dirname(candidateReal), { recursive: true });
+    const parentRealAfterMkdir = await realpath(path.dirname(absPath)).catch(() => null);
+    if (parentRealAfterMkdir && !contains(rootReal, parentRealAfterMkdir)) {
+      throw errorWithCode("Symlink in path", "INVALID");
+    }
     await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
     return entryFromAbs(root, absPath, "file");
   });
@@ -547,6 +556,12 @@ export const renameEntry = async (
     if (!leaf) throw new Error("Name cannot be empty");
     if (leaf.includes("/") || leaf.includes("\\")) {
       throw new Error("Name cannot contain path separators");
+    }
+    if (leaf.startsWith(".")) {
+      throw errorWithCode("Name cannot start with a dot", "INVALID");
+    }
+    if (isDirectory && isExcalidrawFileName(leaf)) {
+      throw errorWithCode("Folder names cannot end with .excalidraw", "INVALID");
     }
 
     const nameWithExt = isDirectory || isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
@@ -644,6 +659,12 @@ export const createEntry = async (
     if (leaf.includes("/") || leaf.includes("\\")) {
       throw new Error("Name cannot contain path separators");
     }
+    if (leaf.startsWith(".")) {
+      throw errorWithCode("Name cannot start with a dot", "INVALID");
+    }
+    if (kind === "directory" && isExcalidrawFileName(leaf)) {
+      throw errorWithCode("Folder names cannot end with .excalidraw", "INVALID");
+    }
 
     const root = await requireDrawingsRoot();
     const rootReal = await getCanonicalRoot();
@@ -673,7 +694,7 @@ export const createEntry = async (
     await assertParentsNotSymlinks(root, rootReal, nextAbs);
 
     const exists = await lstat(nextAbs).catch(() => null);
-    if (exists) throw new Error("A file or folder with that name already exists");
+    if (exists) throwExists();
 
     if (kind === "directory") {
       hooks?.beforeMutate?.([nextReal]);

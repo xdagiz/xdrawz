@@ -59,6 +59,7 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
 };
 
 export const saveErrorToastId = (fileId: string) => `save:${fileId}`;
+export const libraryErrorToastId = "library:save";
 
 const toBasename = (clean: string) => clean.split(/[\\/]/).pop() ?? clean;
 
@@ -104,6 +105,7 @@ export const toAppError = (
   resourceId?: string,
 ): AppError => {
   const detail = friendlyDetail(error) ?? stripPaths(cleanErrorMessage(error));
+  const code = isRecord(error) && typeof error.code === "string" ? error.code.toUpperCase() : "";
 
   return {
     id: resourceId ? `${operation}:${resourceId}` : `${operation}:${detail}`,
@@ -111,5 +113,6 @@ export const toAppError = (
     retryable,
     detail,
     ...messageFor(operation),
+    ...(code === "INVALID" ? { message: detail } : {}),
   };
 };

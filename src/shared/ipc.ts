@@ -32,8 +32,10 @@ export const parentIdOf = (id: string) => {
   return idx === -1 ? null : id.slice(0, idx);
 };
 
+const entryCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
 export const compareEntryIds = (a: string, b: string) =>
-  a.localeCompare(b, undefined, { sensitivity: "base" });
+  entryCollator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
 
 export const sortFileEntries = (entries: FileEntry[]): FileEntry[] =>
   entries.toSorted((a, b) => compareEntryIds(a.id, b.id));
@@ -102,7 +104,7 @@ export type ThumbnailRecord = {
   dark: string;
 };
 
-export const MAX_THUMBNAIL_BATCH = 5000;
+export const MAX_THUMBNAIL_BATCH = 500;
 export const MAX_DRAWING_CONTENT_BYTES = 10 * 1024 * 1024;
 
 export const validateDrawingRecord = (record: unknown): void => {

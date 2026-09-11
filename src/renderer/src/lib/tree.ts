@@ -87,9 +87,17 @@ export const readExpandedFolderIds = (storage: StorageReader): Set<string> => {
   }
 };
 
+export const MAX_EXPANDED_FOLDERS = 500;
+
 export const writeExpandedFolderIds = (storage: StorageWriter, ids: Iterable<string>) => {
   try {
-    storage.setItem(EXPANDED_FOLDERS_STORAGE_KEY, JSON.stringify([...ids]));
+    const list = [...ids];
+    storage.setItem(
+      EXPANDED_FOLDERS_STORAGE_KEY,
+      JSON.stringify(
+        list.length > MAX_EXPANDED_FOLDERS ? list.slice(0, MAX_EXPANDED_FOLDERS) : list,
+      ),
+    );
   } catch {
     return;
   }

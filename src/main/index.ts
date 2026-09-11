@@ -14,6 +14,7 @@ import {
   session,
   shell,
   nativeTheme,
+  powerMonitor,
   BrowserWindow,
   Menu,
   type MenuItemConstructorOptions,
@@ -47,8 +48,10 @@ import {
   createGreetingWindow,
   destroyWindow,
   ensureMainWindow,
+  enterOsShutdownMode,
   getMainWindow,
   isCloseFlowActive,
+  isOsShutdown,
   isQuittingNow,
   isWindowReady,
   markWindowReady,
@@ -70,6 +73,30 @@ process.on("unhandledRejection", (reason) => {
   app.exit(1);
 });
 
+const MAX_CRASH_RELOADS = 3;
+const CRASH_RELOAD_WINDOW_MS = 60_000;
+const MAX_TRACKED_CRASH_WINDOWS = 20;
+const crashReloadAttempts = new Map<number, number[]>();
+
+const recordCrashReloadAttempt = (windowId: number, now: number): boolean => {
+  const windowStart = now - CRASH_RELOAD_WINDOW_MS;
+  const recent = (crashReloadAttempts.get(windowId) ?? []).filter((at) => at > windowStart);
+  if (recent.length >= MAX_CRASH_RELOADS) {
+    crashReloadAttempts.delete(windowId);
+    crashReloadAttempts.set(windowId, recent);
+    return false;
+  }
+  recent.push(now);
+  crashReloadAttempts.delete(windowId);
+  crashReloadAttempts.set(windowId, recent);
+  while (crashReloadAttempts.size > MAX_TRACKED_CRASH_WINDOWS) {
+    const oldest = crashReloadAttempts.keys().next().value;
+    if (oldest === undefined) break;
+    crashReloadAttempts.delete(oldest);
+  }
+  return true;
+};
+
 app.on("render-process-gone", (_event, webContents, details) => {
   if (details.reason === "clean-exit") return;
   log.error("[render-process-gone]", details);
@@ -77,6 +104,25 @@ app.on("render-process-gone", (_event, webContents, details) => {
   const win = BrowserWindow.fromWebContents(webContents);
   if (win === null || win.isDestroyed()) return;
   if (isCloseFlowActive(win)) return;
+
+  if (!recordCrashReloadAttempt(win.id, Date.now())) {
+    log.error("[render-process-gone] repeated crashes, offering quit only", details);
+    void dialog
+      .showMessageBox({
+        type: "error",
+        buttons: ["Quit"],
+        defaultId: 0,
+        cancelId: 0,
+        message: "xdrawz renderer keeps crashing",
+        detail:
+          "The window crashed repeatedly. Your saved drawings are safe, but unsaved changes may be lost.",
+      })
+      .then(() => {
+        app.quit();
+      })
+      .catch((error) => log.error("[render-process-gone] dialog failed", error));
+    return;
+  }
 
   void dialog
     .showMessageBox({
@@ -98,7 +144,8 @@ app.on("render-process-gone", (_event, webContents, details) => {
         return;
       }
       app.quit();
-    });
+    })
+    .catch((error) => log.error("[render-process-gone] dialog failed", error));
 });
 
 app.on("child-process-gone", (_event, details) => {
@@ -109,8 +156,10 @@ let watcher: DrawingsWatcher | null = null;
 let lastWatcherErrorAt = 0;
 let queuedWatcherError: string | null = null;
 let queuedWatcherTimer: NodeJS.Timeout | null = null;
+let shutdownHardQuitTimer: NodeJS.Timeout | null = null;
 
 const WATCHER_ERROR_INTERVAL_MS = 10_000;
+const SHUTDOWN_HARD_QUIT_MS = 6000;
 
 const LIBRARY_CSP = [
   "default-src 'self'",
@@ -138,6 +187,7 @@ function broadcastFilesChanged(event: FilesChangedEvent) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     if (win.webContents.isDestroyed() || win.webContents.isCrashed()) continue;
+    if (win.webContents.session === session.fromPartition(LIBRARY_PARTITION)) continue;
     win.webContents.send(FILES_CHANGED, event);
   }
 }
@@ -146,6 +196,7 @@ function sendWatcherError(event: WatcherErrorEvent) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     if (win.webContents.isDestroyed() || win.webContents.isCrashed()) continue;
+    if (win.webContents.session === session.fromPartition(LIBRARY_PARTITION)) continue;
     win.webContents.send(WATCHER_ERROR, event);
   }
 }
@@ -224,10 +275,63 @@ function withWatchIgnore<TArgs extends unknown[], TRet>(
   };
 }
 
+const fastShutdownQuit = async () => {
+  if (queuedWatcherTimer) {
+    clearTimeout(queuedWatcherTimer);
+    queuedWatcherTimer = null;
+  }
+  queuedWatcherError = null;
+  const win = getMainWindow();
+  if (
+    isQuittingNow() ||
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isCrashed() ||
+    !isWindowReady(win)
+  ) {
+    void watcher?.stop();
+    app.quit();
+    return;
+  }
+  requestQuitViaRenderer(win);
+  if (shutdownHardQuitTimer) clearTimeout(shutdownHardQuitTimer);
+  shutdownHardQuitTimer = setTimeout(() => {
+    shutdownHardQuitTimer = null;
+    const current = getMainWindow();
+    if (!current || current.isDestroyed()) return;
+    log.warn("[shutdown] hard quit after flush budget");
+    try {
+      current.destroy();
+    } finally {
+      app.quit();
+    }
+  }, SHUTDOWN_HARD_QUIT_MS);
+};
+
+const installShutdownHandler = () => {
+  powerMonitor.on("shutdown", (e?: { preventDefault: () => void }) => {
+    e?.preventDefault();
+    enterOsShutdownMode();
+    void fastShutdownQuit().catch((error) => log.error("[shutdown] quit failed", error));
+  });
+};
+
 const surfacePrimaryUi = async () => {
-  const existing = BrowserWindow.getAllWindows();
-  if (existing.length > 0) {
-    const win = existing[0];
+  if (isOsShutdown()) return;
+  const main = getMainWindow();
+  if (main && !main.isDestroyed()) {
+    if (main.isMinimized()) main.restore();
+    main.show();
+    main.focus();
+    return;
+  }
+
+  const existing = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
+  const trusted = existing.find(
+    (win) => !win.webContents.isDestroyed() && isTrustedRendererUrl(win.webContents.getURL()),
+  );
+  const win = trusted ?? existing[0];
+  if (win) {
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -237,7 +341,7 @@ const surfacePrimaryUi = async () => {
   const info = await getDrawings();
   if (info.configured && info.path) {
     const w = ensureWatcher();
-    void w.start(info.path);
+    void w.start(info.path).catch((error) => log.error("[watcher] start failed", error));
     ensureMainWindow();
   } else {
     createGreetingWindow();
@@ -249,18 +353,25 @@ const installPermissionHandlers = () => {
     webContents: Electron.WebContents,
     permission: string,
     callback: (granted: boolean) => void,
+    details?: Electron.PermissionRequest,
   ) => {
     if (!APP_ALLOWED_PERMISSIONS.has(permission)) {
       callback(false);
       return;
     }
 
-    callback(isTrustedRendererUrl(webContents.getURL()));
+    callback(isTrustedRendererUrl(details?.requestingUrl || webContents.getURL()));
   };
 
-  const handlePermissionCheck = (webContents: Electron.WebContents | null, permission: string) => {
+  const handlePermissionCheck = (
+    webContents: Electron.WebContents | null,
+    permission: string,
+    _requestingOrigin: string,
+    details?: Electron.PermissionCheckHandlerHandlerDetails,
+  ) => {
     if (!APP_ALLOWED_PERMISSIONS.has(permission)) return false;
-    return webContents !== null && isTrustedRendererUrl(webContents.getURL());
+    if (webContents === null) return false;
+    return isTrustedRendererUrl(details?.requestingUrl || webContents.getURL());
   };
 
   for (const ses of [session.defaultSession, session.fromPartition(LIBRARY_PARTITION)]) {
@@ -300,6 +411,7 @@ void app.whenReady().then(async () => {
   initLogger();
   installLibraryCsp();
   installPermissionHandlers();
+  installShutdownHandler();
   installAppProtocolHandler();
 
   Menu.setApplicationMenu(
@@ -336,6 +448,9 @@ void app.whenReady().then(async () => {
 
   app.on("browser-window-created", (_, win) => {
     optimizer.watchWindowShortcuts(win, { zoom: true });
+    win.once("closed", () => {
+      crashReloadAttempts.delete(win.id);
+    });
   });
 
   registerIpcHandlers({
@@ -378,7 +493,7 @@ void app.whenReady().then(async () => {
         if (info.configured && info.path) {
           if (w.getRoot() !== info.path) {
             await w.restart(info.path);
-            void w.refreshNow();
+            void w.refreshNow().catch((error) => log.error("[watcher] refresh failed", error));
           }
           void pruneThumbnails();
         } else {
@@ -407,15 +522,20 @@ void app.whenReady().then(async () => {
   }
 
   app.on("second-instance", () => {
-    void surfacePrimaryUi();
+    void surfacePrimaryUi().catch((error) => log.error("[ui] surface failed", error));
   });
 
   app.on("activate", () => {
-    void surfacePrimaryUi();
+    void surfacePrimaryUi().catch((error) => log.error("[ui] surface failed", error));
   });
 });
 
 app.on("before-quit", (event) => {
+  if (queuedWatcherTimer) {
+    clearTimeout(queuedWatcherTimer);
+    queuedWatcherTimer = null;
+  }
+  queuedWatcherError = null;
   const win = getMainWindow();
   if (
     isQuittingNow() ||

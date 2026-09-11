@@ -34,6 +34,10 @@ export const parseStoredLibraryItems = (json: string | null | undefined): Librar
 
 export const createLibraryPersistenceAdapter = (
   storage: LibraryStorage,
+  opts?: {
+    onSaveError?: (error: unknown) => void;
+    onSaveSuccess?: () => void;
+  },
 ): LibraryPersistenceAdapter => ({
   load: async () => {
     try {
@@ -44,7 +48,13 @@ export const createLibraryPersistenceAdapter = (
     }
   },
   save: async ({ libraryItems }) => {
-    await storage.set(JSON.stringify(libraryItems));
+    try {
+      await storage.set(JSON.stringify(libraryItems));
+    } catch (error) {
+      opts?.onSaveError?.(error);
+      throw error;
+    }
+    opts?.onSaveSuccess?.();
   },
 });
 

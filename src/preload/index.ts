@@ -47,17 +47,7 @@ import { NativeApi } from "./types";
 
 type InvokeReturn = ReturnType<typeof ipcRenderer.invoke>;
 
-const fromSerialized = (serialized: SerializedAppError): Error => {
-  const error = new Error(serialized.message);
-  error.name = serialized.name;
-  if (serialized.stack) error.stack = serialized.stack;
-  Object.assign(error, { $isAppError: true });
-  Object.assign(error, { code: serialized.code });
-  Object.assign(error, { operation: serialized.operation });
-  Object.assign(error, { retryable: serialized.retryable });
-  if (serialized.cause) Object.assign(error, { cause: fromSerialized(serialized.cause) });
-  return error;
-};
+const fromSerialized = (serialized: SerializedAppError): SerializedAppError => ({ ...serialized });
 
 const isResult = (
   value: unknown,

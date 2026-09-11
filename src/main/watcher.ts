@@ -47,7 +47,7 @@ const DIR_EVENTS = new Set(["addDir", "unlinkDir"]);
 
 const isExcalidrawFile = (name: string) => name.toLowerCase().endsWith(EXCALIDRAW_EXT);
 const normalizePath = (p: string) => path.resolve(p);
-const eventAbsPath = (eventPath: string) => path.resolve(eventPath);
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export const createDrawingsWatcher = (
   callbacks: WatcherCallbacks,
@@ -113,6 +113,12 @@ export const createDrawingsWatcher = (
     const relative = path.relative(root, absPath);
     if (relative.startsWith("..") || path.isAbsolute(relative)) return true;
     return DOT_FILE_RE.test(relative);
+  };
+
+  const eventAbsPath = (eventPath: string) => {
+    if (path.isAbsolute(eventPath)) return path.normalize(eventPath);
+    if (currentRoot) return path.join(currentRoot, eventPath);
+    return path.resolve(eventPath);
   };
 
   const shouldDrop = (event: string, rawPath: string) => {
@@ -187,6 +193,11 @@ export const createDrawingsWatcher = (
         } catch (error) {
           listErrorCount += 1;
           callbacks.onError?.(error);
+          if (listErrorCount > 1) {
+            pending = false;
+            scheduleRetry();
+            return;
+          }
           if (!pending || stopped || !currentRoot) {
             scheduleRetry();
             return;
@@ -205,6 +216,7 @@ export const createDrawingsWatcher = (
           root,
           info,
         });
+        if (pending) await sleep(coalesceMs);
       } while (pending);
     } finally {
       listing = false;

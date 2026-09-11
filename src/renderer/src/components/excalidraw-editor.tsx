@@ -23,7 +23,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { useDrawingSession } from "@/hooks/use-drawing-session";
 import { useTheme } from "@/hooks/use-theme";
-import { toAppError, type AppError } from "@/lib/app-error";
+import { libraryErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { drawingSignature } from "@/lib/drawing-session";
 import { createLibraryPersistenceAdapter, defaultLibraryStorage } from "@/lib/library-persistence";
 import type { BoundDrawingSession } from "@/lib/session-owner";
@@ -149,7 +149,20 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawImperativeAPI | null>(null);
 
   const libraryAdapter = useMemo(
-    () => createLibraryPersistenceAdapter(defaultLibraryStorage()),
+    () =>
+      createLibraryPersistenceAdapter(defaultLibraryStorage(), {
+        onSaveError: () => {
+          toast.add({
+            id: libraryErrorToastId,
+            title: "Couldn’t save library",
+            description: "New library items couldn’t be persisted and may be lost on restart.",
+            type: "error",
+          });
+        },
+        onSaveSuccess: () => {
+          toast.close(libraryErrorToastId);
+        },
+      }),
     [],
   );
 
@@ -157,6 +170,10 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const handleExcalidrawApi = useCallback((api: ExcalidrawImperativeAPI) => {
     setExcalidrawApi(api);
+  }, []);
+
+  useEffect(() => {
+    return () => setExcalidrawApi(null);
   }, []);
 
   useLayoutEffect(() => {
@@ -218,9 +235,10 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
             }
             const parsed: unknown = JSON.parse(content);
             validateDrawingRecord(parsed);
-            const created = await window.api.files.create(null, stripExcalidraw(file.name), "file");
-            const saved = await useStore.getState().saveFile(created.id, content, "explicit");
-            if (saved) opened.push(created.id);
+            const imported = await useStore
+              .getState()
+              .createFileWithContent(null, stripExcalidraw(file.name), content);
+            if (imported) opened.push(imported);
           } catch (error) {
             toast.add({
               title: `Couldn’t import ${file.name}`,

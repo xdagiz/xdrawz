@@ -91,3 +91,37 @@ describe("createLibraryPersistenceAdapter", () => {
     expect(storage.set).toHaveBeenCalledWith(validJson);
   });
 });
+
+describe("adapter save reporting", () => {
+  it("reports failures and rethrows", async () => {
+    const storage = makeStorage();
+    storage.set.mockRejectedValue(new Error("too large"));
+    const onSaveError = vi.fn();
+    const onSaveSuccess = vi.fn();
+
+    const adapter = createLibraryPersistenceAdapter(storage, { onSaveError, onSaveSuccess });
+    await expect(adapter.save({ libraryItems: validItems })).rejects.toThrow("too large");
+    expect(onSaveError).toHaveBeenCalledTimes(1);
+    expect(onSaveSuccess).not.toHaveBeenCalled();
+  });
+
+  it("reports success without error", async () => {
+    const storage = makeStorage();
+    storage.set.mockResolvedValue(undefined);
+    const onSaveError = vi.fn();
+    const onSaveSuccess = vi.fn();
+
+    const adapter = createLibraryPersistenceAdapter(storage, { onSaveError, onSaveSuccess });
+    await adapter.save({ libraryItems: validItems });
+    expect(onSaveSuccess).toHaveBeenCalledTimes(1);
+    expect(onSaveError).not.toHaveBeenCalled();
+  });
+
+  it("works without reporting callbacks", async () => {
+    const storage = makeStorage();
+    storage.set.mockResolvedValue(undefined);
+
+    const adapter = createLibraryPersistenceAdapter(storage);
+    await expect(adapter.save({ libraryItems: validItems })).resolves.toBeUndefined();
+  });
+});

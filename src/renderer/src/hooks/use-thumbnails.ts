@@ -62,6 +62,15 @@ export const useThumbnailVisibility = (): ((
   );
 
   return useCallback((fileId: string) => {
+    if (callbacksRef.current.size > 1000) {
+      const oldest = callbacksRef.current.keys().next().value;
+      if (oldest !== undefined) {
+        const stale = observedRef.current.get(oldest);
+        if (stale) getObserver().unobserve(stale);
+        observedRef.current.delete(oldest);
+        callbacksRef.current.delete(oldest);
+      }
+    }
     let callback = callbacksRef.current.get(fileId);
     if (!callback) {
       callback = (element: HTMLElement | null) => {
@@ -83,30 +92,43 @@ export const useThumbnailVisibility = (): ((
   }, []);
 };
 
+let activeHydrations = 0;
+
 export const useThumbnailHydration = (files: FileEntry[]) => {
   const filesRef = useRef(files);
   filesRef.current = files;
 
-  const fingerprint = useMemo(
-    () =>
-      files
-        .filter((entry) => entry.kind === "file")
-        .map((entry) => `${entry.id}?${entry.modifiedAt}:${entry.size}`)
-        .join("|"),
-    [files],
-  );
+  const fingerprint = useMemo(() => {
+    let hash = 2166136261;
+    let count = 0;
+    for (const entry of files) {
+      if (entry.kind !== "file") continue;
+      count += 1;
+      const s = `${entry.id}?${entry.modifiedAt}:${entry.size};`;
+      for (let i = 0; i < s.length; i += 1) {
+        hash ^= s.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+    }
+    return `${count}:${hash >>> 0}`;
+  }, [files]);
 
   useEffect(() => {
     const current = filesRef.current.filter((entry) => entry.kind === "file");
     if (current.length === 0) return undefined;
-
+    activeHydrations += 1;
     void thumbnails
       .hydrate(current)
       .then(() => {
         thumbnails.syncWithEntries(current);
       })
       .catch((error) => console.error("thumbnail hydration failed", error));
-
-    return () => thumbnails.cancelPending();
+    return () => {
+      activeHydrations -= 1;
+      if (activeHydrations <= 0) {
+        activeHydrations = 0;
+        thumbnails.cancelPending();
+      }
+    };
   }, [fingerprint]);
 };
