@@ -104,6 +104,17 @@ export const nextDefaultName = (
   return candidate;
 };
 
+export const resolveEntryName = (
+  entries: FileEntry[],
+  parentId: string | null,
+  kind: "file" | "directory",
+  requestedName?: string,
+) => {
+  const trimmed = requestedName?.trim();
+  if (trimmed && trimmed.length > 0) return trimmed;
+  return nextDefaultName(entries, parentId, kind);
+};
+
 export type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
@@ -115,6 +126,7 @@ export type State = {
   externalConflict: ExternalConflict;
   watcherDown: string | null;
   isLoadingDrawings: boolean;
+  pendingCanvasAction: boolean;
   editorGeneration: number;
   settings: AppSettings;
   settingsDialogOpen: boolean;
@@ -123,6 +135,7 @@ export type State = {
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
   setOpenFileId: (fileId: string | null) => Promise<void>;
+  openReservedFile: (fileId: string) => Promise<boolean>;
   openHome: () => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<boolean>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<boolean>;
@@ -136,9 +149,15 @@ export type State = {
     fileName: string,
     content: string,
   ) => Promise<string | null>;
+  createAndOpenEntry: (
+    parentId: string | null,
+    kind: "file" | "directory",
+    requestedName?: string,
+  ) => Promise<string | null>;
   saveFile: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   overwriteOpenFileFromSession: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
+  setPendingCanvasAction: (pending: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
   setPaletteOpen: (open: boolean) => void;
   reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
@@ -227,6 +246,7 @@ export const useStore = create<State>((set, get) => {
     externalConflict: null,
     watcherDown: null,
     isLoadingDrawings: true,
+    pendingCanvasAction: false,
     editorGeneration: 0,
     settingsDialogOpen: false,
     paletteOpen: false,
@@ -254,6 +274,7 @@ export const useStore = create<State>((set, get) => {
           error: null,
           watcherDown: null,
           isLoadingDrawings: false,
+          pendingCanvasAction: false,
           editorGeneration: state.editorGeneration + 1,
         };
       });
@@ -314,6 +335,33 @@ export const useStore = create<State>((set, get) => {
           type: "error",
         });
       }
+    },
+
+    openReservedFile: async (fileId) => {
+      const current = get().openFileId;
+      if (fileId === current) return true;
+
+      if (sessionOwner.getActiveFileId() === fileId) {
+        if (!isOpenableFile(get().entries, fileId)) {
+          set({ pendingCanvasAction: false });
+          return false;
+        }
+
+        const recentFileIds = pushRecentId(get().recentFileIds, fileId);
+        set({
+          openFileId: fileId,
+          error: null,
+          externalConflict: null,
+          recentFileIds,
+          pendingCanvasAction: false,
+        });
+
+        void window.api.store.set("lastOpenedFileId", fileId);
+        return true;
+      }
+
+      await get().setOpenFileId(fileId);
+      return true;
     },
 
     openHome: async () => {
@@ -400,6 +448,7 @@ export const useStore = create<State>((set, get) => {
         homeReturnFileId:
           homeReturnFileId && isInsideSubtree(id, homeReturnFileId) ? null : homeReturnFileId,
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
+        ...(next.openFileId !== openFileId ? { editorGeneration: get().editorGeneration + 1 } : {}),
         error: null,
       });
 
@@ -409,9 +458,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     createEntry: async (parentId, kind, requestedName) => {
-      const trimmed = requestedName?.trim();
-      const name =
-        trimmed && trimmed.length > 0 ? trimmed : nextDefaultName(get().entries, parentId, kind);
+      const name = resolveEntryName(get().entries, parentId, kind, requestedName);
       const entry = await window.api.files.create(parentId, name, kind);
       set((state) => ({
         entries: sortFileEntries(upsertSorted(state.entries, entry)),
@@ -436,6 +483,36 @@ export const useStore = create<State>((set, get) => {
         return null;
       }
 
+      return entry.id;
+    },
+
+    createAndOpenEntry: async (parentId, kind, requestedName) => {
+      if (kind === "file") {
+        const okToSwitch = await get().ensureCleanOrConfirm("switch");
+        if (!okToSwitch) return null;
+      }
+
+      const name = resolveEntryName(get().entries, parentId, kind, requestedName);
+
+      const entry = await window.api.files.create(parentId, name, kind);
+      if (kind !== "file") {
+        set((state) => ({
+          entries: sortFileEntries(upsertSorted(state.entries, entry)),
+          error: null,
+        }));
+        return entry.id;
+      }
+
+      set((state) => ({
+        entries: sortFileEntries(upsertSorted(state.entries, entry)),
+        openFileId: entry.id,
+        recentFileIds: pushRecentId(state.recentFileIds, entry.id),
+        error: null,
+        externalConflict: null,
+        editorGeneration: state.editorGeneration + 1,
+      }));
+
+      void window.api.store.set("lastOpenedFileId", entry.id);
       return entry.id;
     },
 
@@ -484,6 +561,8 @@ export const useStore = create<State>((set, get) => {
       });
     },
 
+    setPendingCanvasAction: (pending) => set({ pendingCanvasAction: pending }),
+
     reportError: (error, operation) =>
       set({
         error: toAppError(error, operation),
@@ -524,6 +603,7 @@ export const useStore = create<State>((set, get) => {
         externalConflict: null,
         dirtyById: openFileId ? removeKey(dirtyById, openFileId) : dirtyById,
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
+        ...(openFileId ? { editorGeneration: get().editorGeneration + 1 } : {}),
         error: null,
       });
 

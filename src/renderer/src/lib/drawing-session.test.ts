@@ -534,6 +534,68 @@ describe("createDrawingSession", () => {
     expect(save).toHaveBeenCalledTimes(2);
   });
 
+  describe("welcome scratch prime flow", () => {
+    const emptyBaseline = () => drawingSignature([], appState(), emptyFiles);
+
+    it("primes clean on the empty scene, then debounces the first stroke on the settings interval", async () => {
+      const { session, dirty, save } = makeSession({ initialBaseline: emptyBaseline() });
+      session.setAutosaveInterval(30000);
+
+      session.onChange([], appState(), emptyFiles);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(dirty).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+
+      session.onChange([el("a")], appState(), emptyFiles);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(dirty).toHaveBeenCalledWith("f1", true);
+      expect(save).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(29900);
+      expect(save).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(200);
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledWith("f1", expect.any(String), "auto");
+      expect(dirty).toHaveBeenLastCalledWith("f1", false);
+    });
+
+    it("runs the pending save at once on flush before the interval elapses", async () => {
+      const { session, dirty, save } = makeSession({ initialBaseline: emptyBaseline() });
+      session.setAutosaveInterval(30000);
+
+      session.onChange([], appState(), emptyFiles);
+      session.onChange([el("a")], appState(), emptyFiles);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dirty).toHaveBeenCalledWith("f1", true);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(save).not.toHaveBeenCalled();
+
+      await session.flush();
+
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(dirty).toHaveBeenLastCalledWith("f1", false);
+
+      await vi.advanceTimersByTimeAsync(30000);
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it("persists at once when the prime scene differs from the disk baseline", async () => {
+      const diskBaseline = drawingSignature([], appState("#000000"), emptyFiles);
+      const { session, dirty, save } = makeSession({ initialBaseline: diskBaseline });
+
+      session.onChange([], appState(), emptyFiles);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(dirty).toHaveBeenCalledWith("f1", true);
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledWith("f1", expect.any(String), "auto");
+    });
+  });
+
   describe("deferred signature evaluation", () => {
     const makeBaselineSession = (frame: ReturnType<typeof manualScheduler>) =>
       makeSession({

@@ -1,28 +1,21 @@
-import { lazy, Suspense } from "react";
-
+import { useRecentDrawings } from "@/hooks/use-recent-drawings";
 import { useStore } from "@/lib/store";
 
+import { ExcalidrawEditor } from "./excalidraw-editor";
 import { Home } from "./home";
-
-const ExcalidrawEditor = lazy(() =>
-  import("@/components/excalidraw-editor").then((m) => ({ default: m.ExcalidrawEditor })),
-);
 
 export const EditorView = () => {
   const openFileId = useStore((s) => s.openFileId);
-  const editorGeneration = useStore((s) => s.editorGeneration);
+  const pendingCanvasAction = useStore((s) => s.pendingCanvasAction);
+  const { recentFiles } = useRecentDrawings();
 
-  if (!openFileId) return <Home />;
+  if (openFileId) {
+    return <ExcalidrawEditor key="canvas" fileId={openFileId} />;
+  }
 
-  return (
-    <Suspense
-      fallback={
-        <div className="bg-background pointer-events-none absolute inset-0 z-10 flex h-full w-full flex-col items-center justify-center">
-          <p className="text-muted-foreground text-sm">Loading editor...</p>
-        </div>
-      }
-    >
-      <ExcalidrawEditor key={`${editorGeneration}`} fileId={openFileId} />
-    </Suspense>
-  );
+  if (recentFiles.length === 0 || pendingCanvasAction) {
+    return <ExcalidrawEditor key="canvas" fileId={null} />;
+  }
+
+  return <Home />;
 };

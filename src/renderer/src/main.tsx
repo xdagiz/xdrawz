@@ -19,6 +19,29 @@ window.addEventListener(
   createBeforeUnloadGuard(() => Object.keys(useStore.getState().dirtyById).length),
 );
 
+const CANVAS_ACTION_WAIT_MS = 4000;
+
+const waitForCanvasActionSettled = () =>
+  new Promise<void>((resolve) => {
+    if (!useStore.getState().pendingCanvasAction) {
+      resolve();
+      return;
+    }
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (!useStore.getState().pendingCanvasAction) {
+        clearInterval(timer);
+        resolve();
+        return;
+      }
+      if (Date.now() - started >= CANVAS_ACTION_WAIT_MS) {
+        clearInterval(timer);
+        console.warn("[close] canvas action did not settle before quit");
+        resolve();
+      }
+    }, 50);
+  });
+
 window.api.window.onWillClose((request) => {
   setCloseHandshakeActive(true);
 
@@ -35,6 +58,9 @@ window.api.window.onWillClose((request) => {
 
   void (async () => {
     window.api.window.flushStarted(request.requestId);
+    if (useStore.getState().pendingCanvasAction) {
+      await waitForCanvasActionSettled();
+    }
     const session = sessionOwner.getSession();
     try {
       if (session) await session.flush({ force: true });
