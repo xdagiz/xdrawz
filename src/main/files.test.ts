@@ -258,6 +258,22 @@ describe("files", () => {
     await expect(createEntry(null, "   ", "directory")).rejects.toThrow("Name cannot be empty");
   });
 
+  it("rejects dot-prefixed names that would be hidden from the library", async () => {
+    await writeFile(path.join(ctx.root, "visible.excalidraw"), SCENE);
+    await mkdir(path.join(ctx.root, "folder"));
+
+    await expect(createEntry(null, ".hidden", "file")).rejects.toThrow(
+      "Names cannot start with a dot",
+    );
+    await expect(createEntry(null, ".hidden", "directory")).rejects.toThrow(
+      "Names cannot start with a dot",
+    );
+    await expect(renameEntry("visible.excalidraw", ".hidden")).rejects.toThrow(
+      "Names cannot start with a dot",
+    );
+    await expect(renameEntry("folder", ".hidden")).rejects.toThrow("Names cannot start with a dot");
+  });
+
   it("rejects reading a file symlink that points outside the root", async () => {
     const outside = path.join(await realpath(tmpdir()), "jail-outside-secret.txt");
     await rm(outside, { force: true });

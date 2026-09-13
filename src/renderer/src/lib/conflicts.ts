@@ -25,8 +25,8 @@ export const conflictBelongsTo = (
 ) => {
   if (conflict?.fileId === fileId) return true;
   if (dismissedKey === `missing:${fileId}`) return true;
-  if (dismissedKey?.startsWith("changed:") ?? false) {
-    const rest = (dismissedKey as string).slice("changed:".length);
+  if (typeof dismissedKey === "string" && dismissedKey.startsWith("changed:")) {
+    const rest = dismissedKey.slice("changed:".length);
     const idx = rest.lastIndexOf(":");
     if (idx === -1) return false;
     return rest.slice(0, idx) === fileId;

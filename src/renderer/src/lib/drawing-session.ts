@@ -41,6 +41,7 @@ export type DrawingSessionControls = {
   getSerializedContent: () => string | null;
   setInitialBaseline: (signature: string | null) => void;
   resetBaseline: () => void;
+  markPersisted: () => void;
   retarget: (nextFileId: string) => void;
   ensureCleanOrConfirm: (
     reason: UnsavedReason,
@@ -460,6 +461,18 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     setDirty(false);
   };
 
+  const markPersisted = () => {
+    debounced.cancel();
+    saveFailures = 0;
+    appliedSeq = saveSeq;
+    if (latestDrawing) {
+      const [elements, appState, files] = latestDrawing;
+      baseline = signatureFor(elements, appState, files);
+      latestSignature = baseline;
+    }
+    setDirty(false);
+  };
+
   const ensureCleanOrConfirm = async (
     reason: UnsavedReason,
     confirmUnsaved: (reason: UnsavedReason) => Promise<UnsavedChoice>,
@@ -522,6 +535,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     resetBaseline: () => {
       baseline = null;
     },
+    markPersisted,
     retarget: (nextFileId: string) => {
       currentFileId = nextFileId;
       retargetEpoch += 1;

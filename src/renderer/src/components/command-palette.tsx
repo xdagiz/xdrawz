@@ -1,6 +1,6 @@
 import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildCommands, type CommandContext, type CommandDef } from "@/lib/commands";
 import { rankEntries } from "@/lib/fuzzy-rank";
@@ -30,6 +30,12 @@ type Props = {
 
 const MAX_HITS_PER_SOURCE = 8;
 
+type DrawingSearchEntry = {
+  id: string;
+  label: string;
+  modifiedAt: number;
+};
+
 export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const [query, setQuery] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
@@ -39,6 +45,9 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const externalConflict = useStore((s) => s.externalConflict);
   const entries = useStore((s) => s.entries);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
+  const openFileId = useStore((s) => s.openFileId);
+  const store = useStore((s) => s);
+  const sessionForCtx = sessionOwner.getSession();
   const { toggleSidebar } = useSidebar();
   const listRef = useRef<HTMLDivElement | null>(null);
   const [bottomFade, setBottomFade] = useState(false);
@@ -50,16 +59,28 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   }, []);
 
   useEffect(() => {
+    if (!open) return () => {};
     updateBottomFade();
-  }, [updateBottomFade, open, query, entries, externalConflict]);
+    const el = listRef.current;
+    if (!el) return () => {};
+    const ro = new ResizeObserver(() => updateBottomFade());
+    ro.observe(el);
+    const mo = new MutationObserver(() => updateBottomFade());
+    mo.observe(el, { childList: true, subtree: true });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+    };
+  }, [updateBottomFade, open]);
 
   useEffect(() => {
     if (open && settingsDialogOpen) setSettingsDialogOpen(false);
   }, [open, settingsDialogOpen, setSettingsDialogOpen]);
 
-  useEffect(() => {
-    if (!open) setQuery("");
-  }, [open]);
+  const handlePaletteOpenChange = (next: boolean) => {
+    if (!next) setQuery("");
+    onOpenChange(next);
+  };
 
   const commands = useMemo(
     () =>
@@ -73,11 +94,24 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   );
 
   const conflictActive = externalConflict !== null;
-  const trimmedQuery = query.trim();
-  const ctx: CommandContext = {
-    store: useStore.getState(),
-    session: sessionOwner.getSession(),
-  };
+  const deferredQuery = useDeferredValue(query);
+  const trimmedQuery = deferredQuery.trim();
+  const drawingSearchEntries = useMemo<DrawingSearchEntry[]>(
+    () =>
+      entries
+        .filter((entry) => entry.kind === "file")
+        .map((entry) => ({
+          id: entry.id,
+          label: stripExcalidraw(entry.name),
+          modifiedAt: entry.modifiedAt,
+        })),
+    [entries],
+  );
+
+  const ctx: CommandContext = useMemo(
+    () => ({ store, session: sessionForCtx }),
+    [store, sessionForCtx],
+  );
 
   const visibleCommands = commands.filter(
     (command) => !(conflictActive && command.gatedOnConflict) && command.enabled?.(ctx) !== false,
@@ -93,20 +127,19 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
           () => 0,
         ).slice(0, MAX_HITS_PER_SOURCE);
 
-  const drawingHits = useMemo(() => {
+  const drawingHits = (() => {
     if (trimmedQuery.length === 0) {
-      return [...entries]
-        .filter((entry) => entry.kind === "file")
-        .sort((a, b) => b.modifiedAt - a.modifiedAt)
+      return drawingSearchEntries
+        .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
         .slice(0, MAX_HITS_PER_SOURCE);
     }
     return rankEntries(
       trimmedQuery,
-      entries.filter((entry) => entry.kind === "file"),
-      (entry) => stripExcalidraw(entry.name),
+      drawingSearchEntries,
+      (entry) => entry.label,
       (entry) => entry.modifiedAt,
     ).slice(0, MAX_HITS_PER_SOURCE);
-  }, [trimmedQuery, entries]);
+  })();
 
   const runCommand = async (command: CommandDef) => {
     try {
@@ -131,7 +164,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     <>
       <CommandDialog
         open={open}
-        onOpenChange={onOpenChange}
+        onOpenChange={handlePaletteOpenChange}
         title="Command palette"
         description="Search drawings and commands"
         className="sm:max-w-[40rem]"
@@ -188,7 +221,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
                     disabled={conflictActive && file.id === (externalConflict?.fileId ?? null)}
                     onSelect={() => void chooseDrawing(file.id)}
                   >
-                    <span>{stripExcalidraw(file.name)}</span>
+                    <span>{file.label}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -213,7 +246,11 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
           </div>
         </Command>
       </CommandDialog>
-      <CommandRenameDialog open={renameOpen} onOpenChange={setRenameOpen} />
+      <CommandRenameDialog
+        key={`${renameOpen}-${openFileId ?? "none"}`}
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+      />
       <CommandDeleteDialog open={deleteOpen} onOpenChange={setDeleteOpen} />
     </>
   );

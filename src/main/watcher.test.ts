@@ -187,6 +187,28 @@ describe("createDrawingsWatcher", () => {
     expect(deps.listEntries).toHaveBeenCalledTimes(1);
   });
 
+  it("retries a failed listing without publishing a partial file list", async () => {
+    const listEntries = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("EACCES"))
+      .mockResolvedValue(mockEntries);
+    const { watcher, fakeWatcher, onChange, onError } = setupWatcher({
+      overrideDeps: { listEntries },
+    });
+
+    await watcher.start("/home/user/drawings");
+    void fakeWatcher._emit("change", "/home/user/drawings/a.excalidraw");
+    await tick(60);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+
+    await tick(500);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0].entries).toEqual(mockEntries);
+  });
+
   it("re-emits when new events arrive during a pending re-list", async () => {
     vi.useRealTimers();
 

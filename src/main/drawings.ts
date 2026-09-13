@@ -7,6 +7,11 @@ import { app, dialog, type BrowserWindow } from "electron";
 import { countEntriesFlat, MAX_WALK_ENTRIES } from "./files";
 import { getDrawingPath, setDrawingPath } from "./store";
 
+const errorCodeOf = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;
+
 export const getDrawings = async (): Promise<DrawingInfo> => {
   const storedPath = getDrawingPath();
   if (!storedPath) {
@@ -37,8 +42,10 @@ export const getDrawings = async (): Promise<DrawingInfo> => {
       configured: true,
       missing: false,
     };
-  } catch {
-    return def;
+  } catch (error) {
+    const code = errorCodeOf(error);
+    if (code === "ENOENT" || code === "ENOTDIR") return def;
+    throw error;
   }
 };
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
 import { fileNameOf } from "@/lib/conflicts";
@@ -28,12 +28,10 @@ export const CommandRenameDialog = ({ open, onOpenChange }: DialogProps) => {
   const entries = useStore((s) => s.entries);
   const openFileId = useStore((s) => s.openFileId);
   const renameEntry = useStore((s) => s.renameEntry);
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(() =>
+    openFileId ? stripExcalidraw(fileNameOf(entries, openFileId)) : "",
+  );
   const [committing, setCommitting] = useState(false);
-
-  useEffect(() => {
-    if (open && openFileId) setValue(stripExcalidraw(fileNameOf(entries, openFileId)));
-  }, [open, openFileId, entries]);
 
   const commit = async () => {
     if (!openFileId || committing || value.trim().length === 0) return;

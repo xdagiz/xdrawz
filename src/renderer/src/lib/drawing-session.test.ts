@@ -285,6 +285,22 @@ describe("createDrawingSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
+  it("marks recovered content persisted and cancels its pending autosave", async () => {
+    const { session, dirty, save } = makeSession();
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+
+    session.markPersisted();
+
+    expect(session.isDirty()).toBe(false);
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("flush persists immediately without force when dirty", async () => {
     const { session, dirty, save } = makeSession();
 

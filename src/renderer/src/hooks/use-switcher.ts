@@ -4,11 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { isCloseHandshakeActive, onCloseHandshakeStart } from "@/lib/close-handshake";
 import { selectSwitcherCandidates } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
-import {
-  createSwitcherController,
-  type SwitcherController,
-  type SwitcherState,
-} from "@/lib/switcher-controller";
+import { createSwitcherController, type SwitcherState } from "@/lib/switcher-controller";
 
 type UseSwitcherOptions = {
   paletteOpen?: boolean;
@@ -17,13 +13,10 @@ type UseSwitcherOptions = {
 export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) => {
   const [state, setState] = useState<SwitcherState>({ phase: "idle" });
   const paletteOpenRef = useRef(paletteOpen);
-  paletteOpenRef.current = paletteOpen;
   const heldKeysRef = useRef<Set<string>>(new Set());
   const detachReleaseRef = useRef<(() => void) | null>(null);
-
-  const controllerRef = useRef<SwitcherController | null>(null);
-  if (!controllerRef.current) {
-    controllerRef.current = createSwitcherController({
+  const [controller] = useState(() =>
+    createSwitcherController({
       getCandidates: () =>
         selectSwitcherCandidates(
           useStore.getState().recentFileIds,
@@ -39,9 +32,14 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
         void useStore.getState().setOpenFileId(fileId);
       },
       onChange: setState,
-    });
-  }
-  const controller = controllerRef.current;
+    }),
+  );
+
+  useEffect(() => {
+    paletteOpenRef.current = paletteOpen;
+  }, [paletteOpen]);
+
+  useEffect(() => () => controller.cancel(), [controller]);
 
   useEffect(() => onCloseHandshakeStart(() => controller.cancel()), [controller]);
 

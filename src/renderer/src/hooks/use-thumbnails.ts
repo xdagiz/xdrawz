@@ -38,7 +38,7 @@ export const useThumbnailVisibility = (): ((
   const observedRef = useRef(new Map<string, HTMLElement>());
   const callbacksRef = useRef(new Map<string, (element: HTMLElement | null) => void>());
 
-  const getObserver = () => {
+  const getObserver = useCallback(() => {
     if (!observerRef.current) {
       observerRef.current = new IntersectionObserver((entries) => {
         for (const entry of entries) {
@@ -49,7 +49,7 @@ export const useThumbnailVisibility = (): ((
       });
     }
     return observerRef.current;
-  };
+  }, []);
 
   useEffect(
     () => () => {
@@ -61,42 +61,48 @@ export const useThumbnailVisibility = (): ((
     [],
   );
 
-  return useCallback((fileId: string) => {
-    if (callbacksRef.current.size > 1000) {
-      const oldest = callbacksRef.current.keys().next().value;
-      if (oldest !== undefined) {
-        const stale = observedRef.current.get(oldest);
-        if (stale) getObserver().unobserve(stale);
-        observedRef.current.delete(oldest);
-        callbacksRef.current.delete(oldest);
-      }
-    }
-    let callback = callbacksRef.current.get(fileId);
-    if (!callback) {
-      callback = (element: HTMLElement | null) => {
-        const observer = getObserver();
-        if (element) {
-          element.dataset.thumbnailId = fileId;
-          observedRef.current.set(fileId, element);
-          observer.observe(element);
-        } else {
-          const observed = observedRef.current.get(fileId);
-          if (observed) observer.unobserve(observed);
-          observedRef.current.delete(fileId);
-          thumbnails.setVisible(fileId, false);
+  return useCallback(
+    (fileId: string) => {
+      if (callbacksRef.current.size > 1000) {
+        const oldest = callbacksRef.current.keys().next().value;
+        if (oldest !== undefined) {
+          const stale = observedRef.current.get(oldest);
+          if (stale) getObserver().unobserve(stale);
+          observedRef.current.delete(oldest);
+          callbacksRef.current.delete(oldest);
         }
-      };
-      callbacksRef.current.set(fileId, callback);
-    }
-    return callback;
-  }, []);
+      }
+      let callback = callbacksRef.current.get(fileId);
+      if (!callback) {
+        callback = (element: HTMLElement | null) => {
+          const observer = getObserver();
+          if (element) {
+            element.dataset.thumbnailId = fileId;
+            observedRef.current.set(fileId, element);
+            observer.observe(element);
+          } else {
+            const observed = observedRef.current.get(fileId);
+            if (observed) observer.unobserve(observed);
+            observedRef.current.delete(fileId);
+            thumbnails.setVisible(fileId, false);
+          }
+        };
+        callbacksRef.current.set(fileId, callback);
+      }
+      return callback;
+    },
+    [getObserver],
+  );
 };
 
 let activeHydrations = 0;
 
 export const useThumbnailHydration = (files: FileEntry[]) => {
   const filesRef = useRef(files);
-  filesRef.current = files;
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
 
   const fingerprint = useMemo(() => {
     let hash = 2166136261;

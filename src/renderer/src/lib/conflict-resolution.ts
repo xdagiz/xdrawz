@@ -41,6 +41,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     try {
       await window.api.files.writeRecover(fileId, body);
       const entries = await window.api.files.list();
+      sessionOwner.getSession(fileId)?.markPersisted();
       set({
         error: null,
         externalConflict: null,

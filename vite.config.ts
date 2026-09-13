@@ -191,6 +191,7 @@ export default defineConfig({
       "react/react-in-jsx-scope": "off",
       "no-underscore-dangle": "off",
       "typescript/no-unsafe-type-assertion": "error",
+      "typescript/consistent-return": "warn",
       "no-await-in-loop": "off",
       "typescript/await-thenable": "error",
       "react/iframe-missing-sandbox": "error",

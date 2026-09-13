@@ -194,6 +194,18 @@ export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsM
 
 const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
 
+const validateEntryName = (name: string) => {
+  const leaf = name.trim();
+  if (!leaf) throw new Error("Name cannot be empty");
+  if (leaf.includes("/") || leaf.includes("\\")) {
+    throw new Error("Name cannot contain path separators");
+  }
+  if (leaf === "." || leaf === ".." || leaf.startsWith(".")) {
+    throw new Error("Names cannot start with a dot");
+  }
+  return leaf;
+};
+
 const toRelativeId = (root: string, absPath: string) =>
   path.relative(root, absPath).split(path.sep).filter(Boolean).join("/");
 
@@ -253,8 +265,9 @@ const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]
     let dirents: Dirent[];
     try {
       dirents = await readdir(dirAbs, { withFileTypes: true });
-    } catch {
-      continue;
+    } catch (error) {
+      if (dirAbs !== root && errorCodeOf(error) === "ENOENT") continue;
+      throw error;
     }
 
     for (const dirent of dirents) {
@@ -267,8 +280,9 @@ const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]
       let lst: Stats;
       try {
         lst = await lstat(absPath);
-      } catch {
-        continue;
+      } catch (error) {
+        if (errorCodeOf(error) === "ENOENT") continue;
+        throw error;
       }
 
       if (lst.isSymbolicLink()) continue;
@@ -336,8 +350,9 @@ export const countEntriesFlat = async (rootAbs: string, cap: number) => {
     let dirents: Dirent[];
     try {
       dirents = await readdir(dirAbs, { withFileTypes: true });
-    } catch {
-      continue;
+    } catch (error) {
+      if (dirAbs !== rootAbs && errorCodeOf(error) === "ENOENT") continue;
+      throw error;
     }
 
     for (const dirent of dirents) {
@@ -346,8 +361,9 @@ export const countEntriesFlat = async (rootAbs: string, cap: number) => {
       let lst: Stats;
       try {
         lst = await lstat(absPath);
-      } catch {
-        continue;
+      } catch (error) {
+        if (errorCodeOf(error) === "ENOENT") continue;
+        throw error;
       }
 
       if (lst.isSymbolicLink()) continue;
@@ -552,14 +568,7 @@ export const renameEntry = async (
       throw new Error("Only .excalidraw files can be renamed");
     }
 
-    const leaf = newName.trim();
-    if (!leaf) throw new Error("Name cannot be empty");
-    if (leaf.includes("/") || leaf.includes("\\")) {
-      throw new Error("Name cannot contain path separators");
-    }
-    if (leaf.startsWith(".")) {
-      throw errorWithCode("Name cannot start with a dot", "INVALID");
-    }
+    const leaf = validateEntryName(newName);
     if (isDirectory && isExcalidrawFileName(leaf)) {
       throw errorWithCode("Folder names cannot end with .excalidraw", "INVALID");
     }
@@ -654,14 +663,7 @@ export const createEntry = async (
   hooks?: FsMutationHooks,
 ): Promise<FileEntry> =>
   withFileMutationLock(async () => {
-    const leaf = name.trim();
-    if (!leaf) throw new Error("Name cannot be empty");
-    if (leaf.includes("/") || leaf.includes("\\")) {
-      throw new Error("Name cannot contain path separators");
-    }
-    if (leaf.startsWith(".")) {
-      throw errorWithCode("Name cannot start with a dot", "INVALID");
-    }
+    const leaf = validateEntryName(name);
     if (kind === "directory" && isExcalidrawFileName(leaf)) {
       throw errorWithCode("Folder names cannot end with .excalidraw", "INVALID");
     }
@@ -740,8 +742,13 @@ export const listEntries = async (root?: string): Promise<FileEntry[]> => {
   if (!info.configured || !info.path) return [];
 
   const configured = path.resolve(info.path);
-  const canonicalConfigured = await realpath(configured).catch(() => null);
-  if (!canonicalConfigured) return [];
+  let canonicalConfigured: string;
+  try {
+    canonicalConfigured = await realpath(configured);
+  } catch (error) {
+    if (errorCodeOf(error) === "ENOENT") return [];
+    throw error;
+  }
 
   if (root) {
     const resolved = path.resolve(root);

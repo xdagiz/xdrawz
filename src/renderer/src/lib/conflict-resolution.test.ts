@@ -5,9 +5,10 @@ import type { ConflictSlice } from "./conflict-resolution";
 import { type ExternalConflict } from "./conflicts";
 
 const handshake = { active: false };
+const session = vi.hoisted(() => ({ getSession: vi.fn() }));
 
 vi.mock("@/lib/session-owner", () => ({
-  sessionOwner: { getSession: () => null },
+  sessionOwner: session,
 }));
 
 vi.mock("@/lib/close-handshake", () => ({
@@ -67,6 +68,7 @@ const makeHarness = async (overrides: Partial<ConflictSlice> = {}) => {
 
 afterEach(() => {
   handshake.active = false;
+  session.getSession.mockReset();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -200,6 +202,19 @@ describe("resolveMissingConflict", () => {
     expect(files.writeRecover).toHaveBeenCalledWith("a.excalidraw", "<json/>");
     expect(slice.externalConflict).toBeNull();
     expect(slice.error).toBeNull();
+  });
+
+  it("marks the active session persisted after recovery", async () => {
+    const markPersisted = vi.fn();
+    session.getSession.mockReturnValue({ markPersisted });
+    const { dialog, files, resolver } = await makeHarness({ externalConflict: missing });
+    dialog.fileRecover.mockResolvedValue("recover");
+    files.writeRecover.mockResolvedValue({});
+    files.list.mockResolvedValue([]);
+
+    await resolver.resolveMissingConflict("<json/>");
+
+    expect(markPersisted).toHaveBeenCalledTimes(1);
   });
 
   it("discards via the dependency and clears the dismissal", async () => {

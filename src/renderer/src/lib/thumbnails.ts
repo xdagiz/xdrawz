@@ -166,13 +166,13 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
         if (entry.kind !== "file") continue;
         present.add(entry.id);
       }
-      for (const id of [...records.keys()]) {
+      for (const id of records.keys()) {
         if (!present.has(id)) records.delete(id);
       }
-      for (const id of [...known.keys()]) {
+      for (const id of known.keys()) {
         if (!present.has(id)) known.delete(id);
       }
-      for (const id of [...queue.keys()]) {
+      for (const id of queue.keys()) {
         if (!present.has(id)) queue.delete(id);
       }
       while (records.size > 1000) {

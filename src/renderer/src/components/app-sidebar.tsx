@@ -49,6 +49,9 @@ import { stripExcalidraw } from "@/lib/utils";
 const isTypeaheadChar = (event: React.KeyboardEvent<HTMLDivElement>) =>
   event.key !== " " && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
 
+const TREE_ROW_HEIGHT = 28;
+const TREE_OVERSCAN = 10;
+
 export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) => {
   const entries = useStore((s) => s.entries);
   const openFileId = useStore((s) => s.openFileId);
@@ -74,11 +77,17 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [bottomFade, setBottomFade] = useState(false);
+  const [scrollMetrics, setScrollMetrics] = useState({ top: 0, height: 0 });
 
-  const updateBottomFade = useCallback(() => {
+  const updateScrollMetrics = useCallback(() => {
     const el = contentRef.current;
     if (!el) return;
     setBottomFade(el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+    setScrollMetrics((current) =>
+      current.top === el.scrollTop && current.height === el.clientHeight
+        ? current
+        : { top: el.scrollTop, height: el.clientHeight },
+    );
   }, []);
   const entriesById = useMemo(() => buildEntriesById(entries), [entries]);
   const childIndex = useMemo(() => buildSortedChildIndex(entries), [entries]);
@@ -107,6 +116,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
   useEffect(() => {
     tree.rebuildTree();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [tree, childIndex]);
 
   useEffect(() => {
@@ -121,8 +131,16 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     if (openFileId && entries.length > 0) {
       outerFrame = requestAnimationFrame(() => {
         innerFrame = requestAnimationFrame(() => {
-          const item = tree.getItemInstance(openFileId);
-          void item?.scrollTo({ block: "nearest" }).catch(() => {});
+          const index = tree.getItems().findIndex((item) => item.getItemData()?.id === openFileId);
+          const viewport = contentRef.current;
+          if (index < 0 || !viewport) return;
+          const top = index * TREE_ROW_HEIGHT;
+          const bottom = top + TREE_ROW_HEIGHT;
+          if (top < viewport.scrollTop) viewport.scrollTop = top;
+          else if (bottom > viewport.scrollTop + viewport.clientHeight) {
+            viewport.scrollTop = bottom - viewport.clientHeight;
+          }
+          updateScrollMetrics();
         });
       });
     }
@@ -131,7 +149,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       cancelAnimationFrame(outerFrame);
       cancelAnimationFrame(innerFrame);
     };
-  }, [openFileId, tree, entries.length]);
+  }, [openFileId, tree, entries.length, updateScrollMetrics]);
 
   const performDelete = useCallback(
     async (target: { id: string; name: string; mode: FileDeleteMode }) => {
@@ -157,11 +175,11 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     setRenamingId(fileId);
   }, []);
 
-  const freshDrawingIdRef = useRef<string | null>(null);
+  const [freshDrawingId, setFreshDrawingId] = useState<string | null>(null);
   const renameValueRef = useRef<string>("");
 
   const clearFreshMarker = useCallback((fileId: string) => {
-    if (freshDrawingIdRef.current === fileId) freshDrawingIdRef.current = null;
+    setFreshDrawingId((current) => (current === fileId ? null : current));
   }, []);
 
   const openDelete = useCallback((id: string, name: string, mode: FileDeleteMode) => {
@@ -169,9 +187,24 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     setDeleteOpen(true);
   }, []);
 
+  const scrollFocusedRowIntoView = useCallback(() => {
+    const index = tree.getItems().findIndex((item) => item.isFocused());
+    const viewport = contentRef.current;
+    if (index < 0 || !viewport) return;
+
+    const top = index * TREE_ROW_HEIGHT;
+    const bottom = top + TREE_ROW_HEIGHT;
+    if (top < viewport.scrollTop) viewport.scrollTop = top;
+    else if (bottom > viewport.scrollTop + viewport.clientHeight) {
+      viewport.scrollTop = bottom - viewport.clientHeight;
+    }
+    updateScrollMetrics();
+  }, [tree, updateScrollMetrics]);
+
   const handleContainerKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (event.target instanceof HTMLInputElement) return;
+      requestAnimationFrame(scrollFocusedRowIntoView);
 
       const items = tree.getItems();
       const focusedIndex = items.findIndex((item) => item.isFocused());
@@ -210,12 +243,12 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         tree.updateDomFocus();
       }
     },
-    [tree, startRename, openDelete],
+    [tree, startRename, openDelete, scrollFocusedRowIntoView],
   );
 
   const handleRename = useCallback(
     async (fileId: string, newName: string) => {
-      const isFresh = freshDrawingIdRef.current === fileId;
+      const isFresh = freshDrawingId === fileId;
       const entry = entriesById.get(fileId);
       const changed = entry ? newName !== stripExcalidraw(entry.name) : true;
 
@@ -242,7 +275,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         setRenameError(toAppError(error, "rename", false));
       }
     },
-    [renameEntry, clearFreshMarker, setOpenFileId, entriesById],
+    [renameEntry, clearFreshMarker, setOpenFileId, entriesById, freshDrawingId],
   );
 
   const handleCreate = useCallback(
@@ -258,7 +291,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       try {
         const newId = await createEntry(parentId, kind);
         if (!newId) return;
-        if (kind === "file") freshDrawingIdRef.current = newId;
+        if (kind === "file") setFreshDrawingId(newId);
 
         expandIds(ancestorIdsOf(newId));
         setRenameError(null);
@@ -355,12 +388,37 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   );
 
   const handleContentScroll = useCallback(() => {
-    updateBottomFade();
-  }, [updateBottomFade]);
+    updateScrollMetrics();
+  }, [updateScrollMetrics]);
 
   useEffect(() => {
-    updateBottomFade();
-  }, [updateBottomFade, entries.length, openFileId, expandedIds]);
+    updateScrollMetrics();
+    const el = contentRef.current;
+    if (!el) return () => {};
+    const ro = new ResizeObserver(updateScrollMetrics);
+    ro.observe(el);
+    const mo = new MutationObserver(updateScrollMetrics);
+    mo.observe(el, { childList: true, subtree: true });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+    };
+  }, [updateScrollMetrics]);
+
+  const treeItems = tree.getItems();
+  const firstVisibleRow = Math.max(
+    0,
+    Math.floor(scrollMetrics.top / TREE_ROW_HEIGHT) - TREE_OVERSCAN,
+  );
+  const visibleRowCount = Math.ceil(scrollMetrics.height / TREE_ROW_HEIGHT) + TREE_OVERSCAN * 2;
+  const focusedTreeRow = treeItems.findIndex((item) => item.isFocused());
+  const virtualStart =
+    focusedTreeRow < 0 ? firstVisibleRow : Math.min(firstVisibleRow, focusedTreeRow);
+  const virtualEnd =
+    focusedTreeRow < 0
+      ? firstVisibleRow + visibleRowCount
+      : Math.max(firstVisibleRow + visibleRowCount, focusedTreeRow + 1);
+  const visibleTreeItems = treeItems.slice(virtualStart, virtualEnd);
 
   return (
     <>
@@ -423,54 +481,67 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                       if (e.target === e.currentTarget) void openRootMenu(e.clientX, e.clientY);
                     }}
                   >
-                    {tree.getItems().map((item) => {
-                      const entry = item.getItemData();
-                      if (!entry || !entry.name) return null;
+                    <div
+                      style={{ height: treeItems.length * TREE_ROW_HEIGHT, position: "relative" }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: virtualStart * TREE_ROW_HEIGHT,
+                          left: 0,
+                          right: 0,
+                        }}
+                      >
+                        {visibleTreeItems.map((item) => {
+                          const entry = item.getItemData();
+                          if (!entry || !entry.name) return null;
 
-                      return (
-                        <Fragment key={item.getKey()}>
-                          {renamingId === entry.id ? (
-                            <div
-                              style={{
-                                paddingLeft: `${item.getItemMeta().level * 16 + 16 + 6 - 11}px`,
-                              }}
-                              className="flex h-7 items-center pr-2"
-                            >
-                              <RenameInput
-                                initial={stripExcalidraw(entry.name)}
-                                error={renameError}
-                                treatUnchangedAsCommit={freshDrawingIdRef.current === entry.id}
-                                onValueChange={(v) => {
-                                  renameValueRef.current = v;
-                                }}
-                                onCommit={(v) => handleRename(entry.id, v)}
-                                onCancel={() => {
-                                  clearFreshMarker(entry.id);
-                                  setRenameError(null);
-                                  setRenamingId(null);
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <TreeRow
-                              item={item}
-                              label={stripExcalidraw(entry.name)}
-                              isActive={entry.id === openFileId}
-                              isDirty={dirtyById[entry.id] !== undefined}
-                              timeLabel={
-                                entry.kind === "file"
-                                  ? formatRelativeTimeShort(entry.modifiedAt)
-                                  : undefined
-                              }
-                              onMenuClick={(event) =>
-                                handleMenuClick(entry.id, event.clientX, event.clientY)
-                              }
-                              onContextMenu={(e) => handleContextMenu(e, entry.id)}
-                            />
-                          )}
-                        </Fragment>
-                      );
-                    })}
+                          return (
+                            <Fragment key={item.getKey()}>
+                              {renamingId === entry.id ? (
+                                <div
+                                  style={{
+                                    paddingLeft: `${item.getItemMeta().level * 16 + 16 + 6 - 11}px`,
+                                  }}
+                                  className="flex h-7 items-center pr-2"
+                                >
+                                  <RenameInput
+                                    initial={stripExcalidraw(entry.name)}
+                                    error={renameError}
+                                    treatUnchangedAsCommit={freshDrawingId === entry.id}
+                                    onValueChange={(v) => {
+                                      renameValueRef.current = v;
+                                    }}
+                                    onCommit={(v) => handleRename(entry.id, v)}
+                                    onCancel={() => {
+                                      clearFreshMarker(entry.id);
+                                      setRenameError(null);
+                                      setRenamingId(null);
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <TreeRow
+                                  item={item}
+                                  label={stripExcalidraw(entry.name)}
+                                  isActive={entry.id === openFileId}
+                                  isDirty={dirtyById[entry.id] !== undefined}
+                                  timeLabel={
+                                    entry.kind === "file"
+                                      ? formatRelativeTimeShort(entry.modifiedAt)
+                                      : undefined
+                                  }
+                                  onMenuClick={(event) =>
+                                    handleMenuClick(entry.id, event.clientX, event.clientY)
+                                  }
+                                  onContextMenu={(e) => handleContextMenu(e, entry.id)}
+                                />
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </TreeContainer>
                 )}
               </SidebarGroupContent>

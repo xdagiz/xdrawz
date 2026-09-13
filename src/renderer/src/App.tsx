@@ -40,7 +40,6 @@ const App = () => {
   const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
   const setPaletteOpen = useStore((s) => s.setPaletteOpen);
-  const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
 
   const conflictPromptRef = useRef<string | null>(null);
@@ -52,11 +51,11 @@ const App = () => {
   const pickFolder = useCallback(async () => {
     setPickingFolder(true);
     try {
-      await pickAndSwitchFolder();
+      await useStore.getState().pickAndSwitchFolder();
     } finally {
       setPickingFolder(false);
     }
-  }, [pickAndSwitchFolder]);
+  }, []);
 
   useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
   useHotkey("Mod+W", () => void setOpenFileId(null), {

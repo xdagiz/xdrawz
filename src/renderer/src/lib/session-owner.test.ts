@@ -13,6 +13,7 @@ const makeSession = () => ({
   getSerializedContent: vi.fn(() => "{}"),
   setInitialBaseline: vi.fn(),
   resetBaseline: vi.fn(),
+  markPersisted: vi.fn(),
   ensureCleanOrConfirm: vi.fn(
     async (reason: UnsavedReason, confirm?: (r: UnsavedReason) => Promise<UnsavedChoice>) =>
       confirm ? (await confirm(reason)) !== "cancel" : true,
