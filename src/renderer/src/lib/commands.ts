@@ -58,7 +58,7 @@ const THEME_CHOICES: { value: ThemePreference; label: string; icon: LucideIcon }
 
 const reportFailure = (error: unknown, operation: ErrorOperation, title: string) => {
   const appError = toAppError(error, operation);
-  toast.add({ title, description: appError.message, type: "error" });
+  toast.add({ title, description: appError.detail, type: "error" });
 };
 
 const requiresOpenFile = (ctx: CommandContext) => Boolean(ctx.store.openFileId);

@@ -1,14 +1,14 @@
-import { cleanErrorMessage } from "@shared/errors";
 import { Folder, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { toAppError, type AppError } from "@/lib/app-error";
 
 const handleQuit = () => void window.api.app.quit();
 
 export function Greeting() {
   const [picking, setPicking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -29,7 +29,7 @@ export function Greeting() {
       }
       setPicking(false);
     } catch (err) {
-      setError(cleanErrorMessage(err));
+      setError(toAppError(err, "load"));
       setPicking(false);
     }
   };
@@ -73,7 +73,10 @@ export function Greeting() {
         </div>
 
         {error && (
-          <p className="text-destructive max-w-xs font-mono text-xs break-words">{error}</p>
+          <div className="max-w-xs space-y-1">
+            <p className="text-sm font-medium">{error.title}</p>
+            <p className="text-destructive font-mono text-xs break-words">{error.detail}</p>
+          </div>
         )}
       </main>
     </div>

@@ -1,3 +1,4 @@
+import { codedError } from "@shared/errors";
 import type { FileEntry } from "@shared/ipc";
 
 import { toAppError, type AppError } from "@/lib/app-error";
@@ -127,7 +128,16 @@ export const createConflictResolver = (deps: ResolverDeps) => {
       const body = recoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
 
       if (!body) {
-        set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
+        set({
+          error: toAppError(
+            codedError("Nothing to recover", {
+              code: "INVALID",
+              reason: "invalid-arg",
+              field: "content",
+            }),
+            "recover",
+          ),
+        });
         return "cancel";
       }
 
@@ -170,7 +180,16 @@ export const createConflictResolver = (deps: ResolverDeps) => {
 
     const body = sessionOwner.getSession()?.getSerializedContent();
     if (!body) {
-      set({ error: toAppError(new Error("Nothing to recover"), "recover", false) });
+      set({
+        error: toAppError(
+          codedError("Nothing to recover", {
+            code: "INVALID",
+            reason: "invalid-arg",
+            field: "content",
+          }),
+          "recover",
+        ),
+      });
       return false;
     }
 

@@ -1,4 +1,4 @@
-import { errorWithCode } from "@shared/errors";
+import { codedError } from "@shared/errors";
 import { DEFAULT_SETTINGS, isAutosavePresetMs, type ThemePreference } from "@shared/ipc";
 import type { AppSettings, SettingsUpdate } from "@shared/ipc";
 import { BrowserWindow, nativeTheme } from "electron";
@@ -17,26 +17,42 @@ export const validateSettingsUpdate = (payload: Record<string, unknown>): Settin
     switch (key) {
       case "theme": {
         if (!isThemePreference(value)) {
-          throw errorWithCode(`Invalid theme preference: ${JSON.stringify(value)}`, "INVALID");
+          throw codedError(`Invalid theme preference: ${JSON.stringify(value)}`, {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: "theme",
+          });
         }
         update.theme = value;
         break;
       }
       case "autosaveIntervalMs": {
         if (typeof value !== "number" || !Number.isInteger(value) || !isAutosavePresetMs(value)) {
-          throw errorWithCode(`Invalid autosave interval: ${JSON.stringify(value)}`, "INVALID");
+          throw codedError(`Invalid autosave interval: ${JSON.stringify(value)}`, {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: "autosaveIntervalMs",
+          });
         }
         update.autosaveIntervalMs = value;
         break;
       }
       case "reopenLastDrawing":
         if (typeof value !== "boolean") {
-          throw errorWithCode(`${key} must be a boolean`, "INVALID");
+          throw codedError(`${key} must be a boolean`, {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: key,
+          });
         }
         update[key] = value;
         break;
       default:
-        throw errorWithCode(`Unknown setting: ${key}`, "INVALID");
+        throw codedError(`Unknown setting: ${key}`, {
+          code: "INVALID",
+          reason: "invalid-payload",
+          field: key,
+        });
     }
   }
   return update;

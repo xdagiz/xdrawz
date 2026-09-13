@@ -108,7 +108,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     try {
       await updateSettings({ theme: value });
     } catch (error) {
-      toast.add({ title: toAppError(error, "settings", false).message, type: "error" });
+      toast.add({ title: toAppError(error, "settings").detail, type: "error" });
     }
   };
 
@@ -116,7 +116,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     try {
       await updateSettings({ autosaveIntervalMs: value });
     } catch (error) {
-      toast.add({ title: toAppError(error, "settings", false).message, type: "error" });
+      toast.add({ title: toAppError(error, "settings").detail, type: "error" });
     }
   };
 
@@ -124,7 +124,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     try {
       await updateSettings({ reopenLastDrawing: value });
     } catch (error) {
-      toast.add({ title: toAppError(error, "settings", false).message, type: "error" });
+      toast.add({ title: toAppError(error, "settings").detail, type: "error" });
     }
   };
 

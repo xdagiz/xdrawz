@@ -41,7 +41,7 @@ export const CommandRenameDialog = ({ open, onOpenChange }: DialogProps) => {
       if (ok) toast.add({ title: "Drawing renamed", type: "success" });
       onOpenChange(false);
     } catch (error) {
-      toast.add({ title: toAppError(error, "rename").message, type: "error" });
+      toast.add({ title: toAppError(error, "rename").detail, type: "error" });
     } finally {
       setCommitting(false);
     }
@@ -83,7 +83,7 @@ export const CommandDeleteDialog = ({ open, onOpenChange }: DialogProps) => {
       const ok = await deleteEntry(openFileId, "trash");
       if (ok) toast.add({ title: `Deleted ${name}`, type: "success" });
     } catch (error) {
-      toast.add({ title: toAppError(error, "delete").message, type: "error" });
+      toast.add({ title: toAppError(error, "delete").detail, type: "error" });
     } finally {
       setDeleting(false);
       onOpenChange(false);

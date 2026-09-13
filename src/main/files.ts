@@ -14,7 +14,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import { errorWithCode } from "@shared/errors";
+import { codedError, errorCodeOf } from "@shared/errors";
 import {
   FILE_NOT_FOUND_MESSAGE,
   MAX_DRAWING_CONTENT_BYTES,
@@ -36,15 +36,11 @@ const isMac = process.platform === "darwin";
 const normalizeId = (id: string) => (isMac ? id.normalize("NFC") : id);
 const normalizeFsName = (name: string) => (isMac ? name.normalize("NFC") : name);
 
-const errorCodeOf = (error: unknown) => {
-  if (typeof error !== "object" || error === null) return undefined;
-  if (!("code" in error)) return undefined;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? code : undefined;
-};
-
 const throwExists = (cause?: unknown): never => {
-  const error = errorWithCode("A file or folder with that name already exists", "INVALID");
+  const error = codedError("A file or folder with that name already exists", {
+    code: "INVALID",
+    reason: "exists",
+  });
   if (cause !== undefined) Object.assign(error, { cause });
   throw error;
 };
@@ -74,17 +70,31 @@ const realpathFromExistingAncestor = async (targetAbs: string) => {
 };
 
 const assertSafeIdString = (id: string) => {
-  if (id.includes("\0")) throw errorWithCode("Invalid path", "INVALID");
-  if (path.isAbsolute(id)) throw errorWithCode("Absolute paths not allowed", "INVALID");
-  if (/^[a-zA-Z]:/.test(id)) throw errorWithCode("Drive letters not allowed", "INVALID");
+  if (id.includes("\0"))
+    throw codedError("Invalid path", { code: "INVALID", reason: "bad-path", field: "id" });
+  if (path.isAbsolute(id))
+    throw codedError("Absolute paths not allowed", {
+      code: "INVALID",
+      reason: "bad-path",
+      field: "id",
+    });
+  if (/^[a-zA-Z]:/.test(id))
+    throw codedError("Drive letters not allowed", {
+      code: "INVALID",
+      reason: "bad-path",
+      field: "id",
+    });
   if (id.startsWith("\\\\") || id.startsWith("//")) {
-    throw errorWithCode("UNC paths not allowed", "INVALID");
+    throw codedError("UNC paths not allowed", { code: "INVALID", reason: "bad-path", field: "id" });
   }
-  if (id.includes("\\")) throw errorWithCode("Invalid path", "INVALID");
+  if (id.includes("\\"))
+    throw codedError("Invalid path", { code: "INVALID", reason: "bad-path", field: "id" });
   const segments = id.split("/");
   for (const [index, segment] of segments.entries()) {
-    if (segment === "." && segments.length > 1) throw errorWithCode("Invalid path", "INVALID");
-    if (segment === ".." && index > 0) throw errorWithCode("Invalid path", "INVALID");
+    if (segment === "." && segments.length > 1)
+      throw codedError("Invalid path", { code: "INVALID", reason: "bad-path", field: "id" });
+    if (segment === ".." && index > 0)
+      throw codedError("Invalid path", { code: "INVALID", reason: "bad-path", field: "id" });
   }
 };
 
@@ -95,7 +105,8 @@ const getCanonicalRoot = async () => {
 
 const assertInsideRealRoot = async (rootReal: string, candidateAbs: string) => {
   const candidateReal = await realpathFromExistingAncestor(candidateAbs);
-  if (!contains(rootReal, candidateReal)) throw new Error("Path escapes drawings root");
+  if (!contains(rootReal, candidateReal))
+    throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
   return candidateReal;
 };
 
@@ -116,16 +127,17 @@ const assertParentsNotSymlinks = async (
     if (!lst) {
       const parentReal = await realpath(path.dirname(current)).catch(() => null);
       if (parentReal && !contains(rootReal, parentReal)) {
-        throw errorWithCode("Symlink in path", "INVALID");
+        throw codedError("Symlink in path", { code: "INVALID", reason: "symlink" });
       }
       continue;
     }
 
-    if (lst.isSymbolicLink()) throw errorWithCode("Symlink in path", "INVALID");
+    if (lst.isSymbolicLink())
+      throw codedError("Symlink in path", { code: "INVALID", reason: "symlink" });
     if (lst.isDirectory()) {
       const realCurrent = await realpath(current).catch(() => null);
       if (realCurrent && !contains(rootReal, realCurrent)) {
-        throw new Error("Path escapes drawings root");
+        throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
       }
     }
   }
@@ -139,8 +151,10 @@ const assertNotSymlink = async (absPath: string) => {
     if (errorCodeOf(error) === "ENOENT") return;
     throw error;
   }
-  if (lst.isSymbolicLink()) throw errorWithCode("Symlinks not allowed", "INVALID");
-  if (lst.isFile() && lst.nlink > 1) throw errorWithCode("Hardlinks not allowed", "INVALID");
+  if (lst.isSymbolicLink())
+    throw codedError("Symlinks not allowed", { code: "INVALID", reason: "symlink" });
+  if (lst.isFile() && lst.nlink > 1)
+    throw codedError("Hardlinks not allowed", { code: "INVALID", reason: "hardlink" });
 };
 
 export type FsMutationHooks = {
@@ -196,12 +210,25 @@ const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".exc
 
 const validateEntryName = (name: string) => {
   const leaf = name.trim();
-  if (!leaf) throw new Error("Name cannot be empty");
+  if (!leaf)
+    throw codedError("Name cannot be empty", {
+      code: "INVALID",
+      reason: "bad-name",
+      field: "name",
+    });
   if (leaf.includes("/") || leaf.includes("\\")) {
-    throw new Error("Name cannot contain path separators");
+    throw codedError("Name cannot contain path separators", {
+      code: "INVALID",
+      reason: "bad-name",
+      field: "name",
+    });
   }
   if (leaf === "." || leaf === ".." || leaf.startsWith(".")) {
-    throw new Error("Names cannot start with a dot");
+    throw codedError("Names cannot start with a dot", {
+      code: "INVALID",
+      reason: "bad-name",
+      field: "name",
+    });
   }
   return leaf;
 };
@@ -233,7 +260,8 @@ const resolveInsideRoot = async (id: string) => {
   const root = await requireDrawingsRoot();
   const rootReal = await getCanonicalRoot();
   const absPath = path.resolve(root, ...normalizedId.split("/").filter(Boolean));
-  if (!contains(path.resolve(root), absPath)) throw new Error("Path escapes drawings root");
+  if (!contains(path.resolve(root), absPath))
+    throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
 
   const candidateReal = await assertInsideRealRoot(rootReal, absPath);
   await assertParentsNotSymlinks(root, rootReal, absPath);
@@ -250,10 +278,11 @@ const walkEntriesCapped = async (root: string, cap: number): Promise<FileEntry[]
   const countEntry = () => {
     entryCount += 1;
     if (entryCount > cap) {
-      throw errorWithCode(
-        `TOO_MANY_ENTRIES: The drawings folder contains too many files (max ${cap})`,
-        "TOO_LARGE",
-      );
+      throw codedError(`The drawings folder contains too many files (max ${cap})`, {
+        code: "TOO_LARGE",
+        reason: "too-many-entries",
+        limit: cap,
+      });
     }
   };
 
@@ -335,10 +364,11 @@ export const countEntriesFlat = async (rootAbs: string, cap: number) => {
   const countEntry = () => {
     count += 1;
     if (count > cap) {
-      throw errorWithCode(
-        `TOO_MANY_ENTRIES: The drawings folder contains too many files (max ${cap})`,
-        "TOO_LARGE",
-      );
+      throw codedError(`The drawings folder contains too many files (max ${cap})`, {
+        code: "TOO_LARGE",
+        reason: "too-many-entries",
+        limit: cap,
+      });
     }
   };
 
@@ -382,8 +412,13 @@ export const countEntriesFlat = async (rootAbs: string, cap: number) => {
 
 const requireDrawingsRoot = async () => {
   const info = await getDrawings();
-  if (info.missing) throw new Error("Drawings folder is missing");
-  if (!info.configured || !info.path) throw new Error("Drawings folder not configured");
+  if (info.missing)
+    throw codedError("Drawings folder is missing", { code: "NOT_FOUND", reason: "missing-root" });
+  if (!info.configured || !info.path)
+    throw codedError("Drawings folder not configured", {
+      code: "NOT_FOUND",
+      reason: "missing-root",
+    });
   return path.resolve(info.path);
 };
 
@@ -395,19 +430,29 @@ const assertDrawingJson = (content: string) => {
   try {
     parsed = JSON.parse(content);
   } catch {
-    throw errorWithCode("Drawing content is not valid JSON", "INVALID");
+    throw codedError("Drawing content is not valid JSON", {
+      code: "INVALID",
+      reason: "invalid-json",
+    });
   }
   try {
     validateDrawingRecord(parsed);
   } catch (error) {
-    throw errorWithCode(error instanceof Error ? error.message : "Invalid drawing", "INVALID");
+    throw codedError(error instanceof Error ? error.message : "Invalid drawing", {
+      code: "INVALID",
+      reason: "invalid-record",
+    });
   }
 };
 
 const assertContentSize = (content: string) => {
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes > MAX_DRAWING_CONTENT_BYTES) {
-    throw errorWithCode(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, "TOO_LARGE");
+    throw codedError(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, {
+      code: "TOO_LARGE",
+      reason: "content-too-large",
+      limit: MAX_DRAWING_CONTENT_BYTES,
+    });
   }
 };
 
@@ -415,7 +460,11 @@ export const readDrawingFile = async (id: string) => {
   const { candidateReal } = await resolveInsideRoot(id);
 
   if (!isExcalidrawFileName(path.basename(id))) {
-    throw new Error("Only .excalidraw files can be read");
+    throw codedError("Only .excalidraw files can be read", {
+      code: "INVALID",
+      reason: "bad-extension",
+      field: "id",
+    });
   }
 
   const flags = isWindows ? fsConstants.O_RDONLY : fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW;
@@ -426,20 +475,29 @@ export const readDrawingFile = async (id: string) => {
   } catch (error) {
     const code = errorCodeOf(error);
     if (code === "ELOOP" || code === "ENOTDIR") {
-      throw new Error("Path escapes drawings root", { cause: error });
+      throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
     }
     throw error;
   }
 
   try {
     const stats = await fh.stat();
-    if (stats.isDirectory()) throw new Error("Cannot read a directory as a drawing");
+    if (stats.isDirectory())
+      throw codedError("Cannot read a directory as a drawing", {
+        code: "INVALID",
+        reason: "is-directory",
+        field: "id",
+      });
     if (stats.isFile() && stats.nlink > 1) {
-      throw errorWithCode("Hardlinks not allowed", "INVALID");
+      throw codedError("Hardlinks not allowed", { code: "INVALID", reason: "hardlink" });
     }
 
     if (stats.size > MAX_DRAWING_CONTENT_BYTES) {
-      throw errorWithCode("File is too large to load", "TOO_LARGE");
+      throw codedError("File is too large to load", {
+        code: "TOO_LARGE",
+        reason: "file-too-large",
+        limit: MAX_DRAWING_CONTENT_BYTES,
+      });
     }
 
     const content = await fh.readFile("utf8");
@@ -452,9 +510,12 @@ export const readDrawingFile = async (id: string) => {
 
 const ensureNotDirectory = async (absPath: string) => {
   const existing = await lstat(absPath).catch(() => null);
-  if (existing?.isDirectory()) throw new Error("Cannot write over a directory");
-  if (existing?.isSymbolicLink()) throw errorWithCode("Invalid file", "INVALID");
-  if (existing?.isFile() && existing.nlink > 1) throw errorWithCode("Invalid file", "INVALID");
+  if (existing?.isDirectory())
+    throw codedError("Cannot write over a directory", { code: "INVALID", reason: "is-directory" });
+  if (existing?.isSymbolicLink())
+    throw codedError("Invalid file", { code: "INVALID", reason: "symlink" });
+  if (existing?.isFile() && existing.nlink > 1)
+    throw codedError("Invalid file", { code: "INVALID", reason: "hardlink" });
 };
 
 let mutationTail: Promise<void> = Promise.resolve();
@@ -462,7 +523,10 @@ let mutationDepth = 0;
 
 const withFileMutationLock = <T>(task: () => Promise<T>): Promise<T> => {
   if (mutationDepth >= MAX_MUTATION_QUEUE) {
-    const busy = errorWithCode("TOO_BUSY: Too many pending file operations", "UNKNOWN");
+    const busy = codedError("Too many pending file operations", {
+      code: "UNKNOWN",
+      reason: "busy",
+    });
     return Promise.reject(busy);
   }
 
@@ -491,7 +555,12 @@ export const writeDrawingFile = async (
   hooks?: FsMutationHooks,
 ): Promise<FileEntry> =>
   withFileMutationLock(async () => {
-    if (typeof content !== "string") throw new Error("Content must be a string");
+    if (typeof content !== "string")
+      throw codedError("Content must be a string", {
+        code: "INVALID",
+        reason: "invalid-arg",
+        field: "content",
+      });
 
     assertContentSize(content);
     assertDrawingJson(content);
@@ -499,12 +568,21 @@ export const writeDrawingFile = async (
     const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
     if (!isExcalidrawFileName(path.basename(id))) {
-      throw new Error("Only .excalidraw files can be written");
+      throw codedError("Only .excalidraw files can be written", {
+        code: "INVALID",
+        reason: "bad-extension",
+        field: "id",
+      });
     }
 
     const existing = await lstat(absPath).catch(() => null);
-    if (!existing) throw errorWithCode(FILE_NOT_FOUND_MESSAGE, "NOT_FOUND");
-    if (existing.isDirectory()) throw new Error("Cannot write over a directory");
+    if (!existing)
+      throw codedError(FILE_NOT_FOUND_MESSAGE, { code: "NOT_FOUND", reason: "missing-file" });
+    if (existing.isDirectory())
+      throw codedError("Cannot write over a directory", {
+        code: "INVALID",
+        reason: "is-directory",
+      });
 
     await assertInsideRealRoot(rootReal, absPath);
     await assertParentsNotSymlinks(root, rootReal, absPath);
@@ -520,7 +598,12 @@ export const writeDrawingFileRecover = async (
   hooks?: FsMutationHooks,
 ): Promise<FileEntry> =>
   withFileMutationLock(async () => {
-    if (typeof content !== "string") throw new Error("Content must be a string");
+    if (typeof content !== "string")
+      throw codedError("Content must be a string", {
+        code: "INVALID",
+        reason: "invalid-arg",
+        field: "content",
+      });
 
     assertContentSize(content);
     assertDrawingJson(content);
@@ -528,14 +611,18 @@ export const writeDrawingFileRecover = async (
     const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
     if (!isExcalidrawFileName(path.basename(id))) {
-      throw new Error("Only .excalidraw files can be written");
+      throw codedError("Only .excalidraw files can be written", {
+        code: "INVALID",
+        reason: "bad-extension",
+        field: "id",
+      });
     }
 
     await assertParentsNotSymlinks(root, rootReal, absPath);
 
     const parentRealAfter = await realpath(path.dirname(absPath)).catch(() => null);
     if (parentRealAfter && !contains(rootReal, parentRealAfter)) {
-      throw errorWithCode("Symlink in path", "INVALID");
+      throw codedError("Symlink in path", { code: "INVALID", reason: "symlink" });
     }
 
     await assertInsideRealRoot(rootReal, absPath);
@@ -545,7 +632,7 @@ export const writeDrawingFileRecover = async (
     await mkdir(path.dirname(candidateReal), { recursive: true });
     const parentRealAfterMkdir = await realpath(path.dirname(absPath)).catch(() => null);
     if (parentRealAfterMkdir && !contains(rootReal, parentRealAfterMkdir)) {
-      throw errorWithCode("Symlink in path", "INVALID");
+      throw codedError("Symlink in path", { code: "INVALID", reason: "symlink" });
     }
     await atomicWriteFile(candidateReal, content.endsWith("\n") ? content : `${content}\n`, hooks);
     return entryFromAbs(root, absPath, "file");
@@ -560,23 +647,34 @@ export const renameEntry = async (
     const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
 
     const lst = await lstat(absPath);
-    if (lst.isSymbolicLink()) throw errorWithCode("Symlinks not allowed", "INVALID");
-    if (lst.isFile() && lst.nlink > 1) throw errorWithCode("Hardlinks not allowed", "INVALID");
+    if (lst.isSymbolicLink())
+      throw codedError("Symlinks not allowed", { code: "INVALID", reason: "symlink" });
+    if (lst.isFile() && lst.nlink > 1)
+      throw codedError("Hardlinks not allowed", { code: "INVALID", reason: "hardlink" });
     const isDirectory = lst.isDirectory();
 
     if (!isDirectory && !isExcalidrawFileName(path.basename(id))) {
-      throw new Error("Only .excalidraw files can be renamed");
+      throw codedError("Only .excalidraw files can be renamed", {
+        code: "INVALID",
+        reason: "bad-extension",
+        field: "id",
+      });
     }
 
     const leaf = validateEntryName(newName);
     if (isDirectory && isExcalidrawFileName(leaf)) {
-      throw errorWithCode("Folder names cannot end with .excalidraw", "INVALID");
+      throw codedError("Folder names cannot end with .excalidraw", {
+        code: "INVALID",
+        reason: "bad-extension",
+        field: "newName",
+      });
     }
 
     const nameWithExt = isDirectory || isExcalidrawFileName(leaf) ? leaf : `${leaf}.excalidraw`;
     const nextAbs = path.join(path.dirname(absPath), nameWithExt);
 
-    if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
+    if (!contains(path.resolve(root), nextAbs))
+      throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
 
     const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
     await assertParentsNotSymlinks(root, rootReal, nextAbs);
@@ -665,7 +763,11 @@ export const createEntry = async (
   withFileMutationLock(async () => {
     const leaf = validateEntryName(name);
     if (kind === "directory" && isExcalidrawFileName(leaf)) {
-      throw errorWithCode("Folder names cannot end with .excalidraw", "INVALID");
+      throw codedError("Folder names cannot end with .excalidraw", {
+        code: "INVALID",
+        reason: "bad-extension",
+        field: "name",
+      });
     }
 
     const root = await requireDrawingsRoot();
@@ -677,20 +779,25 @@ export const createEntry = async (
       assertSafeIdString(normalizedParent);
 
       parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
-      if (!contains(path.resolve(root), parentAbs)) throw new Error("Path escapes drawings root");
+      if (!contains(path.resolve(root), parentAbs))
+        throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
 
       await assertInsideRealRoot(rootReal, parentAbs);
       await assertParentsNotSymlinks(root, rootReal, parentAbs);
 
       const parentStats = await lstat(parentAbs).catch(() => null);
       if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
-        throw errorWithCode("Parent folder not found", "NOT_FOUND");
+        throw codedError("Parent folder not found", {
+          code: "NOT_FOUND",
+          reason: "missing-parent",
+        });
       }
     }
 
     const nameForFs = kind === "file" && !isExcalidrawFileName(leaf) ? `${leaf}.excalidraw` : leaf;
     const nextAbs = path.join(parentAbs, nameForFs);
-    if (!contains(path.resolve(root), nextAbs)) throw new Error("Path escapes drawings root");
+    if (!contains(path.resolve(root), nextAbs))
+      throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
 
     const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
     await assertParentsNotSymlinks(root, rootReal, nextAbs);
@@ -716,7 +823,12 @@ export const deleteEntry = async (
 ) =>
   withFileMutationLock(async () => {
     const { rootReal, candidateReal } = await resolveInsideRoot(id);
-    if (candidateReal === rootReal) throw new Error("Cannot delete drawings root");
+    if (candidateReal === rootReal)
+      throw codedError("Cannot delete drawings root", {
+        code: "INVALID",
+        reason: "invalid-arg",
+        field: "id",
+      });
 
     hooks?.beforeMutate?.([candidateReal]);
 
@@ -733,7 +845,8 @@ export const deleteEntry = async (
       return;
     }
 
-    if (!trashItem) throw errorWithCode("Trash is unavailable", "UNKNOWN");
+    if (!trashItem)
+      throw codedError("Trash is unavailable", { code: "UNKNOWN", reason: "trash-unavailable" });
     await trashItem(candidateReal);
   });
 
@@ -757,7 +870,8 @@ export const listEntries = async (root?: string): Promise<FileEntry[]> => {
       realRequested !== null
         ? contains(canonicalConfigured, realRequested)
         : contains(configured, resolved);
-    if (!inside) throw new Error("Path escapes drawings root");
+    if (!inside)
+      throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
   }
 
   return walkEntries(configured);

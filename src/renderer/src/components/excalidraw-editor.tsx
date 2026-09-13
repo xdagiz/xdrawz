@@ -503,7 +503,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           toast.add({
             id: SCRATCH_CREATE_ERROR_TOAST_ID,
             title: appError.title,
-            description: appError.message,
+            description: appError.detail,
             type: "error",
           });
         }
@@ -523,7 +523,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         toast.add({
           id: SCRATCH_CREATE_ERROR_TOAST_ID,
           title: appError.title,
-          description: appError.message,
+          description: appError.detail,
           type: "error",
         });
       }
@@ -588,7 +588,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           } catch (error) {
             toast.add({
               title: `Couldn’t import ${file.name}`,
-              description: toAppError(error, "create").message,
+              description: toAppError(error, "create").detail,
               type: "error",
             });
           }
@@ -656,7 +656,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         await createAndOpenEntry(null, "file");
       } catch (error) {
         const appError = toAppError(error, "create");
-        toast.add({ title: appError.title, description: appError.message, type: "error" });
+        toast.add({ title: appError.title, description: appError.detail, type: "error" });
       }
     })();
   }, [createAndOpenEntry]);

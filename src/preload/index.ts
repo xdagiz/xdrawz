@@ -33,8 +33,9 @@ import {
   WINDOW_REPORT_FATAL,
   WINDOW_WILL_CLOSE,
 } from "@shared/channels";
-import { isRecord, isSerializedAppError } from "@shared/errors";
-import type { SerializedAppError } from "@shared/errors";
+import { codedError, isRecord, isRendererSafeError, isSerializedAppError } from "@shared/errors";
+import type { RendererSafeError } from "@shared/errors";
+import type { ChannelMap, ChannelName } from "@shared/ipc";
 import type {
   FilesChangedEvent,
   LibraryReturnedEvent,
@@ -47,7 +48,7 @@ import { NativeApi } from "./types";
 
 type InvokeReturn = ReturnType<typeof ipcRenderer.invoke>;
 
-const fromSerialized = (serialized: SerializedAppError): SerializedAppError => ({ ...serialized });
+const fromSerialized = (serialized: RendererSafeError): RendererSafeError => ({ ...serialized });
 
 const isResult = (
   value: unknown,
@@ -67,19 +68,21 @@ const unwrap = async (promise: InvokeReturn): InvokeReturn => {
   if (isResult(result)) {
     if (!result.ok) {
       const error = result.error;
-      if (isSerializedAppError(error)) throw fromSerialized(error);
+      if (isRendererSafeError(error) || isSerializedAppError(error)) throw fromSerialized(error);
       if (error instanceof Error) throw error;
-      throw new Error("Unknown error");
+      throw codedError("Unknown error", { code: "UNKNOWN", reason: "io" });
     }
 
     return result.value;
   }
 
-  return result;
+  throw codedError("Unknown error", { code: "UNKNOWN", reason: "io" });
 };
 
-const invoke = (channel: string, ...args: unknown[]): InvokeReturn =>
-  unwrap(ipcRenderer.invoke(channel, ...args));
+const invoke = <K extends ChannelName>(
+  channel: K,
+  ...args: ChannelMap[K]["args"]
+): Promise<ChannelMap[K]["result"]> => unwrap(ipcRenderer.invoke(channel, ...args));
 
 const api: NativeApi = {
   app: {

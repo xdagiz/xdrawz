@@ -1,16 +1,12 @@
 import { realpath, stat } from "node:fs/promises";
 import { resolve, basename } from "node:path";
 
-import { DrawingInfo } from "@shared/ipc";
+import { codedError, errorCodeOf } from "@shared/errors";
+import type { DrawingInfo } from "@shared/ipc";
 import { app, dialog, type BrowserWindow } from "electron";
 
 import { countEntriesFlat, MAX_WALK_ENTRIES } from "./files";
 import { getDrawingPath, setDrawingPath } from "./store";
-
-const errorCodeOf = (error: unknown) =>
-  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-    ? error.code
-    : undefined;
 
 export const getDrawings = async (): Promise<DrawingInfo> => {
   const storedPath = getDrawingPath();
@@ -61,7 +57,12 @@ export const pickDrawings = async (win: BrowserWindow | null): Promise<DrawingIn
 
   const chosen = resolve(result.filePaths[0]);
   const stats = await stat(chosen).catch(() => null);
-  if (!stats?.isDirectory()) throw new Error(`Not a directory: ${chosen}`);
+  if (!stats?.isDirectory())
+    throw codedError(`Not a directory: ${chosen}`, {
+      code: "INVALID",
+      reason: "invalid-arg",
+      field: "path",
+    });
 
   await countEntriesFlat(chosen, MAX_WALK_ENTRIES);
 

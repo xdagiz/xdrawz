@@ -1,4 +1,4 @@
-import type { SerializedAppError } from "@shared/errors";
+import type { RendererSafeError } from "@shared/errors";
 import type {
   AppSettings,
   DrawingInfo,
@@ -7,6 +7,7 @@ import type {
   FileEntry,
   FilesChangedEvent,
   LibraryReturnedEvent,
+  RendererStoreKey,
   SettingsUpdate,
   StoreType,
   ThumbnailRecord,
@@ -20,7 +21,7 @@ export type ContextMenuItem = { id: string; label: string };
 export type FileRecoverChoice = "recover" | "discard" | "cancel";
 export type FileChangedChoice = "reload" | "overwrite" | "cancel";
 export type StoreKey = keyof StoreType;
-export type RendererStoreKey = "lastOpenedFileId" | "libraryItems";
+export type { RendererStoreKey };
 
 export interface NativeApi {
   app: {
@@ -78,6 +79,6 @@ export interface NativeApi {
     cancelQuit: (requestId: number) => void;
     reportDirtyState: (requestId: number, dirty: boolean, skipPrompt?: boolean) => void;
     flushStarted: (requestId: number) => void;
-    reportFatal: (payload: SerializedAppError) => Promise<void>;
+    reportFatal: (payload: RendererSafeError) => Promise<void>;
   };
 }

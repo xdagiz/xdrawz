@@ -157,7 +157,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         const ok = await deleteEntry(target.id, target.mode);
         if (ok) toast.add({ title: `Deleted ${target.name}`, type: "success" });
       } catch (error) {
-        toast.add({ title: toAppError(error, "delete").message, type: "error" });
+        toast.add({ title: toAppError(error, "delete").detail, type: "error" });
       }
     },
     [deleteEntry],
@@ -272,7 +272,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
           await setOpenFileId(fileId);
         }
       } catch (error) {
-        setRenameError(toAppError(error, "rename", false));
+        setRenameError(toAppError(error, "rename"));
       }
     },
     [renameEntry, clearFreshMarker, setOpenFileId, entriesById, freshDrawingId],

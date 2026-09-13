@@ -24,7 +24,7 @@ type ErrorBoundaryProps = {
   onReset?: () => void;
 };
 
-const toBoundaryError = (error: unknown): AppError => toAppError(error, "unexpected", true);
+const toBoundaryError = (error: unknown): AppError => toAppError(error, "unexpected");
 
 export const ErrorBoundary = ({
   children,

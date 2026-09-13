@@ -33,20 +33,24 @@ import {
   WINDOW_REPORT_FATAL,
 } from "@shared/channels";
 import {
-  errorWithCode,
+  codedError,
   isRecord,
   isSerializedAppError,
   toRendererSafe,
   toSerialized,
 } from "@shared/errors";
-import type { ErrorOperation, SerializedAppError } from "@shared/errors";
+import type { ErrorOperation, RendererSafeError } from "@shared/errors";
 import { MAX_DRAWING_CONTENT_BYTES, MAX_THUMBNAIL_BATCH } from "@shared/ipc";
 import type {
   AppSettings,
+  ChannelMap,
+  ChannelName,
+  ContextMenuRequest,
   DrawingInfo,
   DrawingsSnapshot,
   FileDeleteMode,
   FileEntry,
+  RendererStoreKey,
   SettingsUpdate,
   ThumbnailRecord,
   UnsavedChoice,
@@ -65,75 +69,116 @@ export const APP_INDEX_URL = `${APP_ORIGIN}/index.html`;
 export const APP_GREETING_URL = `${APP_ORIGIN}/greeting.html`;
 export const MAX_LIBRARY_STORE_BYTES = 2 * 1024 * 1024;
 
+const MAX_CONTEXT_MENU_ITEMS = 20;
+const MAX_CONTEXT_MENU_TEXT_LENGTH = 200;
+
 let lastFatalAt = 0;
 
-const requireString = (value: unknown, field: string) => {
+const schemaString = (value: unknown, field: string) => {
   if (typeof value !== "string" || value.length === 0) {
-    throw errorWithCode(`${field} must be a non-empty string`, "INVALID");
+    throw codedError(`${field} must be a non-empty string`, {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field,
+    });
   }
   return value;
 };
 
-const requireOptionalString = (value: unknown, field: string) => {
+const schemaOptionalString = (value: unknown, field: string) => {
   if (value === null) return null;
-  return requireString(value, field);
+  return schemaString(value, field);
 };
 
-const requireBoolean = (value: unknown, field: string) => {
+const schemaBoolean = (value: unknown, field: string) => {
   if (typeof value !== "boolean") {
-    throw errorWithCode(`${field} must be a boolean`, "INVALID");
+    throw codedError(`${field} must be a boolean`, {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field,
+    });
   }
   return value;
 };
 
-const requireContent = (value: unknown, field: string) => {
-  const content = requireString(value, field);
+const schemaContent = (value: unknown, field: string) => {
+  const content = schemaString(value, field);
   if (Buffer.byteLength(content, "utf8") > MAX_DRAWING_CONTENT_BYTES) {
-    throw errorWithCode(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, "TOO_LARGE");
+    throw codedError(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, {
+      code: "TOO_LARGE",
+      reason: "content-too-large",
+      limit: MAX_DRAWING_CONTENT_BYTES,
+    });
   }
   return content;
 };
 
-const MAX_CONTEXT_MENU_ITEMS = 20;
-const MAX_CONTEXT_MENU_TEXT_LENGTH = 200;
-
-const requireIdArray = (value: unknown) => {
-  if (!Array.isArray(value)) throw errorWithCode("ids must be an array", "INVALID");
+const schemaIdArray = (value: unknown) => {
+  if (!Array.isArray(value))
+    throw codedError("ids must be an array", {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field: "ids",
+    });
   if (value.length > MAX_THUMBNAIL_BATCH) {
-    throw errorWithCode(`Too many ids, max ${MAX_THUMBNAIL_BATCH}`, "INVALID");
+    throw codedError(`Too many ids, max ${MAX_THUMBNAIL_BATCH}`, {
+      code: "TOO_LARGE",
+      reason: "content-too-large",
+      limit: MAX_THUMBNAIL_BATCH,
+    });
   }
-  return [...new Set(value.map((item) => requireString(item, "id")))];
+  return [...new Set(value.map((item) => schemaString(item, "id")))];
 };
 
-const requireDeleteMode = (value: unknown): FileDeleteMode => {
+const schemaDeleteMode = (value: unknown): FileDeleteMode => {
   if (value !== "trash" && value !== "permanent") {
-    throw errorWithCode("Delete mode must be trash or permanent", "INVALID");
+    throw codedError("Delete mode must be trash or permanent", {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field: "mode",
+    });
   }
   return value;
 };
 
-const requireInteger = (value: unknown, field: string) => {
+const schemaInteger = (value: unknown, field: string) => {
   if (
     typeof value !== "number" ||
     !Number.isFinite(value) ||
     !Number.isInteger(value) ||
     value < 0
   ) {
-    throw errorWithCode(`${field} must be a finite integer`, "INVALID");
+    throw codedError(`${field} must be a finite integer`, {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field,
+    });
   }
   return value;
 };
 
-export const requireContextMenuRequest = (request: unknown) => {
+export const requireContextMenuRequest = (request: unknown): ContextMenuRequest => {
   if (!isRecord(request)) {
-    throw errorWithCode("Context menu request must be an object", "INVALID");
+    throw codedError("Context menu request must be an object", {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field: "request",
+    });
   }
   const { items, x, y } = request;
   if (!Array.isArray(items) || items.length === 0) {
-    throw errorWithCode("Context menu items must be a non-empty array", "INVALID");
+    throw codedError("Context menu items must be a non-empty array", {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field: "items",
+    });
   }
   if (items.length > MAX_CONTEXT_MENU_ITEMS) {
-    throw errorWithCode(`Context menu items must be at most ${MAX_CONTEXT_MENU_ITEMS}`, "INVALID");
+    throw codedError(`Context menu items must be at most ${MAX_CONTEXT_MENU_ITEMS}`, {
+      code: "TOO_LARGE",
+      reason: "content-too-large",
+      limit: MAX_CONTEXT_MENU_ITEMS,
+    });
   }
   if (
     typeof x !== "number" ||
@@ -141,29 +186,49 @@ export const requireContextMenuRequest = (request: unknown) => {
     !Number.isFinite(x) ||
     !Number.isFinite(y)
   ) {
-    throw errorWithCode("Context menu position must be finite numbers", "INVALID");
+    throw codedError("Context menu position must be finite numbers", {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field: "x",
+    });
   }
   if (x < 0 || y < 0) {
-    throw errorWithCode("Context menu position must not be negative", "INVALID");
+    throw codedError("Context menu position must not be negative", {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field: "x",
+    });
   }
   return {
     items: items.map((item) => {
       if (!isRecord(item)) {
-        throw errorWithCode("Context menu item must be an object", "INVALID");
+        throw codedError("Context menu item must be an object", {
+          code: "INVALID",
+          reason: "invalid-payload",
+          field: "items",
+        });
       }
       if (
         typeof item.id !== "string" ||
         item.id.length === 0 ||
         item.id.length > MAX_CONTEXT_MENU_TEXT_LENGTH
       ) {
-        throw errorWithCode("Context menu item id must be a non-empty string", "INVALID");
+        throw codedError("Context menu item id must be a non-empty string", {
+          code: "INVALID",
+          reason: "invalid-payload",
+          field: "id",
+        });
       }
       if (
         typeof item.label !== "string" ||
         item.label.length === 0 ||
         item.label.length > MAX_CONTEXT_MENU_TEXT_LENGTH
       ) {
-        throw errorWithCode("Context menu item label must be a non-empty string", "INVALID");
+        throw codedError("Context menu item label must be a non-empty string", {
+          code: "INVALID",
+          reason: "invalid-payload",
+          field: "label",
+        });
       }
       return { id: item.id, label: item.label };
     }),
@@ -300,15 +365,17 @@ export const normalizeContextMenuPos = (x: number, y: number, zoomFactor: number
   };
 };
 
-export function assertRendererStoreKey(
-  key: unknown,
-): asserts key is "lastOpenedFileId" | "libraryItems" {
+export function assertRendererStoreKey(key: unknown): asserts key is RendererStoreKey {
   if (key !== "lastOpenedFileId" && key !== "libraryItems") {
-    throw errorWithCode("Store key is not allowed", "INVALID");
+    throw codedError("Store key is not allowed", {
+      code: "INVALID",
+      reason: "invalid-payload",
+      field: "key",
+    });
   }
 }
 
-type Result<T> = { ok: true; value: T } | { ok: false; error: SerializedAppError };
+type Result<T> = { ok: true; value: T } | { ok: false; error: RendererSafeError };
 
 const withIpcResult = async <T>(
   operation: ErrorOperation,
@@ -335,12 +402,15 @@ export const shouldQuitAfterFatal = (now = Date.now()) => {
   return previous === 0 || now - previous >= 60_000;
 };
 
-const handle = (
-  channel: string,
-  operation: ErrorOperation,
-  listener: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+const handle = <K extends ChannelName>(
+  channel: K,
+  operation: ChannelMap[K]["operation"],
+  listener: (
+    event: Electron.IpcMainInvokeEvent,
+    ...args: ChannelMap[K]["args"]
+  ) => ChannelMap[K]["result"] | Promise<ChannelMap[K]["result"]>,
 ) => {
-  ipcMain.handle(channel, (event, ...args) =>
+  ipcMain.handle(channel, (event, ...args: ChannelMap[K]["args"]) =>
     withIpcResult(operation, () => listener(event, ...args)),
   );
 };
@@ -362,91 +432,89 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(DRAWINGS_GET, "load", () => deps.getDrawings());
   handle(DRAWINGS_LOAD, "load", () => deps.loadDrawings());
 
-  handle(STORE_GET, "unexpected", (_event, ...args) => {
-    const key = args[0];
+  handle(STORE_GET, "unexpected", (_event, key) => {
     assertRendererStoreKey(key);
     const value = store.get(key);
     return typeof value === "string" ? value : null;
   });
 
-  handle(STORE_SET, "unexpected", (_event, ...args) => {
-    const key = args[0];
+  handle(STORE_SET, "unexpected", (_event, key, raw) => {
     assertRendererStoreKey(key);
 
     let value: string | null;
     if (key === "libraryItems") {
-      const raw = args[1];
       if (raw === null) {
         value = null;
       } else {
         if (typeof raw !== "string" || raw.length === 0) {
-          throw errorWithCode("value must be a non-empty string", "INVALID");
+          throw codedError("value must be a non-empty string", {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: "value",
+          });
         }
         if (Buffer.byteLength(raw, "utf8") > MAX_LIBRARY_STORE_BYTES) {
-          throw errorWithCode(
-            `Library is too large to store (max ${MAX_LIBRARY_STORE_BYTES} bytes)`,
-            "TOO_LARGE",
-          );
+          throw codedError(`Library is too large to store (max ${MAX_LIBRARY_STORE_BYTES} bytes)`, {
+            code: "TOO_LARGE",
+            reason: "library-too-large",
+            limit: MAX_LIBRARY_STORE_BYTES,
+          });
         }
         value = raw;
       }
     } else {
-      value = requireOptionalString(args[1], "value");
+      value = schemaOptionalString(raw, "value");
     }
 
     store.set(key, value);
   });
 
-  handle(STORE_DELETE, "unexpected", (_event, ...args) => {
-    const key = args[0];
+  handle(STORE_DELETE, "unexpected", (_event, key) => {
     assertRendererStoreKey(key);
     store.delete(key);
   });
 
   handle(FILES_LIST, "read", () => deps.listEntries());
 
-  handle(FILES_READ, "read", (_event, ...args) => {
-    const id = requireString(args[0], "id");
-    return deps.readDrawingFile(id);
+  handle(FILES_READ, "read", (_event, id) => {
+    return deps.readDrawingFile(schemaString(id, "id"));
   });
 
-  handle(FILES_RENAME, "rename", (_event, ...args) => {
-    const id = requireString(args[0], "id");
-    const newName = requireString(args[1], "newName");
-    return deps.renameEntry(id, newName);
+  handle(FILES_RENAME, "rename", (_event, id, newName) => {
+    return deps.renameEntry(schemaString(id, "id"), schemaString(newName, "newName"));
   });
 
-  handle(FILES_CREATE, "create", (_event, ...args) => {
-    const parentRaw = args[0];
-    const parentId = parentRaw === null ? null : requireString(parentRaw, "parentId");
-    const name = requireString(args[1], "name");
-    const kindRaw = args[2];
+  handle(FILES_CREATE, "create", (_event, parentRaw, name, kindRaw) => {
+    const parentId = parentRaw === null ? null : schemaString(parentRaw, "parentId");
+    const validName = schemaString(name, "name");
     if (kindRaw !== "file" && kindRaw !== "directory") {
-      throw errorWithCode("Kind must be file or directory", "INVALID");
+      throw codedError("Kind must be file or directory", {
+        code: "INVALID",
+        reason: "invalid-payload",
+        field: "kind",
+      });
     }
-    return deps.createEntry(parentId, name, kindRaw);
+    return deps.createEntry(parentId, validName, kindRaw);
   });
 
-  handle(FILES_WRITE, "save", (_event, ...args) => {
-    const id = requireString(args[0], "id");
-    const content = requireContent(args[1], "content");
-    return deps.writeDrawingFile(id, content);
+  handle(FILES_WRITE, "save", (_event, id, content) => {
+    return deps.writeDrawingFile(schemaString(id, "id"), schemaContent(content, "content"));
   });
 
-  handle(FILES_DELETE, "delete", (_event, ...args) => {
-    const id = requireString(args[0], "id");
-    const mode = args[1] === undefined ? "trash" : requireDeleteMode(args[1]);
-    return deps.deleteEntry(id, mode);
+  handle(FILES_DELETE, "delete", (_event, id, modeRaw) => {
+    const validId = schemaString(id, "id");
+    const mode = modeRaw === undefined ? "trash" : schemaDeleteMode(modeRaw);
+    return deps.deleteEntry(validId, mode);
   });
 
   handle(DRAWINGS_PICK, "load", (event) => deps.pickDrawings(windowFromEvent(event)));
   handle(APP_QUIT, "unexpected", () => app.quit());
 
-  handle(CONTEXT_MENU_SHOW, "unexpected", async (event, ...args) => {
+  handle(CONTEXT_MENU_SHOW, "unexpected", async (event, request) => {
     const win = windowFromEvent(event);
     if (!win) return null;
 
-    const { items, x: xRaw, y: yRaw } = requireContextMenuRequest(args[0]);
+    const { items, x: xRaw, y: yRaw } = requireContextMenuRequest(request);
 
     return new Promise<string | null>((resolveSelection) => {
       let resolved = false;
@@ -478,17 +546,20 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(SETTINGS_GET, "settings", () => deps.getSettings());
 
-  handle(SETTINGS_SET, "settings", (_event, ...args) => {
-    const payload = args[0];
-    if (!isRecord(payload)) throw errorWithCode("Settings update must be an object", "INVALID");
+  handle(SETTINGS_SET, "settings", (_event, payload) => {
+    if (!isRecord(payload))
+      throw codedError("Settings update must be an object", {
+        code: "INVALID",
+        reason: "invalid-payload",
+        field: "update",
+      });
     return deps.updateSettings(validateSettingsUpdate(payload));
   });
 
-  handle(WINDOW_CLOSE, "unexpected", (event, ...args) => {
+  handle(WINDOW_CLOSE, "unexpected", (event, requestId) => {
     const win = windowFromEvent(event);
     if (!win) return;
-    const requestId = requireInteger(args[0], "requestId");
-    deps.destroyWindow(win, requestId);
+    deps.destroyWindow(win, schemaInteger(requestId, "requestId"));
   });
 
   on(WINDOW_READY, (event) => {
@@ -498,7 +569,7 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   on(WINDOW_CANCEL_QUIT, (event, ...args) => {
     const win = windowFromEvent(event);
-    if (win) deps.cancelQuit(win, requireInteger(args[0], "requestId"));
+    if (win) deps.cancelQuit(win, schemaInteger(args[0], "requestId"));
   });
 
   on(WINDOW_DIRTY_STATE, (event, ...args) => {
@@ -506,33 +577,29 @@ export const registerIpcHandlers = (deps: Deps) => {
     if (win)
       deps.onDirtyState(
         win,
-        requireInteger(args[0], "requestId"),
-        requireBoolean(args[1], "dirty"),
-        args[2] === undefined ? false : requireBoolean(args[2], "skipPrompt"),
+        schemaInteger(args[0], "requestId"),
+        schemaBoolean(args[1], "dirty"),
+        args[2] === undefined ? false : schemaBoolean(args[2], "skipPrompt"),
       );
   });
 
   on(WINDOW_FLUSH_STARTED, (event, ...args) => {
     const win = windowFromEvent(event);
-    if (win) deps.onFlushStarted(win, requireInteger(args[0], "requestId"));
+    if (win) deps.onFlushStarted(win, schemaInteger(args[0], "requestId"));
   });
 
-  handle(DIALOG_UNSAVED_CHANGES, "unexpected", (event, ...args) => {
-    const reason = args[0];
+  handle(DIALOG_UNSAVED_CHANGES, "unexpected", (event, reason) => {
     const normalized = reason === "switch" ? "switch" : "quit";
     return deps.showUnsavedChangesDialog(windowFromEvent(event), normalized);
   });
 
-  handle(FILES_WRITE_RECOVER, "recover", (_event, ...args) => {
-    const id = requireString(args[0], "id");
-    const content = requireContent(args[1], "content");
-    return deps.writeDrawingFileRecover(id, content);
+  handle(FILES_WRITE_RECOVER, "recover", (_event, id, content) => {
+    return deps.writeDrawingFileRecover(schemaString(id, "id"), schemaContent(content, "content"));
   });
 
-  handle(DIALOG_FILE_RECOVER, "unexpected", async (event, ...args) => {
+  handle(DIALOG_FILE_RECOVER, "unexpected", async (event, fileNameRaw) => {
     const win = windowFromEvent(event);
-    const rawName = args[0];
-    const fileName = typeof rawName === "string" ? rawName : "";
+    const fileName = typeof fileNameRaw === "string" ? fileNameRaw : "";
     const options: Electron.MessageBoxOptions = {
       type: "warning",
       buttons: ["Recover file", "Discard changes", "Cancel"],
@@ -550,10 +617,9 @@ export const registerIpcHandlers = (deps: Deps) => {
     return "cancel";
   });
 
-  handle(DIALOG_FILE_CHANGED, "unexpected", async (event, ...args) => {
+  handle(DIALOG_FILE_CHANGED, "unexpected", async (event, fileNameRaw) => {
     const win = windowFromEvent(event);
-    const rawName = args[0];
-    const fileName = typeof rawName === "string" ? rawName : "";
+    const fileName = typeof fileNameRaw === "string" ? fileNameRaw : "";
     const options: Electron.MessageBoxOptions = {
       type: "warning",
       buttons: ["Reload from disk", "Keep my changes", "Cancel"],
@@ -573,18 +639,25 @@ export const registerIpcHandlers = (deps: Deps) => {
     return "cancel";
   });
 
-  handle(THUMBNAILS_GET, "read", (_event, ...args) => deps.getThumbnails(requireIdArray(args[0])));
+  handle(THUMBNAILS_GET, "read", (_event, ids) => deps.getThumbnails(schemaIdArray(ids)));
 
-  handle(THUMBNAILS_PUT, "save", (_event, ...args) => {
-    const record = args[0];
-    if (!isValidThumbnailRecord(record)) throw errorWithCode("Invalid thumbnail record", "INVALID");
-
+  handle(THUMBNAILS_PUT, "save", (_event, record) => {
+    if (!isValidThumbnailRecord(record))
+      throw codedError("Invalid thumbnail record", {
+        code: "INVALID",
+        reason: "invalid-payload",
+        field: "record",
+      });
     return deps.saveThumbnail(record);
   });
 
-  handle(WINDOW_REPORT_FATAL, "unexpected", (_event, ...args) => {
-    const payload = args[0];
-    if (!isSerializedAppError(payload)) throw errorWithCode("Invalid fatal payload", "INVALID");
+  handle(WINDOW_REPORT_FATAL, "unexpected", (_event, payload) => {
+    if (!isSerializedAppError(payload))
+      throw codedError("Invalid fatal payload", {
+        code: "INVALID",
+        reason: "invalid-payload",
+        field: "payload",
+      });
     log.error("[renderer:fatal]", payload);
 
     const shouldQuit = shouldQuitAfterFatal(Date.now());

@@ -1,4 +1,4 @@
-import { cleanErrorMessage } from "@shared/errors";
+import { codedError, isNotFoundError } from "@shared/errors";
 import type {
   AppSettings,
   DrawingInfo,
@@ -11,7 +11,6 @@ import type {
 } from "@shared/ipc";
 import {
   DEFAULT_SETTINGS,
-  FILE_NOT_FOUND_MESSAGE,
   compareEntryIds,
   type FileDeleteMode,
   sortFileEntries,
@@ -41,10 +40,6 @@ const isOpenableFile = (
   typeof fileId === "string" &&
   fileId.length > 0 &&
   entries.some((entry) => entry.id === fileId && entry.kind === "file");
-
-const isFileNotFoundMessage = (message: string) => {
-  return message === FILE_NOT_FOUND_MESSAGE || message.includes(FILE_NOT_FOUND_MESSAGE);
-};
 
 const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.id): FileEntry[] => {
   const withoutOld = entries.filter((e) => e.id !== removeId);
@@ -218,8 +213,8 @@ export const useStore = create<State>((set, get) => {
       toast.close(saveErrorToastId(id));
       return true;
     } catch (error) {
-      if (!isFileNotFoundMessage(cleanErrorMessage(error))) {
-        set({ error: toAppError(error, "save", true, id) });
+      if (!isNotFoundError(error)) {
+        set({ error: toAppError(error, "save", { resourceId: id }) });
         return false;
       }
 
@@ -534,10 +529,14 @@ export const useStore = create<State>((set, get) => {
       if (!saved) {
         set({
           error: toAppError(
-            new Error("Your changes couldn't be written to disk"),
+            codedError("Your changes couldn't be written to disk", {
+              code: "UNKNOWN",
+              reason: "io",
+            }),
             "save",
-            true,
-            openFileId,
+            {
+              resourceId: openFileId,
+            },
           ),
         });
       }
@@ -654,7 +653,7 @@ export const useStore = create<State>((set, get) => {
       } catch (error) {
         toast.add({
           title: "Couldn’t choose the drawings folder",
-          description: toAppError(error, "unexpected", false).message,
+          description: toAppError(error, "unexpected").detail,
           type: "error",
         });
         return false;

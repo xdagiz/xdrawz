@@ -1,4 +1,76 @@
+import { codedError } from "./errors";
+import type { RendererSafeError } from "./errors";
+
 export const FILE_NOT_FOUND_MESSAGE = "File not found";
+
+export type RendererStoreKey = "lastOpenedFileId" | "libraryItems";
+
+export type ContextMenuRequest = {
+  items: { id: string; label: string }[];
+  x: number;
+  y: number;
+};
+
+export type ChannelMap = {
+  "drawings:get": { args: []; result: DrawingInfo; operation: "load" };
+  "drawings:load": { args: []; result: DrawingsSnapshot; operation: "load" };
+  "drawings:pick": { args: []; result: DrawingInfo | null; operation: "load" };
+  "files:list": { args: []; result: FileEntry[]; operation: "read" };
+  "files:read": { args: [id: string]; result: string; operation: "read" };
+  "files:write": { args: [id: string, content: string]; result: FileEntry; operation: "save" };
+  "files:write-recover": {
+    args: [id: string, content: string];
+    result: FileEntry;
+    operation: "recover";
+  };
+  "files:rename": { args: [id: string, newName: string]; result: FileEntry; operation: "rename" };
+  "files:create": {
+    args: [parentId: string | null, name: string, kind: "file" | "directory"];
+    result: FileEntry;
+    operation: "create";
+  };
+  "files:delete": { args: [id: string, mode?: FileDeleteMode]; result: void; operation: "delete" };
+  "store:get": { args: [key: RendererStoreKey]; result: string | null; operation: "unexpected" };
+  "store:set": {
+    args: [key: RendererStoreKey, value: string | null];
+    result: void;
+    operation: "unexpected";
+  };
+  "store:delete": { args: [key: RendererStoreKey]; result: void; operation: "unexpected" };
+  "settings:get": { args: []; result: AppSettings; operation: "settings" };
+  "settings:set": { args: [update: SettingsUpdate]; result: AppSettings; operation: "settings" };
+  "thumbnails:get": { args: [ids: string[]]; result: ThumbnailRecord[]; operation: "read" };
+  "thumbnails:put": { args: [record: ThumbnailRecord]; result: void; operation: "save" };
+  "context-menu:show": {
+    args: [request: ContextMenuRequest];
+    result: string | null;
+    operation: "unexpected";
+  };
+  "dialog:unsaved-changes": {
+    args: [reason?: UnsavedReason];
+    result: UnsavedChoice;
+    operation: "unexpected";
+  };
+  "dialog:file-recover": {
+    args: [fileName: string];
+    result: "recover" | "discard" | "cancel";
+    operation: "unexpected";
+  };
+  "dialog:file-changed": {
+    args: [fileName: string];
+    result: "reload" | "overwrite" | "cancel";
+    operation: "unexpected";
+  };
+  "app:quit": { args: []; result: void; operation: "unexpected" };
+  "window:close": { args: [requestId: number]; result: void; operation: "unexpected" };
+  "window:report-fatal": {
+    args: [payload: RendererSafeError];
+    result: void;
+    operation: "unexpected";
+  };
+};
+
+export type ChannelName = keyof ChannelMap;
 
 export const FILE_DELETE_MODES = ["trash", "permanent"] as const;
 export type FileDeleteMode = (typeof FILE_DELETE_MODES)[number];
@@ -109,16 +181,27 @@ export const MAX_DRAWING_CONTENT_BYTES = 10 * 1024 * 1024;
 
 export const validateDrawingRecord = (record: unknown): void => {
   if (record === null || typeof record !== "object" || Array.isArray(record)) {
-    throw new Error("Drawing must be a JSON object");
+    throw codedError("Drawing must be a JSON object", {
+      code: "INVALID",
+      reason: "invalid-record",
+    });
   }
   if ("elements" in record && !Array.isArray(record.elements)) {
-    throw new Error("Drawing elements must be an array when present");
+    throw codedError("Drawing elements must be an array when present", {
+      code: "INVALID",
+      reason: "invalid-record",
+      field: "elements",
+    });
   }
   if (
     "files" in record &&
     (record.files === null || typeof record.files !== "object" || Array.isArray(record.files))
   ) {
-    throw new Error("Drawing files must be an object when present");
+    throw codedError("Drawing files must be an object when present", {
+      code: "INVALID",
+      reason: "invalid-record",
+      field: "files",
+    });
   }
 };
 
