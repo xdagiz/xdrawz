@@ -20,7 +20,7 @@ const makeSession = () => ({
   ),
   isDirty: vi.fn(() => false),
   evaluateNow: vi.fn(),
-  setAutosaveInterval: vi.fn(),
+  setAutosaveMode: vi.fn(),
   retarget: vi.fn(),
   dispose: vi.fn(),
 });

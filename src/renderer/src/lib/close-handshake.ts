@@ -31,3 +31,20 @@ export const createBeforeUnloadGuard = (getDirtyCount: () => number) => {
     event.returnValue = "";
   };
 };
+
+export type CloseDecision = {
+  mustFlush: boolean;
+  skipPrompt: boolean;
+};
+
+export const closeDecision = (input: {
+  visibleDirtyCount: number;
+  sessionDirty: boolean;
+  hasConflict: boolean;
+}): CloseDecision => {
+  const visibleDirty = input.visibleDirtyCount > 0;
+  return {
+    mustFlush: visibleDirty || input.sessionDirty,
+    skipPrompt: !visibleDirty || input.hasConflict,
+  };
+};

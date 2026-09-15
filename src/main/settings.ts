@@ -1,6 +1,6 @@
 import { codedError } from "@shared/errors";
-import { DEFAULT_SETTINGS, isAutosavePresetMs, type ThemePreference } from "@shared/ipc";
-import type { AppSettings, SettingsUpdate } from "@shared/ipc";
+import { DEFAULT_SETTINGS, normalizeAutosaveSetting } from "@shared/ipc";
+import type { AppSettings, SettingsUpdate, ThemePreference } from "@shared/ipc";
 import { BrowserWindow, nativeTheme } from "electron";
 
 import { store } from "./store";
@@ -26,15 +26,24 @@ export const validateSettingsUpdate = (payload: Record<string, unknown>): Settin
         update.theme = value;
         break;
       }
-      case "autosaveIntervalMs": {
-        if (typeof value !== "number" || !Number.isInteger(value) || !isAutosavePresetMs(value)) {
-          throw codedError(`Invalid autosave interval: ${JSON.stringify(value)}`, {
+      case "autosave": {
+        const normalized = normalizeAutosaveSetting(value);
+        const record =
+          value !== null && typeof value === "object" && !Array.isArray(value)
+            ? (value as { mode?: unknown; ms?: unknown })
+            : null;
+        const isCanonical =
+          record !== null &&
+          record.mode === normalized.mode &&
+          (normalized.mode !== "interval" || record.ms === (normalized as { ms: unknown }).ms);
+        if (!isCanonical) {
+          throw codedError(`Invalid autosave setting: ${JSON.stringify(value)}`, {
             code: "INVALID",
             reason: "invalid-payload",
-            field: "autosaveIntervalMs",
+            field: "autosave",
           });
         }
-        update.autosaveIntervalMs = value;
+        update.autosave = normalized;
         break;
       }
       case "reopenLastDrawing":
@@ -60,7 +69,7 @@ export const validateSettingsUpdate = (payload: Record<string, unknown>): Settin
 
 export const getSettings = (): AppSettings => ({
   theme: store.get("theme") ?? DEFAULT_SETTINGS.theme,
-  autosaveIntervalMs: store.get("autosaveIntervalMs") ?? DEFAULT_SETTINGS.autosaveIntervalMs,
+  autosave: normalizeAutosaveSetting(store.get("autosave")),
   reopenLastDrawing: store.get("reopenLastDrawing") ?? DEFAULT_SETTINGS.reopenLastDrawing,
 });
 
@@ -90,9 +99,10 @@ export const setSettings = (update: SettingsUpdate): AppSettings => {
     themeChanged = true;
   }
 
-  if (clean.autosaveIntervalMs !== undefined) {
-    next.autosaveIntervalMs = clean.autosaveIntervalMs;
-    store.set("autosaveIntervalMs", clean.autosaveIntervalMs);
+  if (clean.autosave !== undefined) {
+    const autosave = normalizeAutosaveSetting(clean.autosave);
+    next.autosave = autosave;
+    store.set("autosave", autosave);
   }
 
   if (clean.reopenLastDrawing !== undefined) {

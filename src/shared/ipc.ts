@@ -76,7 +76,6 @@ export const FILE_DELETE_MODES = ["trash", "permanent"] as const;
 export type FileDeleteMode = (typeof FILE_DELETE_MODES)[number];
 
 export type ThemePreference = "light" | "dark" | "system";
-
 export const DEFAULT_THEME: ThemePreference = "system";
 
 export type DrawingInfo = {
@@ -130,7 +129,7 @@ export type StoreType = {
   lastOpenedFileId?: string | null;
   libraryItems?: string | null;
   theme?: ThemePreference;
-  autosaveIntervalMs?: number;
+  autosave?: unknown;
   reopenLastDrawing?: boolean;
 };
 
@@ -146,7 +145,10 @@ export type WatcherErrorEvent = {
 };
 
 export const AUTOSAVE_PRESETS_MS = [1_000, 5_000, 15_000, 30_000] as const;
+export const AUTOSAVE_ALWAYS_SETTLE_MS = 300;
+export const AUTOSAVE_MODES = ["interval", "always", "off"] as const;
 
+export type AutosaveMode = (typeof AUTOSAVE_MODES)[number];
 export type AutosavePresetMs = (typeof AUTOSAVE_PRESETS_MS)[number];
 
 export const DEFAULT_AUTOSAVE_INTERVAL_MS: AutosavePresetMs = 5_000;
@@ -154,9 +156,52 @@ export const DEFAULT_AUTOSAVE_INTERVAL_MS: AutosavePresetMs = 5_000;
 export const isAutosavePresetMs = (value: number): value is AutosavePresetMs =>
   AUTOSAVE_PRESETS_MS.some((preset) => preset === value);
 
+export type AutosaveSetting =
+  | { mode: "interval"; ms: AutosavePresetMs }
+  | { mode: "always" }
+  | { mode: "off" };
+
+export const DEFAULT_AUTOSAVE: AutosaveSetting = {
+  mode: "always",
+};
+
+export const autosaveKey = (setting: AutosaveSetting) =>
+  setting.mode === "interval" ? `interval:${setting.ms}` : setting.mode;
+
+export const autosaveDebounceMs = (
+  setting: Extract<AutosaveSetting, { mode: "interval" } | { mode: "always" }>,
+) => (setting.mode === "interval" ? setting.ms : AUTOSAVE_ALWAYS_SETTLE_MS);
+
+export const autosaveWaitMs = (setting: AutosaveSetting) =>
+  setting.mode === "off" ? AUTOSAVE_ALWAYS_SETTLE_MS : autosaveDebounceMs(setting);
+
+export const normalizeAutosaveSetting = (value: unknown): AutosaveSetting => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return DEFAULT_AUTOSAVE;
+  const record = value as { mode?: unknown; ms?: unknown };
+  if (record.mode === "always") return { mode: "always" };
+  if (record.mode === "off") return { mode: "off" };
+  if (
+    record.mode === "interval" &&
+    typeof record.ms === "number" &&
+    isAutosavePresetMs(record.ms)
+  ) {
+    return { mode: "interval", ms: record.ms };
+  }
+  return DEFAULT_AUTOSAVE;
+};
+
+export const parseAutosaveKey = (key: string): AutosaveSetting | null => {
+  if (key === "always") return { mode: "always" };
+  if (key === "off") return { mode: "off" };
+  if (!key.startsWith("interval:")) return null;
+  const ms = Number(key.slice("interval:".length));
+  if (!isAutosavePresetMs(ms)) return null;
+  return { mode: "interval", ms };
+};
+
 export type AppSettings = {
   theme: ThemePreference;
-  autosaveIntervalMs: number;
+  autosave: AutosaveSetting;
   reopenLastDrawing: boolean;
 };
 
@@ -164,7 +209,7 @@ export type SettingsUpdate = Partial<AppSettings>;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME,
-  autosaveIntervalMs: DEFAULT_AUTOSAVE_INTERVAL_MS,
+  autosave: DEFAULT_AUTOSAVE,
   reopenLastDrawing: true,
 };
 

@@ -1,5 +1,6 @@
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFiles, AppState } from "@excalidraw/excalidraw/types";
+import type { AutosaveSetting } from "@shared/ipc";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
 vi.mock("@excalidraw/excalidraw", () => ({
@@ -48,6 +49,7 @@ const makeSession = (overrides?: {
   save?: (id: string, content: string) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
   initialBaseline?: string | null;
+  initialAutosave?: AutosaveSetting;
   scheduleFrame?: FrameScheduler;
 }): { session: Session; dirty: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn> } => {
   const dirty = vi.fn();
@@ -57,6 +59,7 @@ const makeSession = (overrides?: {
     save,
     onDirtyChange: overrides?.onDirtyChange ?? dirty,
     initialBaseline: overrides?.initialBaseline,
+    initialAutosave: overrides?.initialAutosave ?? { mode: "interval", ms: 5000 },
     scheduleFrame: overrides?.scheduleFrame,
   });
   return { session, dirty, save };
@@ -397,6 +400,7 @@ describe("createDrawingSession", () => {
       save,
       onDirtyChange: dirty,
       onSaveGaveUp: gaveUp,
+      initialAutosave: { mode: "interval", ms: 5000 },
     });
 
     session.onChange([el("a")], appState(), emptyFiles);
@@ -435,6 +439,7 @@ describe("createDrawingSession", () => {
       fileId: "f1",
       save,
       onDirtyChange: dirty,
+      initialAutosave: { mode: "interval", ms: 5000 },
     });
 
     session.onChange([el("a")], appState(), emptyFiles);
@@ -490,14 +495,14 @@ describe("createDrawingSession", () => {
     await expect(second).resolves.toBe(false);
   });
 
-  it("setAutosaveInterval keeps a pending save on its original deadline", async () => {
+  it("setAutosaveMode keeps a pending save on its original deadline", async () => {
     const { session, save } = makeSession();
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
     await vi.advanceTimersByTimeAsync(0);
 
-    session.setAutosaveInterval(30000);
+    session.setAutosaveMode({ mode: "interval", ms: 30000 });
 
     await vi.advanceTimersByTimeAsync(5100);
     expect(save).toHaveBeenCalledTimes(1);
@@ -512,16 +517,16 @@ describe("createDrawingSession", () => {
     expect(save).toHaveBeenCalledTimes(2);
   });
 
-  it("setAutosaveInterval speeds up a pending save when shortened", async () => {
+  it("setAutosaveMode speeds up a pending save when shortened", async () => {
     const { session, save } = makeSession();
 
-    session.setAutosaveInterval(30000);
+    session.setAutosaveMode({ mode: "interval", ms: 30000 });
 
     session.onChange([el("a")], appState(), emptyFiles);
     session.onChange([el("a"), el("b")], appState(), emptyFiles);
     await vi.advanceTimersByTimeAsync(0);
 
-    session.setAutosaveInterval(1000);
+    session.setAutosaveMode({ mode: "interval", ms: 1000 });
 
     await vi.advanceTimersByTimeAsync(1100);
     expect(save).toHaveBeenCalledTimes(1);
@@ -535,7 +540,7 @@ describe("createDrawingSession", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     session.setAutosavePaused(true);
-    session.setAutosaveInterval(30000);
+    session.setAutosaveMode({ mode: "interval", ms: 30000 });
 
     await vi.advanceTimersByTimeAsync(60000);
     expect(save).not.toHaveBeenCalled();
@@ -555,7 +560,7 @@ describe("createDrawingSession", () => {
 
     it("primes clean on the empty scene, then debounces the first stroke on the settings interval", async () => {
       const { session, dirty, save } = makeSession({ initialBaseline: emptyBaseline() });
-      session.setAutosaveInterval(30000);
+      session.setAutosaveMode({ mode: "interval", ms: 30000 });
 
       session.onChange([], appState(), emptyFiles);
       await vi.advanceTimersByTimeAsync(0);
@@ -580,7 +585,7 @@ describe("createDrawingSession", () => {
 
     it("runs the pending save at once on flush before the interval elapses", async () => {
       const { session, dirty, save } = makeSession({ initialBaseline: emptyBaseline() });
-      session.setAutosaveInterval(30000);
+      session.setAutosaveMode({ mode: "interval", ms: 30000 });
 
       session.onChange([], appState(), emptyFiles);
       session.onChange([el("a")], appState(), emptyFiles);

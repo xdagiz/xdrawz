@@ -2,8 +2,8 @@ import { serializeAsJSON } from "@excalidraw/excalidraw";
 import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
-import type { UnsavedChoice, UnsavedReason } from "@shared/ipc";
-import { DEFAULT_AUTOSAVE_INTERVAL_MS } from "@shared/ipc";
+import type { AutosaveMode, AutosaveSetting, UnsavedChoice, UnsavedReason } from "@shared/ipc";
+import { DEFAULT_AUTOSAVE, autosaveDebounceMs, autosaveWaitMs } from "@shared/ipc";
 
 import { debounceAsync } from "@/lib/debounce";
 
@@ -15,6 +15,7 @@ type DrawingSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFil
 
 type FlushOpts = {
   force?: boolean;
+  explicit?: boolean;
 };
 
 export type FrameScheduler = (callback: () => void) => () => void;
@@ -49,7 +50,7 @@ export type DrawingSessionControls = {
   ) => Promise<boolean>;
   isDirty: () => boolean;
   evaluateNow: () => void;
-  setAutosaveInterval: (nextMs: number) => void;
+  setAutosaveMode: (next: AutosaveSetting) => void;
   dispose: () => void;
 };
 
@@ -59,6 +60,7 @@ type DrawingSessionDeps = {
   onDirtyChange?: (id: string, dirty: boolean) => void;
   onSaveGaveUp?: (fileId: string) => void;
   initialBaseline?: string | null;
+  initialAutosave?: AutosaveSetting;
   scheduleFrame?: FrameScheduler;
 };
 
@@ -83,6 +85,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     onDirtyChange,
     onSaveGaveUp,
     initialBaseline = null,
+    initialAutosave = DEFAULT_AUTOSAVE,
     scheduleFrame = requestFrame,
   } = deps;
 
@@ -99,15 +102,19 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   let disposed = false;
   let blocked = false;
   let dirty = false;
+  let dirtyPublished = false;
+  let mode: AutosaveMode = initialAutosave.mode;
   let saveFailures = 0;
   let saveNowTail: Promise<void> = Promise.resolve();
   let explicitSaveInFlight = false;
   let cancelScheduledEvaluation: (() => void) | null = null;
 
   const setDirty = (next: boolean) => {
-    if (dirty === next) return;
     dirty = next;
-    onDirtyChange?.(currentFileId, next);
+    const visible = mode === "always" ? false : next;
+    if (dirtyPublished === visible) return;
+    dirtyPublished = visible;
+    onDirtyChange?.(currentFileId, visible);
   };
 
   let cachedInputs: {
@@ -279,13 +286,16 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     await persistDrawing(elements, appState, files, revision, origin);
   };
 
-  const debounced = debounceAsync(persistLatest, DEFAULT_AUTOSAVE_INTERVAL_MS);
+  const debounced = debounceAsync(persistLatest, autosaveWaitMs(initialAutosave));
 
   const flush = async (opts?: FlushOpts) => {
     if (disposed) return;
-    runPendingEvaluation();
 
     const force = opts?.force === true;
+    const explicit = opts?.explicit === true;
+    if (mode === "off" && !explicit) return;
+
+    runPendingEvaluation();
     if (!force && blocked) return;
     if (!dirty && !force) {
       if (savesInFlight > 0) await debounced.flush({ force: true });
@@ -397,6 +407,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     }
 
     setDirty(true);
+    if (mode === "off") return;
     if (!blocked) debounced(elements, appState, files, latestRevision);
   };
 
@@ -445,9 +456,16 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     }
   };
 
-  const setAutosaveInterval = (nextMs: number) => {
-    if (!Number.isFinite(nextMs) || nextMs <= 0) return;
-    debounced.setWait(nextMs);
+  const setAutosaveMode = (next: AutosaveSetting) => {
+    const prev = mode;
+    mode = next.mode;
+    if (next.mode !== "off") debounced.setWait(autosaveDebounceMs(next));
+    if (next.mode === "off") debounced.cancel();
+    setDirty(latestSignature !== null && latestSignature !== baseline);
+    if (next.mode !== "off" && prev === "off" && !blocked && !disposed && dirty && latestDrawing) {
+      const [elements, appState, files] = latestDrawing;
+      debounced(elements, appState, files, latestRevision);
+    }
   };
 
   const abandon = () => {
@@ -495,7 +513,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
         return true;
       }
 
-      await flush({ force: true });
+      await flush({ force: true, explicit: true });
       return !dirty;
     } finally {
       unblock();
@@ -527,7 +545,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     ensureCleanOrConfirm,
     isDirty: () => dirty,
     evaluateNow: runPendingEvaluation,
-    setAutosaveInterval,
+    setAutosaveMode,
     setInitialBaseline: (signature: string | null) => {
       if (disposed || baseline !== null) return;
       diskBaseline = signature;

@@ -152,7 +152,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const pendingCanvasAction = useStore((s) => s.pendingCanvasAction);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
-  const autosaveIntervalMs = useStore((s) => s.settings.autosaveIntervalMs);
+  const autosave = useStore((s) => s.settings.autosave);
   const editorGeneration = useStore((s) => s.editorGeneration);
   const fileName = useStore((s) =>
     fileId ? (s.entries.find((e) => e.id === fileId)?.name ?? fileId) : "",
@@ -236,8 +236,8 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }, []);
 
   useEffect(() => {
-    sessionRef.current?.setAutosaveInterval(autosaveIntervalMs);
-  }, [autosaveIntervalMs]);
+    sessionRef.current?.setAutosaveMode(autosave);
+  }, [autosave]);
 
   useEffect(() => {
     const flushOnEdge = () => {
@@ -354,6 +354,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         fileId,
         save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
         onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
+        initialAutosave: useStore.getState().settings.autosave,
         onSaveGaveUp: (failedId) => {
           toast.add({
             id: saveErrorToastId(failedId),
@@ -366,7 +367,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       }),
     );
 
-    acquired.setAutosaveInterval(useStore.getState().settings.autosaveIntervalMs);
     sessionRef.current = acquired;
     boundFileIdRef.current = fileId;
   }, [fileId, excalidrawApi]);
@@ -383,7 +383,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
     void (async () => {
       try {
-        const store = useStore.getState();
         const id = await createEntry(null, "file");
         if (!id) throw new Error("Could not create drawing");
         if (generation !== generationRef.current) {
@@ -425,6 +424,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
             fileId: id,
             save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
             onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
+            initialAutosave: useStore.getState().settings.autosave,
             onSaveGaveUp: (failedId) => {
               toast.add({
                 id: saveErrorToastId(failedId),
@@ -448,7 +448,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           return;
         }
 
-        acquired.setAutosaveInterval(store.settings.autosaveIntervalMs);
         acquired.setInitialBaseline(diskBaseline);
 
         // The first call primes the session baseline clean against the disk state;

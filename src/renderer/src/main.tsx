@@ -7,7 +7,11 @@ import { installRendererErrorHandlers } from "@/lib/report-error";
 import App from "./App";
 import { ErrorBoundary } from "./components/error-boundary";
 import { Toaster } from "./components/ui/toast";
-import { createBeforeUnloadGuard, setCloseHandshakeActive } from "./lib/close-handshake";
+import {
+  closeDecision,
+  createBeforeUnloadGuard,
+  setCloseHandshakeActive,
+} from "./lib/close-handshake";
 import { reportFatalToMain, reportRendererError } from "./lib/report-error";
 import { sessionOwner } from "./lib/session-owner";
 import { useStore } from "./lib/store";
@@ -16,7 +20,17 @@ installRendererErrorHandlers();
 
 window.addEventListener(
   "beforeunload",
-  createBeforeUnloadGuard(() => Object.keys(useStore.getState().dirtyById).length),
+  createBeforeUnloadGuard(() => {
+    const session = sessionOwner.getSession();
+    session?.evaluateNow();
+    const state = useStore.getState();
+    const decision = closeDecision({
+      visibleDirtyCount: Object.keys(state.dirtyById).length,
+      sessionDirty: session?.isDirty() ?? false,
+      hasConflict: state.externalConflict !== null,
+    });
+    return decision.mustFlush ? 1 : 0;
+  }),
 );
 
 const CANVAS_ACTION_WAIT_MS = 4000;
@@ -49,10 +63,13 @@ window.api.window.onWillClose((request) => {
     const session = sessionOwner.getSession();
     session?.evaluateNow();
     const state = useStore.getState();
-    const dirty = Object.keys(state.dirtyById).length > 0;
-    if (dirty) session?.setAutosavePaused(true);
-    const skipPrompt = dirty && state.externalConflict !== null;
-    window.api.window.reportDirtyState(request.requestId, dirty, skipPrompt);
+    const decision = closeDecision({
+      visibleDirtyCount: Object.keys(state.dirtyById).length,
+      sessionDirty: session?.isDirty() ?? false,
+      hasConflict: state.externalConflict !== null,
+    });
+    if (decision.mustFlush) session?.setAutosavePaused(true);
+    window.api.window.reportDirtyState(request.requestId, decision.mustFlush, decision.skipPrompt);
     return;
   }
 
@@ -63,7 +80,7 @@ window.api.window.onWillClose((request) => {
     }
     const session = sessionOwner.getSession();
     try {
-      if (session) await session.flush({ force: true });
+      if (session) await session.flush({ force: true, explicit: true });
     } catch (error) {
       reportRendererError(error, "save");
       window.api.window.cancelQuit(request.requestId);

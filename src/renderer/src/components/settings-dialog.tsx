@@ -1,5 +1,5 @@
-import type { ThemePreference } from "@shared/ipc";
-import { AUTOSAVE_PRESETS_MS, isAutosavePresetMs } from "@shared/ipc";
+import type { AutosaveSetting, ThemePreference } from "@shared/ipc";
+import { autosaveKey, parseAutosaveKey } from "@shared/ipc";
 import { CheckIcon, Folder, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -23,6 +23,37 @@ const THEME_OPTIONS: ThemeOption[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: Monitor },
+];
+
+type AutosaveOption = {
+  key: string;
+  label: string;
+  setting: AutosaveSetting;
+};
+
+const AUTOSAVE_OPTIONS: AutosaveOption[] = [
+  { key: "always", label: "Always", setting: { mode: "always" } },
+  {
+    key: autosaveKey({ mode: "interval", ms: 1_000 }),
+    label: "1s",
+    setting: { mode: "interval", ms: 1_000 },
+  },
+  {
+    key: autosaveKey({ mode: "interval", ms: 5_000 }),
+    label: "5s",
+    setting: { mode: "interval", ms: 5_000 },
+  },
+  {
+    key: autosaveKey({ mode: "interval", ms: 15_000 }),
+    label: "15s",
+    setting: { mode: "interval", ms: 15_000 },
+  },
+  {
+    key: autosaveKey({ mode: "interval", ms: 30_000 }),
+    label: "30s",
+    setting: { mode: "interval", ms: 30_000 },
+  },
+  { key: "off", label: "Off", setting: { mode: "off" } },
 ];
 
 const INK_LIGHT = "#26262c";
@@ -112,9 +143,9 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     }
   };
 
-  const handleIntervalChange = async (value: number) => {
+  const handleAutosaveChange = async (setting: AutosaveSetting) => {
     try {
-      await updateSettings({ autosaveIntervalMs: value });
+      await updateSettings({ autosave: setting });
     } catch (error) {
       toast.add({ title: toAppError(error, "settings").detail, type: "error" });
     }
@@ -185,27 +216,25 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
         <div className="pt-6">
           <p className="text-muted-foreground text-xs font-medium">Autosave</p>
           <RadioGroup
-            aria-label="Autosave interval"
-            value={String(settings.autosaveIntervalMs)}
+            className="mt-3 grid grid-cols-6 gap-2"
+            aria-label="Autosave"
+            value={autosaveKey(settings.autosave)}
             onValueChange={(value) => {
-              const ms = Number(value);
-              if (isAutosavePresetMs(ms)) {
-                void handleIntervalChange(ms);
-              }
+              const setting = parseAutosaveKey(value);
+              if (setting) void handleAutosaveChange(setting);
             }}
-            className="mt-3 grid grid-cols-4 gap-3"
           >
-            {AUTOSAVE_PRESETS_MS.map((ms) => (
+            {AUTOSAVE_OPTIONS.map((option) => (
               <FieldLabel
-                key={ms}
-                htmlFor={`autosave-${ms}`}
+                key={option.key}
+                htmlFor={`autosave-${option.key}`}
                 className="bg-card has-[button[data-checked]]:border-primary hover:border-foreground/25 has-[button:focus-visible]:border-ring has-[button:focus-visible]:ring-ring/50 flex w-full cursor-pointer flex-col items-center gap-0 overflow-hidden rounded-lg border py-2.5 text-left shadow-none transition-colors has-[button:focus-visible]:ring-1"
               >
                 <span className="flex items-center justify-center text-xs font-medium">
-                  {`${ms / 1000}s`}
+                  {option.label}
                 </span>
                 <span className="sr-only">
-                  <RadioGroupItem value={String(ms)} id={`autosave-${ms}`} />
+                  <RadioGroupItem value={option.key} id={`autosave-${option.key}`} />
                 </span>
               </FieldLabel>
             ))}

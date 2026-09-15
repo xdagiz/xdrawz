@@ -1,12 +1,7 @@
 import { renameSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  AUTOSAVE_PRESETS_MS,
-  DEFAULT_AUTOSAVE_INTERVAL_MS,
-  DEFAULT_THEME,
-  StoreType,
-} from "@shared/ipc";
+import { AUTOSAVE_PRESETS_MS, DEFAULT_AUTOSAVE, DEFAULT_THEME, StoreType } from "@shared/ipc";
 import { app } from "electron";
 import Store from "electron-store";
 
@@ -28,10 +23,15 @@ const schema = {
     enum: ["light", "dark", "system"],
     default: DEFAULT_THEME,
   },
-  autosaveIntervalMs: {
-    type: "number",
-    enum: [...AUTOSAVE_PRESETS_MS],
-    default: DEFAULT_AUTOSAVE_INTERVAL_MS,
+  autosave: {
+    type: "object",
+    properties: {
+      mode: { type: "string", enum: ["interval", "always", "off"] },
+      ms: { type: "number", enum: [...AUTOSAVE_PRESETS_MS] },
+    },
+    required: ["mode"],
+    additionalProperties: false,
+    default: DEFAULT_AUTOSAVE,
   },
   reopenLastDrawing: {
     type: "boolean",
