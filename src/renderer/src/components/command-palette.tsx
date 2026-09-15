@@ -1,8 +1,8 @@
 import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import { buildCommands, type CommandContext, type CommandDef } from "@/lib/commands";
+import { buildCommands, type CommandDef } from "@/lib/commands";
 import { rankEntries } from "@/lib/fuzzy-rank";
 import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
@@ -11,12 +11,15 @@ import { stripExcalidraw } from "@/lib/utils";
 import { CommandDeleteDialog, CommandRenameDialog } from "./command-dialogs";
 import {
   Command,
+  CommandCollection,
   CommandDialog,
-  CommandEmpty,
+  CommandFooter,
   CommandGroup,
+  CommandGroupLabel,
   CommandInput,
   CommandItem,
   CommandList,
+  CommandPanel,
   CommandSeparator,
   CommandShortcut,
 } from "./ui/command";
@@ -36,6 +39,65 @@ type DrawingSearchEntry = {
   modifiedAt: number;
 };
 
+type CommandRow = {
+  id: string;
+  command: CommandDef;
+  disabled: boolean;
+  suffix: string;
+};
+
+type DrawingRow = {
+  id: string;
+  label: string;
+  disabled: boolean;
+};
+
+const CommandRowItem = memo(function CommandRowItem({
+  row,
+  onRun,
+}: {
+  row: CommandRow;
+  onRun: (command: CommandDef) => void;
+}) {
+  const { command } = row;
+  return (
+    <CommandItem
+      value={`command:${command.id}`}
+      disabled={row.disabled}
+      onClick={() => {
+        if (!row.disabled) onRun(command);
+      }}
+    >
+      <command.icon className="text-muted-foreground" />
+      <span className="min-w-0 truncate">
+        {command.title}
+        {row.suffix}
+      </span>
+      {command.shortcut && <CommandShortcut>{formatForDisplay(command.shortcut)}</CommandShortcut>}
+    </CommandItem>
+  );
+});
+
+const DrawingRowItem = memo(function DrawingRowItem({
+  row,
+  onChoose,
+}: {
+  row: DrawingRow;
+  onChoose: (fileId: string) => void;
+}) {
+  return (
+    <CommandItem
+      value={`entry:${row.id}`}
+      disabled={row.disabled}
+      onClick={() => {
+        if (!row.disabled) onChoose(row.id);
+      }}
+    >
+      <span className="min-w-0 truncate">{row.label}</span>
+    </CommandItem>
+  );
+});
+
 export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const [query, setQuery] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
@@ -46,8 +108,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const entries = useStore((s) => s.entries);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
   const openFileId = useStore((s) => s.openFileId);
-  const store = useStore((s) => s);
-  const sessionForCtx = sessionOwner.getSession();
+  const themeForCommands = useStore((s) => s.settings.theme);
   const { toggleSidebar } = useSidebar();
   const listRef = useRef<HTMLDivElement | null>(null);
   const [bottomFade, setBottomFade] = useState(false);
@@ -77,10 +138,13 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     if (open && settingsDialogOpen) setSettingsDialogOpen(false);
   }, [open, settingsDialogOpen, setSettingsDialogOpen]);
 
-  const handlePaletteOpenChange = (next: boolean) => {
-    if (!next) setQuery("");
-    onOpenChange(next);
-  };
+  const handlePaletteOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) setQuery("");
+      onOpenChange(next);
+    },
+    [onOpenChange],
+  );
 
   const commands = useMemo(
     () =>
@@ -94,8 +158,10 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   );
 
   const conflictActive = externalConflict !== null;
+  const conflictFileId = externalConflict?.fileId ?? null;
   const deferredQuery = useDeferredValue(query);
   const trimmedQuery = deferredQuery.trim();
+
   const drawingSearchEntries = useMemo<DrawingSearchEntry[]>(
     () =>
       entries
@@ -108,38 +174,58 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     [entries],
   );
 
-  const ctx: CommandContext = useMemo(
-    () => ({ store, session: sessionForCtx }),
-    [store, sessionForCtx],
+  const renderState = useMemo(
+    () => ({ openFileId, theme: themeForCommands }),
+    [openFileId, themeForCommands],
   );
 
-  const visibleCommands = commands.filter(
-    (command) => !(conflictActive && command.gatedOnConflict) && command.enabled?.(ctx) !== false,
+  const visibleCommands = useMemo(
+    () =>
+      commands.filter(
+        (command) =>
+          !(conflictActive && command.gatedOnConflict) && command.enabled?.(renderState) !== false,
+      ),
+    [commands, conflictActive, renderState],
   );
 
-  const commandHits =
-    trimmedQuery.length === 0
-      ? visibleCommands
-      : rankEntries(
-          trimmedQuery,
-          visibleCommands,
-          (command) => `${command.title} ${(command.keywords ?? []).join(" ")}`,
-          () => 0,
-        ).slice(0, MAX_HITS_PER_SOURCE);
+  const commandHits = useMemo<CommandRow[]>(() => {
+    const hits =
+      trimmedQuery.length === 0
+        ? visibleCommands
+        : rankEntries(
+            trimmedQuery,
+            visibleCommands,
+            (command) => `${command.title} ${(command.keywords ?? []).join(" ")}`,
+            () => 0,
+          ).slice(0, MAX_HITS_PER_SOURCE);
+    return hits.map((command) => ({
+      id: command.id,
+      command,
+      disabled: conflictActive && command.gatedOnConflict === true,
+      suffix: command.titleSuffix?.(renderState) ?? "",
+    }));
+  }, [trimmedQuery, visibleCommands, conflictActive, renderState]);
 
-  const drawingHits = (() => {
-    if (trimmedQuery.length === 0) {
-      return drawingSearchEntries
-        .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
-        .slice(0, MAX_HITS_PER_SOURCE);
-    }
-    return rankEntries(
-      trimmedQuery,
-      drawingSearchEntries,
-      (entry) => entry.label,
-      (entry) => entry.modifiedAt,
-    ).slice(0, MAX_HITS_PER_SOURCE);
-  })();
+  const drawingHits = useMemo<DrawingRow[]>(() => {
+    const hits =
+      trimmedQuery.length === 0
+        ? drawingSearchEntries
+            .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
+            .slice(0, MAX_HITS_PER_SOURCE)
+        : rankEntries(
+            trimmedQuery,
+            drawingSearchEntries,
+            (entry) => entry.label,
+            (entry) => entry.modifiedAt,
+          ).slice(0, MAX_HITS_PER_SOURCE);
+    return hits.map((file) => ({
+      id: file.id,
+      label: file.label,
+      disabled: conflictActive && file.id === conflictFileId,
+    }));
+  }, [trimmedQuery, drawingSearchEntries, conflictActive, conflictFileId]);
+
+  const isEmpty = commandHits.length === 0 && drawingHits.length === 0;
 
   const runCommand = async (command: CommandDef) => {
     try {
@@ -167,67 +253,60 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
         onOpenChange={handlePaletteOpenChange}
         title="Command palette"
         description="Search drawings and commands"
-        className="sm:max-w-[40rem]"
+        className="gap-0 sm:max-w-[40rem]"
       >
-        <Command shouldFilter={false} className="gap-0 p-0!">
-          <CommandInput
-            value={query}
-            onValueChange={setQuery}
-            placeholder="Search drawings and commands..."
-          />
-          <CommandList
-            ref={listRef}
-            onScroll={updateBottomFade}
-            className={`h-96 px-1 ${
-              bottomFade
-                ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)]"
-                : ""
-            }`}
-          >
-            {conflictActive && (
-              <p className="text-destructive px-3 pb-2 text-xs font-medium">
-                File commands are limited until the conflict is resolved in its dialog
-              </p>
+        <Command value={query} onValueChange={setQuery}>
+          <CommandInput placeholder="Search drawings and commands..." />
+          {conflictActive && (
+            <p className="text-destructive px-4 pt-2 pb-1 text-xs font-medium">
+              File commands are limited until the conflict is resolved in its dialog
+            </p>
+          )}
+          <CommandPanel className="h-72 min-h-0">
+            {isEmpty ? (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="text-muted-foreground py-6 text-center text-sm"
+              >
+                No results found.
+              </div>
+            ) : (
+              <CommandList
+                ref={listRef}
+                onScroll={updateBottomFade}
+                className={`h-full min-h-0 px-1 ${
+                  bottomFade
+                    ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)]"
+                    : ""
+                }`}
+              >
+                {commandHits.length > 0 && (
+                  <CommandGroup items={commandHits}>
+                    <CommandGroupLabel>Actions</CommandGroupLabel>
+                    <CommandCollection>
+                      {(row: CommandRow) => (
+                        <CommandRowItem key={row.id} row={row} onRun={runCommand} />
+                      )}
+                    </CommandCollection>
+                  </CommandGroup>
+                )}
+                {commandHits.length > 0 && drawingHits.length > 0 && <CommandSeparator />}
+                {drawingHits.length > 0 && (
+                  <CommandGroup items={drawingHits}>
+                    <CommandGroupLabel>Drawings</CommandGroupLabel>
+                    <CommandCollection>
+                      {(row: DrawingRow) => (
+                        <DrawingRowItem key={row.id} row={row} onChoose={chooseDrawing} />
+                      )}
+                    </CommandCollection>
+                  </CommandGroup>
+                )}
+              </CommandList>
             )}
-            <CommandEmpty>No results found.</CommandEmpty>
-            {commandHits.length > 0 && (
-              <CommandGroup heading="Actions">
-                {commandHits.map((command) => (
-                  <CommandItem
-                    key={command.id}
-                    value={`command:${command.id}`}
-                    disabled={conflictActive && command.gatedOnConflict === true}
-                    onSelect={() => void runCommand(command)}
-                  >
-                    <command.icon className="text-muted-foreground" />
-                    <span>
-                      {command.title}
-                      {command.titleSuffix?.(ctx) ?? ""}
-                    </span>
-                    {command.shortcut && (
-                      <CommandShortcut>{formatForDisplay(command.shortcut)}</CommandShortcut>
-                    )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-            <CommandSeparator />
-            {drawingHits.length > 0 && (
-              <CommandGroup heading="Drawings">
-                {drawingHits.map((file) => (
-                  <CommandItem
-                    key={file.id}
-                    value={`entry:${file.id}`}
-                    disabled={conflictActive && file.id === (externalConflict?.fileId ?? null)}
-                    onSelect={() => void chooseDrawing(file.id)}
-                  >
-                    <span>{file.label}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-          </CommandList>
-          <div className="text-muted-foreground border-border-quiet bg-foreground/[0.025] [&_[data-slot=kbd]]:bg-foreground/[0.08] [&_[data-slot=kbd]]:text-foreground flex items-center gap-3 border-t px-4 py-2.5 text-sm font-medium">
+          </CommandPanel>
+          <CommandFooter>
             <KbdGroup className="items-center gap-1.5">
               <Kbd>
                 <ArrowUpIcon />
@@ -243,7 +322,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
               <Kbd>Esc</Kbd>
               <span>Close</span>
             </KbdGroup>
-          </div>
+          </CommandFooter>
         </Command>
       </CommandDialog>
       <CommandRenameDialog

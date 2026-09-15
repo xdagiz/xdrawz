@@ -23,6 +23,11 @@ import type { BoundDrawingSession } from "@/lib/session-owner";
 import type { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 
+export type CommandRenderState = {
+  openFileId: string | null;
+  theme: ThemePreference;
+};
+
 export type CommandContext = {
   store: ReturnType<typeof useStore.getState>;
   session: BoundDrawingSession | null;
@@ -36,9 +41,9 @@ export type CommandDef = {
   keywords?: string[];
   shortcut?: string;
   gatedOnConflict?: boolean;
-  enabled?: (ctx: CommandContext) => boolean;
-  disabledReason?: (ctx: CommandContext) => string;
-  titleSuffix?: (ctx: CommandContext) => string;
+  enabled?: (state: CommandRenderState) => boolean;
+  disabledReason?: (state: CommandRenderState) => string;
+  titleSuffix?: (state: CommandRenderState) => string;
   perform: (ctx: CommandContext) => void | Promise<void>;
 };
 
@@ -61,7 +66,7 @@ const reportFailure = (error: unknown, operation: ErrorOperation, title: string)
   toast.add({ title, description: appError.detail, type: "error" });
 };
 
-const requiresOpenFile = (ctx: CommandContext) => Boolean(ctx.store.openFileId);
+const requiresOpenFile = (state: CommandRenderState) => Boolean(state.openFileId);
 
 const displayNameFor = (id: string) => stripExcalidraw(id.split("/").pop() ?? id);
 
@@ -183,7 +188,7 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
     group: "appearance",
     icon,
     keywords: ["appearance", "mode"],
-    titleSuffix: (ctx) => (ctx.store.settings.theme === value ? " (active)" : ""),
+    titleSuffix: (state) => (state.theme === value ? " (active)" : ""),
     perform: async (ctx) => {
       try {
         await ctx.store.updateSettings({ theme: value });
