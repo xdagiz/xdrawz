@@ -70,6 +70,7 @@ const findOnDisk = (entries: FileEntry[], fileId: string) => entries.find((e) =>
 export const reduceEntries = (
   state: EntryReductionState,
   event: FilesChangedEvent,
+  openFileDirty: boolean,
 ): EntryReduction => {
   const entries = event.entries;
   const { openFileId } = state;
@@ -82,11 +83,10 @@ export const reduceEntries = (
 
   if (openFileId) {
     const stillExists = isStillPresent(entries, openFileId);
-    const isDirty = dirtyById[openFileId] !== undefined;
 
-    if (!stillExists && isDirty) {
+    if (!stillExists && openFileDirty) {
       externalConflict = { type: "missing", fileId: openFileId };
-    } else if (stillExists && isDirty) {
+    } else if (stillExists && openFileDirty) {
       const oldEntry = findOnDisk(state.entries, openFileId);
       const newEntry = findOnDisk(entries, openFileId);
       if (
@@ -117,7 +117,7 @@ export const reduceEntries = (
           diskModifiedAt: newEntry.modifiedAt,
         };
       }
-    } else if (stillExists && !isDirty) {
+    } else if (stillExists && !openFileDirty) {
       const oldEntry = findOnDisk(state.entries, openFileId);
       const newEntry = findOnDisk(entries, openFileId);
       if (oldEntry && newEntry && newEntry.modifiedAt > oldEntry.modifiedAt) {
@@ -125,7 +125,7 @@ export const reduceEntries = (
       }
     }
 
-    if (!stillExists && !isDirty) nextOpenFileId = null;
+    if (!stillExists && !openFileDirty) nextOpenFileId = null;
   }
 
   const nextDirty = { ...dirtyById };

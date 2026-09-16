@@ -276,9 +276,14 @@ export const useStore = create<State>((set, get) => {
     },
 
     applyEntries: (event) => {
-      const state = get();
       if (event.revision > 0 && event.revision <= filesRevision) return;
-      const reduced = reduceEntries(state, event);
+      const openFileId = get().openFileId;
+      const session = openFileId !== null ? sessionOwner.getSession(openFileId) : null;
+      session?.evaluateNow();
+      const state = get();
+      const openFileDirty =
+        session?.isDirty() ?? (openFileId !== null && state.dirtyById[openFileId] !== undefined);
+      const reduced = reduceEntries(state, event, openFileDirty);
       syncDismissal(reduced.externalConflict);
       const eventIds = event.root === null ? null : new Set(event.entries.map((entry) => entry.id));
       const prunedRecentFileIds =

@@ -29,7 +29,7 @@ const event = (ids: Array<[string, number]>, revision = 1) => ({
 describe("reduceEntries", () => {
   it("drops the open file when it disappears while clean", () => {
     const state = { ...baseState(), openFileId: "a.excalidraw" };
-    const next = reduceEntries(state, event([]));
+    const next = reduceEntries(state, event([]), false);
 
     expect(next.openFileId).toBeNull();
     expect(next.externalConflict).toBeNull();
@@ -42,7 +42,7 @@ describe("reduceEntries", () => {
       openFileId: "a.excalidraw",
       dirtyById: { "a.excalidraw": true as const },
     };
-    const next = reduceEntries(state, event([]));
+    const next = reduceEntries(state, event([]), true);
 
     expect(next.openFileId).toBe("a.excalidraw");
     expect(next.externalConflict).toEqual({ type: "missing", fileId: "a.excalidraw" });
@@ -51,7 +51,7 @@ describe("reduceEntries", () => {
 
   it("bumps the editor generation when the clean open file changes on disk", () => {
     const state = { ...baseState(), openFileId: "a.excalidraw" };
-    const next = reduceEntries(state, event([["a.excalidraw", 200]]));
+    const next = reduceEntries(state, event([["a.excalidraw", 200]]), false);
 
     expect(next.editorGeneration).toBe(1);
     expect(next.externalConflict).toBeNull();
@@ -63,7 +63,7 @@ describe("reduceEntries", () => {
       openFileId: "a.excalidraw",
       dirtyById: { "a.excalidraw": true as const },
     };
-    const next = reduceEntries(state, event([["a.excalidraw", 300]]));
+    const next = reduceEntries(state, event([["a.excalidraw", 300]]), true);
 
     expect(next.externalConflict).toEqual({
       type: "changed",
@@ -79,7 +79,7 @@ describe("reduceEntries", () => {
       dirtyById: { "a.excalidraw": true as const },
       externalConflict: { type: "changed" as const, fileId: "a.excalidraw", diskModifiedAt: 250 },
     };
-    const next = reduceEntries(state, event([["a.excalidraw", 260]]));
+    const next = reduceEntries(state, event([["a.excalidraw", 260]]), true);
 
     expect(next.externalConflict).toEqual({
       type: "changed",
@@ -87,7 +87,7 @@ describe("reduceEntries", () => {
       diskModifiedAt: 260,
     });
 
-    const older = reduceEntries(state, event([["a.excalidraw", 240]]));
+    const older = reduceEntries(state, event([["a.excalidraw", 240]]), true);
     expect(older.externalConflict).toEqual({
       type: "changed",
       fileId: "a.excalidraw",
@@ -102,7 +102,7 @@ describe("reduceEntries", () => {
       dirtyById: { "a.excalidraw": true as const },
       externalConflict: { type: "missing" as const, fileId: "a.excalidraw" },
     };
-    const next = reduceEntries(state, event([["a.excalidraw", 400]]));
+    const next = reduceEntries(state, event([["a.excalidraw", 400]]), true);
 
     expect(next.externalConflict).toEqual({
       type: "changed",
@@ -119,14 +119,14 @@ describe("reduceEntries", () => {
       dirtyById: { "a.excalidraw": true as const, "b.excalidraw": true as const },
     };
 
-    const pruned = reduceEntries(state, event([["a.excalidraw", 100]]));
+    const pruned = reduceEntries(state, event([["a.excalidraw", 100]]), true);
     expect(pruned.dirtyById).toEqual({ "a.excalidraw": true });
 
     const conflicted = {
       ...state,
       externalConflict: { type: "missing" as const, fileId: "a.excalidraw" },
     };
-    const kept = reduceEntries(conflicted, event([]));
+    const kept = reduceEntries(conflicted, event([]), true);
     expect(kept.dirtyById).toEqual({ "a.excalidraw": true });
   });
 
@@ -136,9 +136,50 @@ describe("reduceEntries", () => {
       openFileId: "a.excalidraw",
       externalConflict: { type: "changed" as const, fileId: "a.excalidraw", diskModifiedAt: 50 },
     };
-    const next = reduceEntries(state, event([["a.excalidraw", 50]]));
+    const next = reduceEntries(state, event([["a.excalidraw", 50]]), false);
 
     expect(next.externalConflict).toBeNull();
+  });
+
+  it("flags a changed conflict from the explicit flag without a dirty marker", () => {
+    const state = { ...baseState(), openFileId: "a.excalidraw" };
+    const next = reduceEntries(state, event([["a.excalidraw", 300]]), true);
+
+    expect(next.openFileId).toBe("a.excalidraw");
+    expect(next.externalConflict).toEqual({
+      type: "changed",
+      fileId: "a.excalidraw",
+      diskModifiedAt: 300,
+    });
+    expect(next.editorGeneration).toBe(0);
+    expect(next.dirtyById).toEqual({});
+  });
+
+  it("flags a missing conflict from the explicit flag without a dirty marker", () => {
+    const state = { ...baseState(), openFileId: "a.excalidraw" };
+    const next = reduceEntries(state, event([]), true);
+
+    expect(next.openFileId).toBe("a.excalidraw");
+    expect(next.externalConflict).toEqual({ type: "missing", fileId: "a.excalidraw" });
+    expect(next.editorGeneration).toBe(0);
+    expect(next.dirtyById).toEqual({});
+  });
+
+  it("treats the open file as clean when the explicit flag is false despite a stale marker", () => {
+    const state = {
+      ...baseState(),
+      openFileId: "a.excalidraw",
+      dirtyById: { "a.excalidraw": true as const },
+    };
+
+    const changed = reduceEntries(state, event([["a.excalidraw", 200]]), false);
+    expect(changed.editorGeneration).toBe(1);
+    expect(changed.externalConflict).toBeNull();
+    expect(changed.openFileId).toBe("a.excalidraw");
+
+    const gone = reduceEntries(state, event([]), false);
+    expect(gone.openFileId).toBeNull();
+    expect(gone.externalConflict).toBeNull();
   });
 });
 
