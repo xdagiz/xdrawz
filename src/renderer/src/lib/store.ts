@@ -185,6 +185,8 @@ export const useStore = create<State>((set, get) => {
     get: () => {
       const s = get();
       return {
+        rootPath: s.drawings?.path ?? null,
+        editorGeneration: s.editorGeneration,
         entries: s.entries,
         openFileId: s.openFileId,
         dirtyById: s.dirtyById,
@@ -586,7 +588,7 @@ export const useStore = create<State>((set, get) => {
         return;
       }
 
-      sessionOwner.getSession(openFileId)?.resetBaseline();
+      sessionOwner.getSession(openFileId)?.invalidate();
       set({
         externalConflict: null,
         dirtyById: removeKey(dirtyById, openFileId),

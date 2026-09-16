@@ -9,12 +9,13 @@ import {
   createSingleFlight,
   type ExternalConflict,
   fileNameOf,
-  removeKey,
 } from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
 import { sessionOwner } from "@/lib/session-owner";
 
 export type ConflictSlice = {
+  rootPath: string | null;
+  editorGeneration: number;
   entries: FileEntry[];
   openFileId: string | null;
   dirtyById: Record<string, true>;
@@ -38,20 +39,51 @@ export const createConflictResolver = (deps: ResolverDeps) => {
   const runRecoverDialog = createSingleFlight<"recover" | "discard" | "cancel">();
   let dismissedKey: string | null = null;
 
-  const performRecover = async (fileId: string, body: string) => {
+  let recoveryEpoch = 0;
+
+  const captureRecovery = (conflict: NonNullable<ExternalConflict>) => {
+    const state = get();
+    const session = sessionOwner.getSession(conflict.fileId);
+    const lifetime = session?.getLifetime();
+    const epoch = ++recoveryEpoch;
+    return {
+      session,
+      rootIntact: () => get().rootPath === state.rootPath,
+      isCurrent: () => {
+        const current = get();
+        return (
+          epoch === recoveryEpoch &&
+          current.externalConflict === conflict &&
+          current.rootPath === state.rootPath &&
+          current.editorGeneration === state.editorGeneration &&
+          current.openFileId === conflict.fileId &&
+          sessionOwner.getSession(conflict.fileId) === session &&
+          session?.getLifetime() === lifetime
+        );
+      },
+    };
+  };
+
+  const performRecover = async (
+    fileId: string,
+    body: string,
+    recovery: ReturnType<typeof captureRecovery>,
+    acknowledge?: () => boolean,
+  ) => {
+    if (!recovery.isCurrent()) return false;
     try {
-      await window.api.files.writeRecover(fileId, body);
-      const entries = await window.api.files.list();
-      sessionOwner.getSession(fileId)?.markPersisted();
-      set({
-        error: null,
-        externalConflict: null,
-        entries: deps.commitEntries(entries),
-        dirtyById: removeKey(get().dirtyById, fileId),
-      });
+      const entry = await window.api.files.writeRecover(fileId, body);
+      if (recovery.rootIntact()) {
+        set({
+          entries: deps.commitEntries([...get().entries.filter((e) => e.id !== entry.id), entry]),
+        });
+      }
+      if (!recovery.isCurrent()) return false;
+      set({ error: null, externalConflict: null });
+      acknowledge?.();
       return true;
     } catch (err) {
-      set({ error: toAppError(err, "recover") });
+      if (recovery.isCurrent()) set({ error: toAppError(err, "recover") });
       return false;
     }
   };
@@ -107,10 +139,16 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     const recoverContent = content;
 
     return runRecoverDialog(async () => {
+      const recovery = captureRecovery(conflict);
       const choice = await window.api.dialog.fileRecover(fileName);
 
       const current = get().externalConflict;
-      if (!current || current.type !== "missing" || conflictKeyOf(current) !== expectedKey) {
+      if (
+        !recovery.isCurrent() ||
+        !current ||
+        current.type !== "missing" ||
+        conflictKeyOf(current) !== expectedKey
+      ) {
         return "cancel" as const;
       }
 
@@ -125,7 +163,8 @@ export const createConflictResolver = (deps: ResolverDeps) => {
         return "discard";
       }
 
-      const body = recoverContent ?? sessionOwner.getSession()?.getSerializedContent() ?? null;
+      const snapshot = recoverContent === undefined ? recovery.session?.capturePersistence() : null;
+      const body = recoverContent ?? snapshot?.content;
 
       if (!body) {
         set({
@@ -142,7 +181,7 @@ export const createConflictResolver = (deps: ResolverDeps) => {
       }
 
       dismissedKey = null;
-      const ok = await performRecover(current.fileId, body);
+      const ok = await performRecover(current.fileId, body, recovery, snapshot?.acknowledge);
       return ok ? ("recover" as const) : ("cancel" as const);
     });
   };
@@ -178,7 +217,9 @@ export const createConflictResolver = (deps: ResolverDeps) => {
     const conflict = get().externalConflict;
     if (!conflict || conflict.type !== "missing") return false;
 
-    const body = sessionOwner.getSession()?.getSerializedContent();
+    const recovery = captureRecovery(conflict);
+    const snapshot = recovery.session?.capturePersistence();
+    const body = snapshot?.content;
     if (!body) {
       set({
         error: toAppError(
@@ -193,10 +234,11 @@ export const createConflictResolver = (deps: ResolverDeps) => {
       return false;
     }
 
-    return performRecover(conflict.fileId, body);
+    return performRecover(conflict.fileId, body, recovery, snapshot?.acknowledge);
   };
 
   const resetConflicts = () => {
+    recoveryEpoch += 1;
     dismissedKey = null;
     set({ externalConflict: null });
   };

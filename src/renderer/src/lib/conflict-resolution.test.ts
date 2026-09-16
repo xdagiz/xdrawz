@@ -29,6 +29,8 @@ const missingConflict = (): ExternalConflict => ({
 const makeHarness = async (overrides: Partial<ConflictSlice> = {}) => {
   const slice: ConflictSlice = {
     entries: [],
+    rootPath: "/drawings",
+    editorGeneration: 1,
     openFileId: "a.excalidraw",
     dirtyById: { "a.excalidraw": true },
     error: null,
@@ -189,32 +191,28 @@ describe("resolveChangedConflict", () => {
 describe("resolveMissingConflict", () => {
   const missing: ExternalConflict = { type: "missing", fileId: "a.excalidraw" };
 
-  it("recovers stored content through writeRecover and refreshes entries", async () => {
+  it("recovers supplied content and upserts the returned entry without listing files", async () => {
     const { dialog, files, slice, resolver } = await makeHarness({
       externalConflict: missing,
       dirtyById: {},
     });
     dialog.fileRecover.mockResolvedValue("recover");
-    files.writeRecover.mockResolvedValue({});
-    files.list.mockResolvedValue([]);
+    const entry = {
+      id: "a.excalidraw",
+      name: "a.excalidraw",
+      kind: "file",
+      parentId: null,
+      modifiedAt: 300,
+      size: 100,
+    };
+    files.writeRecover.mockResolvedValue(entry);
 
     expect(await resolver.resolveMissingConflict("<json/>")).toBe("recover");
     expect(files.writeRecover).toHaveBeenCalledWith("a.excalidraw", "<json/>");
     expect(slice.externalConflict).toBeNull();
     expect(slice.error).toBeNull();
-  });
-
-  it("marks the active session persisted after recovery", async () => {
-    const markPersisted = vi.fn();
-    session.getSession.mockReturnValue({ markPersisted });
-    const { dialog, files, resolver } = await makeHarness({ externalConflict: missing });
-    dialog.fileRecover.mockResolvedValue("recover");
-    files.writeRecover.mockResolvedValue({});
-    files.list.mockResolvedValue([]);
-
-    await resolver.resolveMissingConflict("<json/>");
-
-    expect(markPersisted).toHaveBeenCalledTimes(1);
+    expect(slice.entries).toEqual([entry]);
+    expect(files.list).not.toHaveBeenCalled();
   });
 
   it("discards via the dependency and clears the dismissal", async () => {

@@ -622,7 +622,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         return loaded.drawing;
       } catch (error) {
         console.error("Failed to load drawing:", error);
-        sessionRef.current?.resetBaseline();
+        sessionRef.current?.invalidate();
         setLoadError(toAppError(error, "read"));
         return null;
       }

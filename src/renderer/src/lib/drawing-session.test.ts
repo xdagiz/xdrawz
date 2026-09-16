@@ -4,8 +4,19 @@ import type { AutosaveSetting } from "@shared/ipc";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 
 vi.mock("@excalidraw/excalidraw", () => ({
-  serializeAsJSON: (_elements: unknown, appState: { viewBackgroundColor?: string }) =>
-    JSON.stringify({ scene: true, vbg: appState?.viewBackgroundColor }),
+  serializeAsJSON: (
+    elements: unknown,
+    appState: { viewBackgroundColor?: string },
+    files: unknown,
+  ) =>
+    JSON.stringify({
+      type: "excalidraw",
+      version: 2,
+      source: "https://excalidraw.com",
+      elements,
+      appState,
+      files,
+    }),
 }));
 
 import {
@@ -238,7 +249,7 @@ describe("createDrawingSession", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it("resetBaseline lets a later load re-establish the baseline without a spurious save", async () => {
+  it("invalidate lets a later load re-establish the baseline without a spurious save", async () => {
     const diskBaseline = drawingSignature([el("a")], appState("#ffffff"), emptyFiles);
     const { session, dirty, save } = makeSession();
 
@@ -248,7 +259,13 @@ describe("createDrawingSession", () => {
     session.onChange([el("x")], appState("#000000"), emptyFiles);
     expect(save).not.toHaveBeenCalled();
 
-    session.resetBaseline();
+    session.invalidate();
+
+    expect(session.isDirty()).toBe(false);
+    expect(session.getSerializedContent()).toBeNull();
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(save).not.toHaveBeenCalled();
+
     session.setInitialBaseline(diskBaseline);
     session.onChange([el("a")], appState("#ffffff"), emptyFiles);
     await vi.advanceTimersByTimeAsync(0);
@@ -296,12 +313,65 @@ describe("createDrawingSession", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(dirty).toHaveBeenLastCalledWith("f1", true);
 
-    session.markPersisted();
+    expect(session.capturePersistence()?.acknowledge()).toBe(true);
 
     expect(session.isDirty()).toBe(false);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
     await vi.advanceTimersByTimeAsync(5100);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each(["invalidate", "retarget", "dispose"] as const)(
+    "rejects a snapshot acknowledgement after %s",
+    (operation) => {
+      const { session } = makeSession({ initialAutosave: { mode: "off" } });
+      session.onChange([el("a")], appState(), emptyFiles);
+      session.onChange([el("b")], appState(), emptyFiles);
+      const snapshot = session.capturePersistence()!;
+      if (operation === "retarget") {
+        session.retarget("f2");
+        session.retarget("f1");
+      } else session[operation]();
+      if (operation === "invalidate") {
+        session.onChange([el("loaded")], appState(), emptyFiles);
+        session.onChange([el("new-edit")], appState(), emptyFiles);
+        session.evaluateNow();
+      }
+      const content = session.getSerializedContent();
+      const dirty = session.isDirty();
+      expect(snapshot.acknowledge()).toBe(false);
+      expect(session.getSerializedContent()).toBe(content);
+      expect(session.isDirty()).toBe(dirty);
+    },
+  );
+
+  it("refuses to capture persistence while the scene is still loading", () => {
+    const { session } = makeSession();
+    session.onChange([el("a")], { ...appState(), isLoading: true }, emptyFiles);
+    expect(session.capturePersistence()).toBeNull();
+    session.onChange([el("a")], appState(), emptyFiles);
+    expect(session.capturePersistence()).not.toBeNull();
+  });
+
+  it("captures the pending scene and rejects an older acknowledgement once a newer one persisted", () => {
+    const frame = manualScheduler();
+    const { session } = makeSession({
+      initialAutosave: { mode: "off" },
+      scheduleFrame: frame.scheduleFrame,
+    });
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("b")], appState(), emptyFiles);
+    expect(frame.hasPending()).toBe(true);
+    const older = session.capturePersistence()!;
+    expect(frame.hasPending()).toBe(false);
+    expect(JSON.parse(older.content).elements).toEqual([{ id: "b", type: "rectangle" }]);
+    session.onChange([el("c")], appState(), emptyFiles);
+    const newer = session.capturePersistence()!;
+    expect(newer.acknowledge()).toBe(true);
+    expect(older.acknowledge()).toBe(false);
+    session.onChange([el("c")], appState(), emptyFiles);
+    session.evaluateNow();
+    expect(session.isDirty()).toBe(false);
   });
 
   it("flush persists immediately without force when dirty", async () => {
@@ -341,7 +411,11 @@ describe("createDrawingSession", () => {
     await vi.advanceTimersByTimeAsync(5100);
 
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save).toHaveBeenLastCalledWith("f1", expect.stringContaining('"vbg":"#000000"'), "auto");
+    const lastSave = JSON.parse(save.mock.calls.at(-1)![1]);
+    expect(save.mock.calls.at(-1)![0]).toBe("f1");
+    expect(save.mock.calls.at(-1)![2]).toBe("auto");
+    expect(lastSave.appState.viewBackgroundColor).toBe("#000000");
+    expect(lastSave.elements).toEqual([{ id: "a", type: "rectangle" }]);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 

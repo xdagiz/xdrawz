@@ -160,6 +160,7 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
     disabledReason: () => OPEN_FILE_REQUIRED,
     perform: async (ctx) => {
       try {
+        if (!(await ctx.store.ensureCleanOrConfirm("switch"))) return;
         ctx.store.reloadOpenFileFromDisk();
       } catch (error) {
         reportFailure(error, "read", "Couldn’t reload the drawing");

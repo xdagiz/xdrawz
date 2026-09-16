@@ -41,8 +41,9 @@ export type DrawingSessionControls = {
   setAutosavePaused: (paused: boolean) => void;
   getSerializedContent: () => string | null;
   setInitialBaseline: (signature: string | null) => void;
-  resetBaseline: () => void;
-  markPersisted: () => void;
+  invalidate: () => void;
+  capturePersistence: () => { content: string; acknowledge: () => boolean } | null;
+  getLifetime: () => object;
   retarget: (nextFileId: string) => void;
   ensureCleanOrConfirm: (
     reason: UnsavedReason,
@@ -100,6 +101,8 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   let saveSeq = 0;
   let appliedSeq = 0;
   let disposed = false;
+  let lifetime = {};
+  let persistedSeq = 0;
   let blocked = false;
   let dirty = false;
   let dirtyPublished = false;
@@ -231,23 +234,20 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     try {
       const json = serializeAsJSON(targetElements, targetAppState, targetFiles, "local");
       const ok = await save(currentFileId, json, origin);
-      if (mySeq <= appliedSeq || disposed) return ok;
-      appliedSeq = mySeq;
+      if (disposed || mySeq <= (ok ? persistedSeq : appliedSeq)) return ok;
+      appliedSeq = Math.max(appliedSeq, mySeq);
       if (ok) {
+        runPendingEvaluation();
+        persistedSeq = mySeq;
         saveFailures = 0;
-        if (targetRevision === latestRevision && epochAtStart === retargetEpoch) {
+        if (epochAtStart === retargetEpoch) {
           baseline = signatureFor(targetElements, targetAppState, targetFiles);
-          setDirty(false);
+          setDirty(latestSignature !== baseline);
+          if (!dirty) debounced.cancel();
+          else if (mode !== "off") retryLatest();
         } else {
           setDirty(true);
-          if (
-            targetRevision === latestRevision &&
-            epochAtStart !== retargetEpoch &&
-            latestDrawing &&
-            !disposed
-          ) {
-            retryLatest();
-          }
+          if (mode !== "off") retryLatest();
         }
       } else if (targetRevision === latestRevision) {
         retryAfterSaveFailure({
@@ -479,16 +479,33 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     setDirty(false);
   };
 
-  const markPersisted = () => {
-    debounced.cancel();
-    saveFailures = 0;
-    appliedSeq = saveSeq;
-    if (latestDrawing) {
-      const [elements, appState, files] = latestDrawing;
-      baseline = signatureFor(elements, appState, files);
-      latestSignature = baseline;
-    }
-    setDirty(false);
+  const capturePersistence = () => {
+    if (disposed || !latestDrawing || latestDrawing[1].isLoading) return null;
+    runPendingEvaluation();
+    const [elements, appState, files] = latestDrawing;
+    const content = serializeAsJSON(elements, appState, files, "local");
+    const signature = signatureFor(elements, appState, files);
+    const capturedLifetime = lifetime;
+    const mySeq = ++saveSeq;
+    let acknowledged = false;
+    return {
+      content,
+      acknowledge: () => {
+        if (disposed || capturedLifetime !== lifetime || acknowledged || mySeq <= persistedSeq) {
+          return false;
+        }
+        acknowledged = true;
+        runPendingEvaluation();
+        persistedSeq = mySeq;
+        appliedSeq = Math.max(appliedSeq, mySeq);
+        baseline = signature;
+        saveFailures = 0;
+        setDirty(latestSignature !== baseline);
+        if (!dirty) debounced.cancel();
+        else if (mode !== "off") retryLatest();
+        return true;
+      },
+    };
   };
 
   const ensureCleanOrConfirm = async (
@@ -523,6 +540,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    lifetime = {};
 
     if (cancelScheduledEvaluation !== null) {
       cancelScheduledEvaluation();
@@ -550,11 +568,27 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       if (disposed || baseline !== null) return;
       diskBaseline = signature;
     },
-    resetBaseline: () => {
+    invalidate: () => {
+      lifetime = {};
+      if (cancelScheduledEvaluation !== null) {
+        cancelScheduledEvaluation();
+        cancelScheduledEvaluation = null;
+      }
+      debounced.cancel();
+      appliedSeq = saveSeq;
+      persistedSeq = saveSeq;
+      saveFailures = 0;
+      latestDrawing = null;
+      latestSignature = null;
+      cachedInputs = null;
+      cachedSignature = "";
       baseline = null;
+      setDirty(false);
     },
-    markPersisted,
+    capturePersistence,
+    getLifetime: () => lifetime,
     retarget: (nextFileId: string) => {
+      lifetime = {};
       currentFileId = nextFileId;
       retargetEpoch += 1;
     },

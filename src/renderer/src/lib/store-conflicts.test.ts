@@ -1,6 +1,6 @@
 import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
-import type { AutosaveSetting, FileEntry } from "@shared/ipc";
+import type { AutosaveSetting, FileEntry, UnsavedChoice, UnsavedReason } from "@shared/ipc";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("@excalidraw/excalidraw", () => ({
@@ -12,6 +12,7 @@ vi.mock("@/components/ui/toast", () => ({
   toast: { add: vi.fn(), close: vi.fn() },
 }));
 
+import { buildCommands } from "./commands";
 import { createDrawingSession, type FrameScheduler } from "./drawing-session";
 import { sessionOwner } from "./session-owner";
 import { useStore } from "./store";
@@ -36,6 +37,13 @@ const files = {
   },
 } as unknown as BinaryFiles;
 const write = vi.fn<(id: string, content: string) => Promise<FileEntry>>();
+const unsavedChanges = vi.fn<(reason: UnsavedReason) => Promise<UnsavedChoice>>();
+const reloadCommand = buildCommands({
+  openSettings: vi.fn(),
+  openRenameDialog: vi.fn(),
+  openDeleteDialog: vi.fn(),
+  toggleSidebar: vi.fn(),
+}).find((command) => command.id === "reload-from-disk")!;
 let revision = 0;
 const externalEvent = (kind: "changed" | "missing") => ({
   entries: kind === "changed" ? [entry(200)] : [],
@@ -43,9 +51,14 @@ const externalEvent = (kind: "changed" | "missing") => ({
   root: "/drawings",
 });
 
-const neverFireFrame: FrameScheduler = () => () => {};
-
 const openSession = (id = fileId, initialAutosave?: AutosaveSetting) => {
+  let frame: (() => void) | null = null;
+  const scheduleFrame: FrameScheduler = (callback) => {
+    frame = callback;
+    return () => {
+      frame = null;
+    };
+  };
   const session = sessionOwner.acquire(
     id,
     createDrawingSession({
@@ -53,18 +66,27 @@ const openSession = (id = fileId, initialAutosave?: AutosaveSetting) => {
       save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
       onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
       initialAutosave,
-      scheduleFrame: neverFireFrame,
+      scheduleFrame,
     }),
   );
   session.onChange([], appState, {});
-  return { session };
+  return {
+    session,
+    hasPendingFrame: () => frame !== null,
+    fireFrame: () => {
+      const callback = frame;
+      frame = null;
+      callback?.();
+    },
+  };
 };
 
 beforeEach(() => {
   revision += 2;
   vi.useFakeTimers();
   write.mockReset().mockResolvedValue(entry(150));
-  vi.stubGlobal("window", { api: { files: { write } } });
+  unsavedChanges.mockReset().mockResolvedValue("cancel");
+  vi.stubGlobal("window", { api: { files: { write }, dialog: { unsavedChanges } } });
   useStore.setState(useStore.getInitialState(), true);
   useStore.setState({ entries: [entry(100)], openFileId: fileId, editorGeneration: 7 });
 });
@@ -76,6 +98,149 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+
+describe("missing-file recovery", () => {
+  const prepareRecovery = (mode: AutosaveSetting = { mode: "interval", ms: 5000 }) => {
+    const pending = Promise.withResolvers<FileEntry>();
+    const writeRecover = vi.fn<(id: string, content: string) => Promise<FileEntry>>(
+      () => pending.promise,
+    );
+    const list = vi.fn().mockRejectedValue(new Error("listing unavailable"));
+    Object.assign(window.api.files, { writeRecover, list });
+    Object.assign(window.api.dialog, { fileRecover: vi.fn().mockResolvedValue("recover") });
+    const opened = openSession(fileId, mode);
+    opened.session.onChange(elements, appState, files);
+    useStore.getState().applyEntries(externalEvent("missing"));
+    return { ...opened, pending, writeRecover, list };
+  };
+
+  it("failed recovery preserves the conflict and newer scene", async () => {
+    const { session, pending, writeRecover } = prepareRecovery({ mode: "off" });
+    const conflict = useStore.getState().externalConflict;
+    const recovering = useStore.getState().recoverMissingOpenFile();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(writeRecover).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(writeRecover.mock.calls[0][1])).toEqual({ elements, appState, files });
+    session.onChange([{ id: "B", type: "ellipse" } as OrderedExcalidrawElement], appState, files);
+    session.evaluateNow();
+    pending.reject(new Error("recovery write failed"));
+    expect(await recovering).toBe(false);
+    expect(useStore.getState().externalConflict).toBe(conflict);
+    expect(useStore.getState().error?.operation).toBe("recover");
+    expect(session.isDirty()).toBe(true);
+    expect(useStore.getState().dirtyById).toEqual({ [fileId]: true });
+    expect(JSON.parse(session.getSerializedContent()!).elements).toEqual([
+      { id: "B", type: "ellipse" },
+    ]);
+  });
+
+  it.each(["dispose", "root"] as const)(
+    "stale recovery does not apply a late success after %s",
+    async (change) => {
+      sessionOwner.releaseActive();
+      useStore.setState({
+        entries: [entry(100)],
+        openFileId: fileId,
+        dirtyById: {},
+        error: null,
+        externalConflict: null,
+      });
+      const { session, pending, writeRecover } = prepareRecovery({ mode: "off" });
+      const recovering = useStore.getState().recoverMissingOpenFile();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(writeRecover).toHaveBeenCalledTimes(1);
+      if (change === "dispose") session.dispose();
+      if (change === "root") {
+        useStore.getState().loadSnapshot({
+          info: { path: "/other", displayName: "Other", configured: true, missing: false },
+          entries: [{ ...entry(900), id: "other.excalidraw", name: "other.excalidraw" }],
+          prefs: { lastOpenedFileId: null },
+        });
+      }
+      const state = useStore.getState();
+      const active = sessionOwner.getSession();
+      const content = active?.getSerializedContent();
+      const dirty = active?.isDirty();
+      pending.resolve(entry(300));
+      expect(await recovering).toBe(false);
+      if (change === "root") {
+        expect(useStore.getState()).toBe(state);
+      } else {
+        const next = useStore.getState();
+        expect(next).not.toBe(state);
+        expect(next.entries).toEqual([entry(300)]);
+        expect(next.error).toBe(state.error);
+        expect(next.externalConflict).toBe(state.externalConflict);
+        expect(next.dirtyById).toBe(state.dirtyById);
+        expect(next.openFileId).toBe(state.openFileId);
+      }
+      expect(active?.getSerializedContent()).toBe(content);
+      expect(active?.isDirty()).toBe(dirty);
+    },
+  );
+
+  it("upserts the recovered entry when the root is intact but the conflict moved on", async () => {
+    const { pending } = prepareRecovery({ mode: "off" });
+    const recovering = useStore.getState().recoverMissingOpenFile();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const other = { ...entry(200), id: "other.excalidraw", name: "other.excalidraw" };
+    useStore.setState({ entries: [other], openFileId: other.id, externalConflict: null });
+
+    pending.resolve(entry(300));
+    expect(await recovering).toBe(false);
+
+    const state = useStore.getState();
+    expect(state.entries).toEqual([entry(300), other]);
+    expect(state.openFileId).toBe(other.id);
+    expect(state.externalConflict).toBeNull();
+  });
+
+  it("acknowledges an unchanged recovery without a refresh or redundant write", async () => {
+    const { session, pending, list } = prepareRecovery({ mode: "interval", ms: 5000 });
+    const recovering = useStore.getState().recoverMissingOpenFile();
+    pending.resolve(entry(300));
+    expect(await recovering).toBe(true);
+    expect(session.isDirty()).toBe(false);
+    expect(useStore.getState().dirtyById).toEqual({});
+    expect(useStore.getState().externalConflict).toBeNull();
+    expect(useStore.getState().entries).toEqual([entry(300)]);
+    expect(useStore.getState().error).toBeNull();
+    expect(list).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("retains a pending-frame edit without persisting it in off mode", async () => {
+    const { session, pending, hasPendingFrame } = prepareRecovery({ mode: "off" });
+    const recovering = useStore.getState().recoverMissingOpenFile();
+    session.onChange([{ id: "B", type: "ellipse" } as OrderedExcalidrawElement], appState, files);
+    expect(hasPendingFrame()).toBe(true);
+    pending.resolve(entry(300));
+    expect(await recovering).toBe(true);
+    expect(hasPendingFrame()).toBe(false);
+    expect(session.isDirty()).toBe(true);
+    expect(useStore.getState().dirtyById).toEqual({ [fileId]: true });
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(write).not.toHaveBeenCalled();
+    expect(session.isDirty()).toBe(true);
+  });
+});
+
+describe("reload-from-disk command", () => {
+  it("asks before discarding a dirty scene and aborts when cancelled", async () => {
+    const { session } = openSession(fileId, { mode: "interval", ms: 5000 });
+    session.onChange(elements, appState, files);
+
+    await reloadCommand.perform({ store: useStore.getState(), session });
+
+    expect(unsavedChanges).toHaveBeenCalledExactlyOnceWith("switch");
+    expect(useStore.getState().editorGeneration).toBe(7);
+    expect(session.isDirty()).toBe(true);
+    expect(JSON.parse(session.getSerializedContent()!)).toEqual({ elements, appState, files });
+    expect(write).not.toHaveBeenCalled();
+  });
 });
 
 describe("applyEntries with drawing sessions", () => {
