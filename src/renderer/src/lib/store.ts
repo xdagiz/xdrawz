@@ -122,6 +122,7 @@ export type State = {
   watcherDown: string | null;
   isLoadingDrawings: boolean;
   pendingCanvasAction: boolean;
+  scratchUnsaved: boolean;
   editorGeneration: number;
   settings: AppSettings;
   settingsDialogOpen: boolean;
@@ -153,6 +154,7 @@ export type State = {
   overwriteOpenFileFromSession: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
   setPendingCanvasAction: (pending: boolean) => void;
+  setScratchUnsaved: (pending: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
   setPaletteOpen: (open: boolean) => void;
   reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
@@ -244,6 +246,7 @@ export const useStore = create<State>((set, get) => {
     watcherDown: null,
     isLoadingDrawings: true,
     pendingCanvasAction: false,
+    scratchUnsaved: false,
     editorGeneration: 0,
     settingsDialogOpen: false,
     paletteOpen: false,
@@ -272,6 +275,7 @@ export const useStore = create<State>((set, get) => {
           watcherDown: null,
           isLoadingDrawings: false,
           pendingCanvasAction: false,
+          scratchUnsaved: false,
           editorGeneration: state.editorGeneration + 1,
         };
       });
@@ -345,7 +349,7 @@ export const useStore = create<State>((set, get) => {
 
       if (sessionOwner.getActiveFileId() === fileId) {
         if (!isOpenableFile(get().entries, fileId)) {
-          set({ pendingCanvasAction: false });
+          set({ pendingCanvasAction: false, scratchUnsaved: false });
           return false;
         }
 
@@ -356,6 +360,7 @@ export const useStore = create<State>((set, get) => {
           externalConflict: null,
           recentFileIds,
           pendingCanvasAction: false,
+          scratchUnsaved: false,
         });
 
         void window.api.store.set("lastOpenedFileId", fileId);
@@ -568,6 +573,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     setPendingCanvasAction: (pending) => set({ pendingCanvasAction: pending }),
+    setScratchUnsaved: (pending) => set({ scratchUnsaved: pending }),
 
     reportError: (error, operation) =>
       set({

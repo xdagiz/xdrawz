@@ -1,3 +1,5 @@
+import type { AutosaveSetting } from "@shared/ipc";
+
 const startListeners = new Set<() => void>();
 let active = false;
 
@@ -40,11 +42,15 @@ export type CloseDecision = {
 export const closeDecision = (input: {
   visibleDirtyCount: number;
   sessionDirty: boolean;
+  scratchDirty: boolean;
+  autosaveMode: AutosaveSetting["mode"];
   hasConflict: boolean;
 }): CloseDecision => {
   const visibleDirty = input.visibleDirtyCount > 0;
   return {
-    mustFlush: visibleDirty || input.sessionDirty,
-    skipPrompt: !visibleDirty || input.hasConflict,
+    mustFlush: visibleDirty || input.sessionDirty || input.scratchDirty,
+    skipPrompt:
+      input.hasConflict ||
+      !(visibleDirty || (input.scratchDirty && input.autosaveMode !== "always")),
   };
 };

@@ -271,6 +271,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       boundFileIdRef.current = null;
       reservedIdRef.current = null;
       pendingSceneRef.current = null;
+      useStore.getState().setScratchUnsaved(false);
       creatingRef.current = false;
 
       if (session && sessionOwner.getSession() === session) {
@@ -301,6 +302,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       reservedIdRef.current = null;
       creatingRef.current = false;
       pendingSceneRef.current = null;
+      useStore.getState().setScratchUnsaved(false);
       return;
     }
 
@@ -325,6 +327,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     boundFileIdRef.current = null;
     reservedIdRef.current = null;
     pendingSceneRef.current = null;
+    useStore.getState().setScratchUnsaved(false);
     creatingRef.current = false;
 
     if (fileId === null) {
@@ -390,6 +393,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           void window.api.files.delete(id, "permanent").catch(() => undefined);
           creatingRef.current = false;
           pendingSceneRef.current = null;
+          useStore.getState().setScratchUnsaved(false);
           useStore.getState().setPendingCanvasAction(false);
           return;
         }
@@ -400,6 +404,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           void window.api.files.delete(id, "permanent").catch(() => undefined);
           creatingRef.current = false;
           pendingSceneRef.current = null;
+          useStore.getState().setScratchUnsaved(false);
           useStore.getState().setPendingCanvasAction(false);
           return;
         }
@@ -444,6 +449,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           void window.api.files.delete(id, "permanent").catch(() => undefined);
           creatingRef.current = false;
           pendingSceneRef.current = null;
+          useStore.getState().setScratchUnsaved(false);
           useStore.getState().setPendingCanvasAction(false);
           return;
         }
@@ -464,6 +470,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
         sessionRef.current = acquired;
         reservedIdRef.current = id;
+        useStore.getState().setScratchUnsaved(false);
 
         if (useStore.getState().openFileId !== startOpenFileId) {
           if (sessionOwner.getSession() === acquired) sessionOwner.releaseActive();
@@ -474,6 +481,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           reservedIdRef.current = null;
           creatingRef.current = false;
           pendingSceneRef.current = null;
+          useStore.getState().setScratchUnsaved(false);
           useStore.getState().setPendingCanvasAction(false);
           return;
         }
@@ -485,6 +493,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           if (generation !== generationRef.current) {
             creatingRef.current = false;
             pendingSceneRef.current = null;
+            useStore.getState().setScratchUnsaved(false);
             useStore.getState().setPendingCanvasAction(false);
             return;
           }
@@ -494,8 +503,14 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           viewportCache.delete(id);
           void window.api.files.delete(id, "permanent").catch(() => undefined);
 
+          sessionRef.current = null;
+          reservedIdRef.current = null;
           creatingRef.current = false;
-          pendingSceneRef.current = null;
+          useStore
+            .getState()
+            .setScratchUnsaved(
+              pendingSceneRef.current?.elements.some((element) => !element.isDeleted) ?? false,
+            );
 
           useStore.getState().setPendingCanvasAction(false);
           const appError = toAppError(error, "create");
@@ -510,12 +525,17 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         if (generation !== generationRef.current) {
           creatingRef.current = false;
           pendingSceneRef.current = null;
+          useStore.getState().setScratchUnsaved(false);
           useStore.getState().setPendingCanvasAction(false);
           return;
         }
 
         creatingRef.current = false;
-        pendingSceneRef.current = null;
+        useStore
+          .getState()
+          .setScratchUnsaved(
+            pendingSceneRef.current?.elements.some((element) => !element.isDeleted) ?? false,
+          );
 
         useStore.getState().setPendingCanvasAction(false);
         const appError = toAppError(error, "create");
@@ -553,6 +573,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     boundFileIdRef.current = null;
     reservedIdRef.current = null;
     pendingSceneRef.current = null;
+    useStore.getState().setScratchUnsaved(false);
     creatingRef.current = false;
 
     if (bound && useStore.getState().openFileId !== bound) viewportCache.delete(bound);
@@ -690,6 +711,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       pendingSceneRef.current = { elements, appState, files };
 
       const hasContent = elements.some((element) => !element.isDeleted);
+      useStore.getState().setScratchUnsaved(hasContent);
       if (!hasContent) return;
 
       startScratchCreation();

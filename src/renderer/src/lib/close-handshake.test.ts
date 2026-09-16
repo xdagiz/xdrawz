@@ -62,31 +62,73 @@ describe("close-handshake flag", () => {
 });
 
 describe("closeDecision", () => {
+  it.each([
+    ["always", true],
+    ["interval", false],
+    ["off", false],
+  ] as const)("flushes scratch work with the %s prompt policy", (autosaveMode, skipPrompt) => {
+    expect(
+      closeDecision({
+        visibleDirtyCount: 0,
+        sessionDirty: false,
+        scratchDirty: true,
+        autosaveMode,
+        hasConflict: false,
+      }),
+    ).toEqual({ mustFlush: true, skipPrompt });
+  });
+
   it("prompts when there is visible dirty state and no conflict", () => {
     expect(
-      closeDecision({ visibleDirtyCount: 1, sessionDirty: false, hasConflict: false }),
+      closeDecision({
+        visibleDirtyCount: 1,
+        sessionDirty: false,
+        hasConflict: false,
+        scratchDirty: false,
+        autosaveMode: "always",
+      }),
     ).toEqual({ mustFlush: true, skipPrompt: false });
   });
 
   it("skips the prompt when visible dirty state is accompanied by a conflict", () => {
-    expect(closeDecision({ visibleDirtyCount: 2, sessionDirty: true, hasConflict: true })).toEqual({
+    expect(
+      closeDecision({
+        visibleDirtyCount: 2,
+        sessionDirty: true,
+        hasConflict: true,
+        scratchDirty: false,
+        autosaveMode: "always",
+      }),
+    ).toEqual({
       mustFlush: true,
       skipPrompt: true,
     });
   });
 
   it("flushes a pending session write but skips the prompt when nothing is visibly dirty", () => {
-    expect(closeDecision({ visibleDirtyCount: 0, sessionDirty: true, hasConflict: false })).toEqual(
-      {
-        mustFlush: true,
-        skipPrompt: true,
-      },
-    );
+    expect(
+      closeDecision({
+        visibleDirtyCount: 0,
+        sessionDirty: true,
+        hasConflict: false,
+        scratchDirty: false,
+        autosaveMode: "always",
+      }),
+    ).toEqual({
+      mustFlush: true,
+      skipPrompt: true,
+    });
   });
 
   it("neither flushes nor prompts when everything is clean", () => {
     expect(
-      closeDecision({ visibleDirtyCount: 0, sessionDirty: false, hasConflict: false }),
+      closeDecision({
+        visibleDirtyCount: 0,
+        sessionDirty: false,
+        hasConflict: false,
+        scratchDirty: false,
+        autosaveMode: "always",
+      }),
     ).toEqual({ mustFlush: false, skipPrompt: true });
   });
 });

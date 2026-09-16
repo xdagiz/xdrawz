@@ -6,7 +6,8 @@ import { installRendererErrorHandlers } from "@/lib/report-error";
 
 import App from "./App";
 import { ErrorBoundary } from "./components/error-boundary";
-import { Toaster } from "./components/ui/toast";
+import { Toaster, toast } from "./components/ui/toast";
+import { createCloseFlow, waitForCanvasActionSettled } from "./lib/close-flow";
 import {
   closeDecision,
   createBeforeUnloadGuard,
@@ -27,83 +28,31 @@ window.addEventListener(
     const decision = closeDecision({
       visibleDirtyCount: Object.keys(state.dirtyById).length,
       sessionDirty: session?.isDirty() ?? false,
+      scratchDirty: false,
+      autosaveMode: state.settings.autosave.mode,
       hasConflict: state.externalConflict !== null,
     });
     return decision.mustFlush ? 1 : 0;
   }),
 );
 
-const CANVAS_ACTION_WAIT_MS = 4000;
-
-const waitForCanvasActionSettled = () =>
-  new Promise<void>((resolve) => {
-    if (!useStore.getState().pendingCanvasAction) {
-      resolve();
-      return;
-    }
-    const started = Date.now();
-    const timer = setInterval(() => {
-      if (!useStore.getState().pendingCanvasAction) {
-        clearInterval(timer);
-        resolve();
-        return;
-      }
-      if (Date.now() - started >= CANVAS_ACTION_WAIT_MS) {
-        clearInterval(timer);
-        console.warn("[close] canvas action did not settle before quit");
-        resolve();
-      }
-    }, 50);
-  });
-
-window.api.window.onWillClose((request) => {
-  setCloseHandshakeActive(true);
-
-  if (request.kind === "check") {
-    const session = sessionOwner.getSession();
-    session?.evaluateNow();
-    const state = useStore.getState();
-    const decision = closeDecision({
-      visibleDirtyCount: Object.keys(state.dirtyById).length,
-      sessionDirty: session?.isDirty() ?? false,
-      hasConflict: state.externalConflict !== null,
-    });
-    if (decision.mustFlush) session?.setAutosavePaused(true);
-    window.api.window.reportDirtyState(request.requestId, decision.mustFlush, decision.skipPrompt);
-    return;
-  }
-
-  void (async () => {
-    window.api.window.flushStarted(request.requestId);
-    if (useStore.getState().pendingCanvasAction) {
-      await waitForCanvasActionSettled();
-    }
-    const session = sessionOwner.getSession();
-    try {
-      if (session) await session.flush({ force: true, explicit: true });
-    } catch (error) {
-      reportRendererError(error, "save");
-      window.api.window.cancelQuit(request.requestId);
-      setCloseHandshakeActive(false);
-      return;
-    }
-
-    if (session?.isDirty()) {
-      window.api.window.cancelQuit(request.requestId);
-      setCloseHandshakeActive(false);
-      const state = useStore.getState();
-      if (state.externalConflict?.type === "changed") {
-        void state.resolveChangedConflict({ force: true });
-      } else if (state.externalConflict?.type === "missing") {
-        void state.resolveMissingConflict(undefined, { force: true });
-      }
-      return;
-    }
-
-    await window.api.window.close(request.requestId);
-    setCloseHandshakeActive(false);
-  })();
-});
+window.api.window.onWillClose(
+  createCloseFlow({
+    getState: useStore.getState,
+    getSession: () => sessionOwner.getSession(),
+    windowApi: window.api.window,
+    waitForCanvasActionSettled: () =>
+      waitForCanvasActionSettled(
+        () => useStore.getState().pendingCanvasAction,
+        (listener) =>
+          useStore.subscribe((state) => {
+            listener(state.pendingCanvasAction);
+          }),
+      ),
+    addToast: toast.add,
+    reportError: reportRendererError,
+  }),
+);
 
 window.api.window.onCloseCancelled(() => {
   setCloseHandshakeActive(false);
