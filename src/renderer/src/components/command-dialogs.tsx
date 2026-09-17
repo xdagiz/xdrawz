@@ -37,8 +37,9 @@ export const CommandRenameDialog = ({ open, onOpenChange }: DialogProps) => {
     if (!openFileId || committing || value.trim().length === 0) return;
     setCommitting(true);
     try {
-      const ok = await renameEntry(openFileId, value.trim());
-      if (ok) toast.add({ title: "Drawing renamed", type: "success" });
+      const renamed = await renameEntry(openFileId, value.trim());
+      if (renamed === null) return;
+      toast.add({ title: "Drawing renamed", type: "success" });
       onOpenChange(false);
     } catch (error) {
       toast.add({ title: toAppError(error, "rename").detail, type: "error" });

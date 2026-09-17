@@ -251,25 +251,28 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       const isFresh = freshDrawingId === fileId;
       const entry = entriesById.get(fileId);
       const changed = entry ? newName !== stripExcalidraw(entry.name) : true;
+      let targetId = fileId;
 
       try {
         if (changed) {
-          const ok = await renameEntry(fileId, newName);
-          if (!ok) {
+          const renamed = await renameEntry(fileId, newName);
+          if (renamed === null) {
             setRenameError(null);
             setRenamingId(null);
             return;
           }
 
-          toast.add({ title: "Drawing renamed", type: "success" });
+          targetId = renamed.id;
+          // Fresh drawings skip the toast; first rename is part of creation.
+          if (!isFresh) toast.add({ title: "Drawing renamed", type: "success" });
         }
 
         setRenameError(null);
         setRenamingId(null);
 
         if (isFresh) {
-          clearFreshMarker(fileId);
-          await setOpenFileId(fileId);
+          const opened = await setOpenFileId(targetId);
+          if (opened) clearFreshMarker(fileId);
         }
       } catch (error) {
         setRenameError(toAppError(error, "rename"));

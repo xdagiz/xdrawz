@@ -130,10 +130,10 @@ export type State = {
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
-  setOpenFileId: (fileId: string | null) => Promise<void>;
+  setOpenFileId: (fileId: string | null) => Promise<boolean>;
   openReservedFile: (fileId: string) => Promise<boolean>;
   openHome: () => Promise<void>;
-  renameEntry: (id: string, newName: string) => Promise<boolean>;
+  renameEntry: (id: string, newName: string) => Promise<FileEntry | null>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<boolean>;
   createEntry: (
     parentId: string | null,
@@ -309,14 +309,15 @@ export const useStore = create<State>((set, get) => {
 
     setOpenFileId: async (fileId) => {
       const current = get().openFileId;
-      if (fileId === current) return;
+      if (fileId === current) return true;
 
       const ok = await get().ensureCleanOrConfirm("switch");
-      if (!ok) return;
+      if (!ok) return false;
 
       if (fileId === null) {
         set({ openFileId: null, error: null, externalConflict: null });
         void window.api.store.set("lastOpenedFileId", null);
+        return true;
       } else if (isOpenableFile(get().entries, fileId)) {
         const recentFileIds = pushRecentId(get().recentFileIds, fileId);
         set({
@@ -327,6 +328,7 @@ export const useStore = create<State>((set, get) => {
           editorGeneration: get().editorGeneration + 1,
         });
         void window.api.store.set("lastOpenedFileId", fileId);
+        return true;
       } else {
         const staleRecentFileIds = removeRecentIds(get().recentFileIds, (rid) => rid === fileId);
         set({
@@ -340,6 +342,7 @@ export const useStore = create<State>((set, get) => {
           description: "The file no longer exists.",
           type: "error",
         });
+        return false;
       }
     },
 
@@ -382,7 +385,7 @@ export const useStore = create<State>((set, get) => {
       const openId = get().openFileId;
       if (isInsideSubtree(id, openId) && get().dirtyById[openId]) {
         const ok = await get().ensureCleanOrConfirm("switch");
-        if (!ok) return false;
+        if (!ok) return null;
       }
 
       const entry = await window.api.files.rename(id, newName);
@@ -422,7 +425,7 @@ export const useStore = create<State>((set, get) => {
         void window.api.store.set("lastOpenedFileId", next.openFileId);
       }
 
-      return true;
+      return entry;
     },
 
     deleteEntry: async (id, mode) => {

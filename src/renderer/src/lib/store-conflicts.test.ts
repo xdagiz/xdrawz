@@ -100,6 +100,58 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe("renameEntry", () => {
+  it("returns null without renaming when the unsaved-changes confirmation is cancelled", async () => {
+    const rename = vi.fn();
+    Object.assign(window.api.files, { rename });
+    const { session, fireFrame } = openSession(fileId, { mode: "off" });
+    session.onChange(elements, appState, files);
+    fireFrame();
+    const state = useStore.getState();
+
+    expect(await useStore.getState().renameEntry(fileId, "Renamed")).toBeNull();
+    expect(unsavedChanges).toHaveBeenCalledExactlyOnceWith("switch");
+    expect(rename).not.toHaveBeenCalled();
+    expect(useStore.getState()).toBe(state);
+    expect(session.isDirty()).toBe(true);
+  });
+
+  it("returns the renamed entry after updating state so a fresh drawing can be opened", async () => {
+    const created: FileEntry = {
+      id: "Untitled.excalidraw",
+      name: "Untitled.excalidraw",
+      kind: "file",
+      parentId: null,
+      modifiedAt: 100,
+      size: 0,
+    };
+    const renamed: FileEntry = {
+      ...created,
+      id: "My drawing.excalidraw",
+      name: "My drawing.excalidraw",
+      modifiedAt: 200,
+    };
+    Object.assign(window.api.files, {
+      create: vi.fn().mockResolvedValue(created),
+      rename: vi.fn().mockResolvedValue(renamed),
+    });
+    Object.assign(window.api, { store: { set: vi.fn() } });
+
+    const createdId = await useStore.getState().createEntry(null, "file");
+    const result = await useStore.getState().renameEntry(createdId!, "My drawing");
+
+    expect(result).not.toBeNull();
+    expect(result).toBe(renamed);
+    expect(useStore.getState().entries).toContainEqual(renamed);
+    expect(useStore.getState().entries.some((item) => item.id === createdId)).toBe(false);
+    expect(useStore.getState().openFileId).toBe(fileId);
+    expect(await useStore.getState().setOpenFileId(createdId!)).toBe(false);
+    expect(useStore.getState().openFileId).toBe(fileId);
+    expect(await useStore.getState().setOpenFileId(result!.id)).toBe(true);
+    expect(useStore.getState().openFileId).toBe("My drawing.excalidraw");
+  });
+});
+
 describe("missing-file recovery", () => {
   const prepareRecovery = (mode: AutosaveSetting = { mode: "interval", ms: 5000 }) => {
     const pending = Promise.withResolvers<FileEntry>();
