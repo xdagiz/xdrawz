@@ -57,6 +57,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
 
   let epoch = 0;
   let running = false;
+  let hydrationInFlight: Promise<void> | null = null;
 
   const notify = () => {
     for (const listener of listeners) listener();
@@ -137,27 +138,36 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
       };
     },
 
-    hydrate: async (entries) => {
-      const byId = new Map(
-        entries.filter((entry) => entry.kind === "file").map((entry) => [entry.id, entry] as const),
-      );
-      const ids = entries
-        .filter((entry) => entry.kind === "file" && !covers(records.get(entry.id), entry))
-        .map((entry) => entry.id);
-      if (ids.length === 0) return;
+    hydrate: (entries) => {
+      const task = (async () => {
+        const byId = new Map(
+          entries
+            .filter((entry) => entry.kind === "file")
+            .map((entry) => [entry.id, entry] as const),
+        );
+        const ids = entries
+          .filter((entry) => entry.kind === "file" && !covers(records.get(entry.id), entry))
+          .map((entry) => entry.id);
+        if (ids.length === 0) return;
 
-      const now = Date.now();
-      for (let i = 0; i < ids.length; i += MAX_THUMBNAIL_BATCH) {
-        const slice = await deps.apiFetch(ids.slice(i, i + MAX_THUMBNAIL_BATCH));
-        for (const record of slice) {
-          const entry = byId.get(record.fileId);
-          if (entry && covers(records.get(record.fileId), entry)) continue;
-          if (entry && (record.mtimeMs !== entry.modifiedAt || record.size !== entry.size))
-            continue;
-          records.set(record.fileId, { ...record, fetchedAt: now });
+        const now = Date.now();
+        for (let i = 0; i < ids.length; i += MAX_THUMBNAIL_BATCH) {
+          const slice = await deps.apiFetch(ids.slice(i, i + MAX_THUMBNAIL_BATCH));
+          for (const record of slice) {
+            const entry = byId.get(record.fileId);
+            if (entry && covers(records.get(record.fileId), entry)) continue;
+            if (entry && (record.mtimeMs !== entry.modifiedAt || record.size !== entry.size))
+              continue;
+            records.set(record.fileId, { ...record, fetchedAt: now });
+          }
         }
-      }
-      notify();
+        notify();
+      })();
+      hydrationInFlight = task;
+      void task.finally(() => {
+        if (hydrationInFlight === task) hydrationInFlight = null;
+      });
+      return task;
     },
 
     syncWithEntries: (entries) => {
@@ -219,15 +229,25 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
 
     force: (entry) => {
       known.set(entry.id, entry);
-      if (covers(records.get(entry.id), entry)) return;
-      if (inFlight.has(entry.id)) return;
-
-      queue.delete(entry.id);
       const myEpoch = epoch;
-      void generateOne(entry, myEpoch).then(() => {
-        if (myEpoch !== epoch) return;
-        if (queue.size > 0) slotPump.kick();
-      });
+      void (async () => {
+        const pending = hydrationInFlight;
+        if (pending) {
+          await pending.then(
+            () => undefined,
+            () => undefined,
+          );
+          if (myEpoch !== epoch) return;
+        }
+        if (covers(records.get(entry.id), entry)) return;
+        if (inFlight.has(entry.id)) return;
+
+        queue.delete(entry.id);
+        await generateOne(entry, myEpoch).then(() => {
+          if (myEpoch !== epoch) return;
+          if (queue.size > 0) slotPump.kick();
+        });
+      })();
     },
 
     cancelPending: () => {

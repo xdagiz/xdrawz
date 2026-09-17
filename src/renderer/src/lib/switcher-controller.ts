@@ -52,9 +52,9 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
   const controller = {
     getState: (): SwitcherState => state,
 
-    start: () => {
+    start: (direction: 1 | -1 = 1) => {
       if (state.phase === "cycling") {
-        controller.step(1);
+        controller.step(direction);
         return;
       }
       if (!deps.canSwitchNow()) return;
@@ -62,7 +62,7 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
       const candidates = deps.getCandidates();
       if (candidates.length <= 1) return;
 
-      state = { phase: "cycling", index: 1 };
+      state = { phase: "cycling", index: wrapIndex(direction, candidates.length) };
       armFallback();
       emit();
     },

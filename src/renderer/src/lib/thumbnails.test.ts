@@ -204,4 +204,28 @@ describe("thumbnail store", () => {
     await vi.waitFor(() => expect(deps.apiPut).toHaveBeenCalledTimes(2));
     expect(store.getRecord("doc.excalidraw")?.mtimeMs).toBe(200);
   });
+
+  it("force during in-flight hydration skips regeneration when the hydrated record covers", async () => {
+    const deps = makeDeps();
+    let releaseFetch: ((records: ThumbnailRecord[]) => void) | undefined;
+    deps.apiFetch.mockImplementation(
+      () =>
+        new Promise<ThumbnailRecord[]>((resolvePromise) => {
+          releaseFetch = resolvePromise;
+        }),
+    );
+    const store = createThumbnailStore(deps);
+    const target = entry("race.excalidraw");
+
+    const hydration = store.hydrate([target]);
+    store.force(target);
+    releaseFetch?.([{ fileId: target.id, mtimeMs: target.modifiedAt, size: target.size, ...pair }]);
+    await hydration;
+
+    await vi.waitFor(() => {
+      expect(store.getRecord(target.id)).toBeDefined();
+    });
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 30));
+    expect(deps.generate).not.toHaveBeenCalled();
+  });
 });

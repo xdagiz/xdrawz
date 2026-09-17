@@ -59,20 +59,17 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
     detachReleaseRef.current = () => window.removeEventListener("keyup", onKeyUp, true);
   };
 
-  useHotkey(
-    "Control+Tab",
-    () => {
-      if (controller.getState().phase === "cycling") {
-        controller.step(1);
-        return;
-      }
+  const cycle = (direction: 1 | -1) => {
+    const wasCycling = controller.getState().phase === "cycling";
+    controller.start(direction);
+    if (!wasCycling && controller.getState().phase === "cycling") {
       heldKeysRef.current = new Set(["Control", "Tab"]);
       beginReleaseTracking();
-      controller.start();
-    },
-    { preventDefault: false },
-  );
-  useHotkey("Control+Shift+Tab", () => controller.step(-1), { preventDefault: false });
+    }
+  };
+
+  useHotkey("Control+Tab", () => cycle(1), { preventDefault: false });
+  useHotkey("Control+Shift+Tab", () => cycle(-1), { preventDefault: false });
 
   useEffect(() => {
     if (state.phase !== "cycling") return undefined;

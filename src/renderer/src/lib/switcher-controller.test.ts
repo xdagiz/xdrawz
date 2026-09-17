@@ -49,22 +49,45 @@ describe("switcher-controller", () => {
     expect(h.committed).toEqual([]);
   });
 
-  it("start stays idle with fewer than two candidates", () => {
-    const h = harness({ getCandidates: () => ["only"] });
-    h.controller.start();
+  it("reverse start opens cycling with the last drawing highlighted", () => {
+    const h = harness();
+    h.controller.start(-1);
 
-    expect(h.lastState()).toEqual({ phase: "idle" });
+    expect(h.controller.getState()).toEqual({ phase: "cycling", index: 2 });
+    expect(h.states).toEqual([{ phase: "cycling", index: 2 }]);
+    expect(h.committed).toEqual([]);
+    expect(vi.getTimerCount()).toBe(1);
   });
 
-  it("the guard flag blocks start", () => {
+  it.each([1, -1] as const)("start(%i) stays idle with zero or one candidate", (direction) => {
+    const h = harness();
+    for (const candidates of [[], ["only"]]) {
+      h.setCandidates(candidates);
+      h.controller.start(direction);
+
+      expect(h.controller.getState()).toEqual({ phase: "idle" });
+      expect(h.states).toEqual([]);
+      expect(h.committed).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  });
+
+  it.each([
+    [1, 1],
+    [-1, 2],
+  ] as const)("the guard flag blocks start(%i)", (direction, index) => {
     let blocked = true;
     const h = harness({ canSwitchNow: () => !blocked });
-    h.controller.start();
-    expect(h.lastState()).toEqual({ phase: "idle" });
+    h.controller.start(direction);
+    expect(h.controller.getState()).toEqual({ phase: "idle" });
+    expect(h.states).toEqual([]);
+    expect(h.committed).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
 
     blocked = false;
-    h.controller.start();
-    expect(h.lastState()).toEqual({ phase: "cycling", index: 1 });
+    h.controller.start(direction);
+    expect(h.lastState()).toEqual({ phase: "cycling", index });
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it("stepping wraps in both directions", () => {
@@ -87,6 +110,51 @@ describe("switcher-controller", () => {
     h.controller.start();
 
     expect(h.lastState()).toEqual({ phase: "cycling", index: 2 });
+  });
+
+  it("repeated reverse start steps backward and wraps", () => {
+    const h = harness();
+    h.controller.start();
+
+    h.controller.start(-1);
+    expect(h.lastState()).toEqual({ phase: "cycling", index: 0 });
+
+    h.controller.start(-1);
+    expect(h.lastState()).toEqual({ phase: "cycling", index: 2 });
+
+    h.controller.start(-1);
+    expect(h.lastState()).toEqual({ phase: "cycling", index: 1 });
+    expect(h.committed).toEqual([]);
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("alternating start directions moves within the same cycle", () => {
+    const h = harness();
+    h.controller.start(-1);
+    h.controller.start(1);
+    h.controller.start(-1);
+    h.controller.start(1);
+
+    expect(h.states).toEqual([
+      { phase: "cycling", index: 2 },
+      { phase: "cycling", index: 0 },
+      { phase: "cycling", index: 2 },
+      { phase: "cycling", index: 0 },
+    ]);
+    expect(h.committed).toEqual([]);
+  });
+
+  it("reverse commit dispatches the last drawing and clears the fallback timer", () => {
+    const h = harness();
+    h.controller.start(-1);
+    h.controller.commit();
+
+    expect(h.committed).toEqual(["c"]);
+    expect(h.controller.getState()).toEqual({ phase: "idle" });
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(2000);
+    expect(h.committed).toEqual(["c"]);
   });
 
   it("commit dispatches the highlighted id, returns to idle first, and clears timers", () => {
