@@ -204,6 +204,63 @@ describe("createDrawingSession", () => {
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
 
+  it("skips an unchanged loaded drawing without writing", async () => {
+    const { session, save } = makeSession({
+      initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
+    });
+    session.onChange([el("a")], appState(), emptyFiles);
+    expect(await session.saveNow()).toBe("unchanged");
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("skips a repeated save after persistence succeeds", async () => {
+    const { session, save } = makeSession();
+    session.onChange([el("a")], appState(), emptyFiles);
+    expect(await session.saveNow()).toBe("saved");
+    expect(await session.saveNow()).toBe("unchanged");
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it("evaluates a pending stroke before deciding whether to save", async () => {
+    const frame = manualScheduler();
+    const { session, save } = makeSession({
+      initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
+      scheduleFrame: frame.scheduleFrame,
+    });
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    expect(await session.saveNow()).toBe("saved");
+    expect(JSON.parse(save.mock.calls[0][1]).elements).toEqual([el("a"), el("b")]);
+  });
+
+  it("reports newer edits without chasing them when autosave is off", async () => {
+    const pending = Promise.withResolvers<boolean>();
+    const { session, save } = makeSession({
+      save: () => pending.promise,
+      initialAutosave: { mode: "off" },
+    });
+    session.onChange([el("a")], appState(), emptyFiles);
+    const saving = session.saveNow();
+    session.onChange([el("b")], appState(), emptyFiles);
+    pending.resolve(true);
+    expect(await saving).toBe("saved-with-changes");
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(session.isDirty()).toBe(true);
+  });
+
+  it("rechecks duplicate queued saves after the first write succeeds", async () => {
+    const pending = Promise.withResolvers<boolean>();
+    const { session, save } = makeSession({ save: () => pending.promise });
+    session.onChange([el("a")], appState(), emptyFiles);
+    const first = session.saveNow();
+    const second = session.saveNow();
+    pending.resolve(true);
+    expect(await first).toBe("saved");
+    expect(await second).toBe("unchanged");
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
   it("saveNow persists the latest drawing immediately", async () => {
     const { session, dirty, save } = makeSession({
       initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
@@ -216,7 +273,7 @@ describe("createDrawingSession", () => {
 
     const saved = await session.saveNow();
 
-    expect(saved).toBe(true);
+    expect(saved).toBe("saved");
     expect(save).toHaveBeenCalledTimes(1);
     expect(dirty).toHaveBeenLastCalledWith("f1", false);
   });
@@ -228,12 +285,12 @@ describe("createDrawingSession", () => {
 
     const saved = await session.saveNow();
 
-    expect(saved).toBe(true);
+    expect(saved).toBe("saved");
     expect(save).toHaveBeenCalled();
     expect(dirty).not.toHaveBeenCalled();
   });
 
-  it("saveNow reports a failed persistence as false", async () => {
+  it("saveNow reports failed persistence", async () => {
     const save = vi.fn().mockResolvedValue(false);
     const { session } = makeSession({
       save,
@@ -245,7 +302,7 @@ describe("createDrawingSession", () => {
 
     const saved = await session.saveNow();
 
-    expect(saved).toBe(false);
+    expect(saved).toBe("failed");
     expect(save).toHaveBeenCalledTimes(1);
   });
 
@@ -539,7 +596,7 @@ describe("createDrawingSession", () => {
 
   it("saveNow calls report their own result under concurrency", async () => {
     const resolvers: Array<(ok: boolean) => void> = [];
-    const save = vi.fn(
+    const save = vi.fn<(id: string, content: string) => Promise<boolean>>(
       () =>
         new Promise<boolean>((resolve) => {
           resolvers.push(resolve);
@@ -556,17 +613,19 @@ describe("createDrawingSession", () => {
 
     const first = session.saveNow();
     const second = session.saveNow();
+    session.onChange([el("c")], appState(), emptyFiles);
 
     expect(save).toHaveBeenCalledTimes(1);
 
     resolvers[0]?.(true);
-    await expect(first).resolves.toBe(true);
+    await expect(first).resolves.toBe("saved-with-changes");
     await vi.advanceTimersByTimeAsync(0);
 
     expect(save).toHaveBeenCalledTimes(2);
 
+    expect(JSON.parse(save.mock.calls[1][1]).elements).toEqual([el("c")]);
     resolvers[1]?.(false);
-    await expect(second).resolves.toBe(false);
+    await expect(second).resolves.toBe("failed");
   });
 
   it("setAutosaveMode keeps a pending save on its original deadline", async () => {

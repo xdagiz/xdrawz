@@ -537,8 +537,8 @@ export const useStore = create<State>((set, get) => {
       const session = sessionOwner.getSession();
       if (!session) return false;
 
-      const saved = await session.saveNow();
-      if (!saved) {
+      const result = await session.saveNow({ force: true });
+      if (result === "failed") {
         set({
           error: toAppError(
             codedError("Your changes couldn't be written to disk", {
@@ -553,7 +553,7 @@ export const useStore = create<State>((set, get) => {
         });
       }
 
-      return saved;
+      return result === "saved" || result === "saved-with-changes";
     },
 
     setFileDirty: (id, dirty) => {

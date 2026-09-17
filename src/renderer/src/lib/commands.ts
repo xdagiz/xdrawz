@@ -117,7 +117,7 @@ export const buildCommands = (hooks: CommandPaletteHooks): CommandDef[] => [
       if (!ctx.session) return;
       try {
         const saved = await ctx.session.saveNow();
-        if (saved) toast.add({ title: "Saved", type: "success" });
+        if (saved === "saved") toast.add({ title: "Saved", type: "success" });
       } catch (error) {
         reportFailure(error, "save", "Couldn’t save the drawing");
       }

@@ -7,7 +7,7 @@ import { createSessionOwner } from "./session-owner";
 
 const makeSession = () => ({
   onChange: vi.fn(),
-  saveNow: vi.fn(async () => true),
+  saveNow: vi.fn(async () => "saved" as const),
   flush: vi.fn(async () => {}),
   setAutosavePaused: vi.fn(),
   getSerializedContent: vi.fn(() => "{}"),

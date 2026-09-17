@@ -266,7 +266,7 @@ describe("applyEntries with drawing sessions", () => {
   it("uses clean behavior after the latest edit has been saved successfully", async () => {
     const { session } = openSession();
     session.onChange(elements, appState, files);
-    expect(await session.saveNow()).toBe(true);
+    expect(await session.saveNow()).toBe("saved");
     expect(session.isDirty()).toBe(false);
     useStore.getState().setFileDirty(fileId, true);
 

@@ -10,6 +10,7 @@ import { debounceAsync } from "@/lib/debounce";
 export const MAX_SAVE_RETRIES = 3;
 
 export type SaveOrigin = "auto" | "explicit";
+export type SaveResult = "saved" | "saved-with-changes" | "unchanged" | "failed" | "cancelled";
 
 type DrawingSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFiles];
 
@@ -36,7 +37,7 @@ export type DrawingSessionControls = {
     appState: AppState,
     files: BinaryFiles,
   ) => void;
-  saveNow: () => Promise<boolean>;
+  saveNow: (options?: { force?: boolean }) => Promise<SaveResult>;
   flush: (opts?: FlushOpts) => Promise<void>;
   setAutosavePaused: (paused: boolean) => void;
   getSerializedContent: () => string | null;
@@ -63,6 +64,7 @@ type DrawingSessionDeps = {
   initialBaseline?: string | null;
   initialAutosave?: AutosaveSetting;
   scheduleFrame?: FrameScheduler;
+  hasExternalConflict?: () => boolean;
 };
 
 export const drawingSignature = (
@@ -228,6 +230,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     const [targetElements, targetAppState, targetFiles] = targetSnapshot;
 
     const epochAtStart = retargetEpoch;
+    const targetSignature = signatureFor(targetElements, targetAppState, targetFiles);
     const mySeq = ++saveSeq;
     savesInFlight += 1;
 
@@ -241,7 +244,8 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
         persistedSeq = mySeq;
         saveFailures = 0;
         if (epochAtStart === retargetEpoch) {
-          baseline = signatureFor(targetElements, targetAppState, targetFiles);
+          baseline = targetSignature;
+          diskBaseline = targetSignature;
           setDirty(latestSignature !== baseline);
           if (!dirty) debounced.cancel();
           else if (mode !== "off") retryLatest();
@@ -319,24 +323,38 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     }
   };
 
-  const saveNow = async () => {
-    if (disposed || blocked || !latestDrawing) return false;
-
-    runPendingEvaluation();
-    if (!latestDrawing) return false;
-
-    debounced.cancel();
-    const run = async (): Promise<boolean> => {
+  const saveNow = async (options?: { force?: boolean }): Promise<SaveResult> => {
+    const requestedLifetime = lifetime;
+    const run = async (): Promise<SaveResult> => {
+      if (disposed || blocked || requestedLifetime !== lifetime || !latestDrawing)
+        return "cancelled";
+      runPendingEvaluation();
       const current = latestDrawing;
-      if (!current || disposed) return false;
       const [currentElements, currentAppState, currentFiles] = current;
-      return persistDrawing(
+      const signature = signatureFor(currentElements, currentAppState, currentFiles);
+      if (
+        !options?.force &&
+        !deps.hasExternalConflict?.() &&
+        savesInFlight === 0 &&
+        signature === diskBaseline
+      ) {
+        debounced.cancel();
+        return "unchanged";
+      }
+      debounced.cancel();
+      const saved = await persistDrawing(
         currentElements,
         currentAppState,
         currentFiles,
         latestRevision,
         "explicit",
       );
+      if (disposed || requestedLifetime !== lifetime) return "cancelled";
+      if (!saved) return "failed";
+      runPendingEvaluation();
+      return latestSignature === diskBaseline && savesInFlight === 0
+        ? "saved"
+        : "saved-with-changes";
     };
     if (!explicitSaveInFlight) {
       explicitSaveInFlight = true;
@@ -499,6 +517,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
         persistedSeq = mySeq;
         appliedSeq = Math.max(appliedSeq, mySeq);
         baseline = signature;
+        diskBaseline = signature;
         saveFailures = 0;
         setDirty(latestSignature !== baseline);
         if (!dirty) debounced.cancel();
@@ -583,6 +602,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       cachedInputs = null;
       cachedSignature = "";
       baseline = null;
+      diskBaseline = null;
       setDirty(false);
     },
     capturePersistence,

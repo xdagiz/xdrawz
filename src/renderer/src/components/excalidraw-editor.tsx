@@ -355,6 +355,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       fileId,
       createDrawingSession({
         fileId,
+        hasExternalConflict: () => useStore.getState().externalConflict !== null,
         save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
         onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
         initialAutosave: useStore.getState().settings.autosave,
@@ -427,6 +428,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           id,
           createDrawingSession({
             fileId: id,
+            hasExternalConflict: () => useStore.getState().externalConflict !== null,
             save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
             onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
             initialAutosave: useStore.getState().settings.autosave,
@@ -656,7 +658,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       const session = sessionRef.current;
       if (session) {
         const saved = await session.saveNow();
-        if (saved) toast.add({ title: "Saved", type: "success" });
+        if (saved === "saved") toast.add({ title: "Saved", type: "success" });
         return;
       }
 
