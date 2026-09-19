@@ -6,6 +6,7 @@ import { buildCommands, type CommandDef } from "@/lib/commands";
 import { rankEntries } from "@/lib/fuzzy-rank";
 import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
+import { ancestorIdsOf } from "@/lib/tree";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { CommandDeleteDialog, CommandRenameDialog } from "./command-dialogs";
@@ -36,6 +37,7 @@ const MAX_HITS_PER_SOURCE = 8;
 type DrawingSearchEntry = {
   id: string;
   label: string;
+  folderPath: string;
   modifiedAt: number;
 };
 
@@ -49,6 +51,7 @@ type CommandRow = {
 type DrawingRow = {
   id: string;
   label: string;
+  folderPath: string;
   disabled: boolean;
 };
 
@@ -89,11 +92,17 @@ const DrawingRowItem = memo(function DrawingRowItem({
     <CommandItem
       value={`entry:${row.id}`}
       disabled={row.disabled}
+      title={row.folderPath ? `${row.folderPath}/${row.label}` : row.label}
       onClick={() => {
         if (!row.disabled) onChoose(row.id);
       }}
     >
-      <span className="min-w-0 truncate">{row.label}</span>
+      <span className="min-w-0 flex-1 truncate">{row.label}</span>
+      {row.folderPath && (
+        <span className="text-muted-foreground max-w-[50%] min-w-0 shrink truncate text-xs">
+          {row.folderPath}
+        </span>
+      )}
     </CommandItem>
   );
 });
@@ -162,17 +171,22 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const deferredQuery = useDeferredValue(query);
   const trimmedQuery = deferredQuery.trim();
 
-  const drawingSearchEntries = useMemo<DrawingSearchEntry[]>(
-    () =>
-      entries
-        .filter((entry) => entry.kind === "file")
-        .map((entry) => ({
-          id: entry.id,
-          label: stripExcalidraw(entry.name),
-          modifiedAt: entry.modifiedAt,
-        })),
-    [entries],
-  );
+  const drawingSearchEntries = useMemo<DrawingSearchEntry[]>(() => {
+    const folderLabelById = new Map(
+      entries.filter((entry) => entry.kind === "directory").map((entry) => [entry.id, entry.name]),
+    );
+
+    return entries
+      .filter((entry) => entry.kind === "file")
+      .map((entry) => ({
+        id: entry.id,
+        label: stripExcalidraw(entry.name),
+        folderPath: ancestorIdsOf(entry.id)
+          .map((ancestorId) => folderLabelById.get(ancestorId) ?? ancestorId)
+          .join("/"),
+        modifiedAt: entry.modifiedAt,
+      }));
+  }, [entries]);
 
   const renderState = useMemo(
     () => ({ openFileId, theme: themeForCommands }),
@@ -215,12 +229,13 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
         : rankEntries(
             trimmedQuery,
             drawingSearchEntries,
-            (entry) => entry.label,
+            (entry) => (entry.folderPath ? `${entry.folderPath}/${entry.label}` : entry.label),
             (entry) => entry.modifiedAt,
           ).slice(0, MAX_HITS_PER_SOURCE);
     return hits.map((file) => ({
       id: file.id,
       label: file.label,
+      folderPath: file.folderPath,
       disabled: conflictActive && file.id === conflictFileId,
     }));
   }, [trimmedQuery, drawingSearchEntries, conflictActive, conflictFileId]);
