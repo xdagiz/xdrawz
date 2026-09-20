@@ -1,7 +1,7 @@
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 import type { FileDeleteMode, FileEntry } from "@shared/ipc";
 import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
-import { PlusIcon, SettingsIcon } from "lucide-react";
+import { PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyDrawings } from "@/components/empty-drawings";
@@ -63,7 +63,10 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const deleteEntry = useStore((s) => s.deleteEntry);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
+  const searchOpen = useStore((s) => s.searchOpen);
+  const setSearchOpen = useStore((s) => s.setSearchOpen);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
+  const dialogsOpen = settingsDialogOpen || paletteOpen || searchOpen;
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<AppError | null>(null);
@@ -318,7 +321,6 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     [handleCreate],
   );
 
-  const dialogsOpen = settingsDialogOpen || paletteOpen;
   useHotkey("Mod+N", () => void handleCreate(null, "file"), { enabled: !dialogsOpen });
   useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"), {
     enabled: !dialogsOpen,
@@ -430,16 +432,27 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
             >
               Drawings
             </button>
-            <button
-              type="button"
-              aria-label="New drawing or folder"
-              title="New drawing or folder"
-              disabled={isLoadingDrawings}
-              className="text-muted-foreground hover:text-foreground -mr-1 rounded p-0.5 transition-colors disabled:opacity-40"
-              onClick={(e) => void openRootMenu(e.clientX, e.clientY)}
-            >
-              <PlusIcon className="size-3.5" />
-            </button>
+            <div className="-mr-1 flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Search drawings"
+                title="Search drawings"
+                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                onClick={() => setSearchOpen(true)}
+              >
+                <SearchIcon className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label="New drawing or folder"
+                title="New drawing or folder"
+                disabled={isLoadingDrawings}
+                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors disabled:opacity-40"
+                onClick={(e) => void openRootMenu(e.clientX, e.clientY)}
+              >
+                <PlusIcon className="size-3.5" />
+              </button>
+            </div>
           </SidebarGroupLabel>
         </SidebarHeader>
         <ScrollAreaPrimitive.Root

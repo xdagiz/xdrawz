@@ -1,15 +1,16 @@
 import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 
+import { useListBottomFade } from "@/hooks/use-list-bottom-fade";
 import { buildCommands, type CommandDef } from "@/lib/commands";
+import { buildDrawingSearchEntries, rankDrawingHits, type DrawingRow } from "@/lib/drawing-search";
 import { rankEntries } from "@/lib/fuzzy-rank";
 import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
-import { ancestorIdsOf } from "@/lib/tree";
-import { stripExcalidraw } from "@/lib/utils";
 
 import { CommandDeleteDialog, CommandRenameDialog } from "./command-dialogs";
+import { DrawingRowItem } from "./drawing-search";
 import {
   Command,
   CommandCollection,
@@ -34,25 +35,11 @@ type Props = {
 
 const MAX_HITS_PER_SOURCE = 8;
 
-type DrawingSearchEntry = {
-  id: string;
-  label: string;
-  folderPath: string;
-  modifiedAt: number;
-};
-
 type CommandRow = {
   id: string;
   command: CommandDef;
   disabled: boolean;
   suffix: string;
-};
-
-type DrawingRow = {
-  id: string;
-  label: string;
-  folderPath: string;
-  disabled: boolean;
 };
 
 const CommandRowItem = memo(function CommandRowItem({
@@ -81,32 +68,6 @@ const CommandRowItem = memo(function CommandRowItem({
   );
 });
 
-const DrawingRowItem = memo(function DrawingRowItem({
-  row,
-  onChoose,
-}: {
-  row: DrawingRow;
-  onChoose: (fileId: string) => void;
-}) {
-  return (
-    <CommandItem
-      value={`entry:${row.id}`}
-      disabled={row.disabled}
-      title={row.folderPath ? `${row.folderPath}/${row.label}` : row.label}
-      onClick={() => {
-        if (!row.disabled) onChoose(row.id);
-      }}
-    >
-      <span className="min-w-0 flex-1 truncate">{row.label}</span>
-      {row.folderPath && (
-        <span className="text-muted-foreground max-w-[50%] min-w-0 shrink truncate text-xs">
-          {row.folderPath}
-        </span>
-      )}
-    </CommandItem>
-  );
-});
-
 export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const [query, setQuery] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
@@ -119,29 +80,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const openFileId = useStore((s) => s.openFileId);
   const themeForCommands = useStore((s) => s.settings.theme);
   const { toggleSidebar } = useSidebar();
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const [bottomFade, setBottomFade] = useState(false);
-
-  const updateBottomFade = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    setBottomFade(el.scrollTop + el.clientHeight < el.scrollHeight - 1);
-  }, []);
-
-  useEffect(() => {
-    if (!open) return () => {};
-    updateBottomFade();
-    const el = listRef.current;
-    if (!el) return () => {};
-    const ro = new ResizeObserver(() => updateBottomFade());
-    ro.observe(el);
-    const mo = new MutationObserver(() => updateBottomFade());
-    mo.observe(el, { childList: true, subtree: true });
-    return () => {
-      ro.disconnect();
-      mo.disconnect();
-    };
-  }, [updateBottomFade, open]);
+  const { listRef, bottomFade, updateBottomFade } = useListBottomFade(open);
 
   useEffect(() => {
     if (open && settingsDialogOpen) setSettingsDialogOpen(false);
@@ -171,22 +110,7 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
   const deferredQuery = useDeferredValue(query);
   const trimmedQuery = deferredQuery.trim();
 
-  const drawingSearchEntries = useMemo<DrawingSearchEntry[]>(() => {
-    const folderLabelById = new Map(
-      entries.filter((entry) => entry.kind === "directory").map((entry) => [entry.id, entry.name]),
-    );
-
-    return entries
-      .filter((entry) => entry.kind === "file")
-      .map((entry) => ({
-        id: entry.id,
-        label: stripExcalidraw(entry.name),
-        folderPath: ancestorIdsOf(entry.id)
-          .map((ancestorId) => folderLabelById.get(ancestorId) ?? ancestorId)
-          .join("/"),
-        modifiedAt: entry.modifiedAt,
-      }));
-  }, [entries]);
+  const drawingSearchEntries = useMemo(() => buildDrawingSearchEntries(entries), [entries]);
 
   const renderState = useMemo(
     () => ({ openFileId, theme: themeForCommands }),
@@ -220,25 +144,17 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     }));
   }, [trimmedQuery, visibleCommands, conflictActive, renderState]);
 
-  const drawingHits = useMemo<DrawingRow[]>(() => {
-    const hits =
-      trimmedQuery.length === 0
-        ? drawingSearchEntries
-            .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
-            .slice(0, MAX_HITS_PER_SOURCE)
-        : rankEntries(
-            trimmedQuery,
-            drawingSearchEntries,
-            (entry) => (entry.folderPath ? `${entry.folderPath}/${entry.label}` : entry.label),
-            (entry) => entry.modifiedAt,
-          ).slice(0, MAX_HITS_PER_SOURCE);
-    return hits.map((file) => ({
-      id: file.id,
-      label: file.label,
-      folderPath: file.folderPath,
-      disabled: conflictActive && file.id === conflictFileId,
-    }));
-  }, [trimmedQuery, drawingSearchEntries, conflictActive, conflictFileId]);
+  const drawingHits = useMemo(
+    () =>
+      rankDrawingHits({
+        query: trimmedQuery,
+        entries: drawingSearchEntries,
+        conflictActive,
+        conflictFileId,
+        maxHits: MAX_HITS_PER_SOURCE,
+      }),
+    [trimmedQuery, drawingSearchEntries, conflictActive, conflictFileId],
+  );
 
   const isEmpty = commandHits.length === 0 && drawingHits.length === 0;
 

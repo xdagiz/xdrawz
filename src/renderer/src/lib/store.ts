@@ -127,6 +127,7 @@ export type State = {
   settings: AppSettings;
   settingsDialogOpen: boolean;
   paletteOpen: boolean;
+  searchOpen: boolean;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
@@ -157,6 +158,7 @@ export type State = {
   setScratchUnsaved: (pending: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
   setPaletteOpen: (open: boolean) => void;
+  setSearchOpen: (open: boolean) => void;
   reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
   reloadOpenFileFromDisk: () => void;
   discardMissingOpenFile: () => void;
@@ -250,6 +252,7 @@ export const useStore = create<State>((set, get) => {
     editorGeneration: 0,
     settingsDialogOpen: false,
     paletteOpen: false,
+    searchOpen: false,
     settings:
       typeof window !== "undefined"
         ? { ...DEFAULT_SETTINGS, theme: readStoredTheme(window.localStorage) }
@@ -586,6 +589,7 @@ export const useStore = create<State>((set, get) => {
     reportWatcherError: (event) => set({ watcherDown: event.message }),
     setSettingsDialogOpen: (open) => set({ settingsDialogOpen: open }),
     setPaletteOpen: (open) => set({ paletteOpen: open }),
+    setSearchOpen: (open) => set({ searchOpen: open }),
     resolveChangedConflict,
     resolveMissingConflict,
     recoverMissingOpenFile,

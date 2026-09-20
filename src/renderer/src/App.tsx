@@ -7,6 +7,7 @@ import { stripExcalidraw } from "@/lib/utils";
 
 import { AppSidebar } from "./components/app-sidebar";
 import { CommandPalette } from "./components/command-palette";
+import { DrawingSearch } from "./components/drawing-search";
 import { DrawingSwitcher } from "./components/drawing-switcher";
 import { EditorView } from "./components/editor-view";
 import { ErrorBoundary } from "./components/error-boundary";
@@ -40,6 +41,8 @@ const App = () => {
   const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
   const setPaletteOpen = useStore((s) => s.setPaletteOpen);
+  const searchOpen = useStore((s) => s.searchOpen);
+  const setSearchOpen = useStore((s) => s.setSearchOpen);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
 
   const conflictPromptRef = useRef<string | null>(null);
@@ -57,12 +60,13 @@ const App = () => {
     }
   }, []);
 
+  useHotkey("Mod+/", () => setPaletteOpen(!paletteOpen));
+  useHotkey("Mod+P", () => setSearchOpen(!searchOpen));
   useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
   useHotkey("Mod+W", () => void setOpenFileId(null), {
     enabled: !settingsDialogOpen && !paletteOpen,
     requireReset: true,
   });
-  useHotkey("Mod+K", () => setPaletteOpen(!paletteOpen));
 
   useEffect(() => {
     if (!openFileId) {
@@ -204,6 +208,7 @@ const App = () => {
         </SidebarInset>
         <SettingsDialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <DrawingSearch open={searchOpen} onOpenChange={setSearchOpen} />
         {switcher.state.phase === "cycling" && (
           <DrawingSwitcher
             index={switcher.state.index}
