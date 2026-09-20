@@ -6,6 +6,7 @@ import {
   ancestorIdsOf,
   buildSortedChildIndex,
   findTypeaheadMatch,
+  flattenVisibleEntries,
   readExpandedFolderIds,
   sortSiblings,
   writeExpandedFolderIds,
@@ -80,6 +81,58 @@ describe("buildSortedChildIndex", () => {
       "sketch 2.excalidraw",
       "sketch 10.excalidraw",
     ]);
+  });
+});
+
+describe("flattenVisibleEntries", () => {
+  const entries = [
+    entry("alpha", "directory"),
+    entry("alpha/one.excalidraw"),
+    entry("alpha/nested", "directory"),
+    entry("alpha/nested/deep.excalidraw"),
+    entry("beta", "directory"),
+    entry("beta/two.excalidraw"),
+  ];
+  const childIndex = buildSortedChildIndex(entries);
+
+  it("shows only roots when nothing is expanded", () => {
+    const flat = flattenVisibleEntries(childIndex, new Set());
+
+    expect(flat.map((row) => row.entry.id)).toEqual(["alpha", "beta"]);
+    expect(flat.map((row) => [row.level, row.posInSet, row.setSize, row.isExpanded])).toEqual([
+      [0, 0, 2, false],
+      [0, 1, 2, false],
+    ]);
+  });
+
+  it("inlines expanded children in order with correct depth metadata", () => {
+    const flat = flattenVisibleEntries(childIndex, new Set(["alpha"]));
+
+    expect(flat.map((row) => row.entry.id)).toEqual([
+      "alpha",
+      "alpha/nested",
+      "alpha/one.excalidraw",
+      "beta",
+    ]);
+    expect(flat.map((row) => [row.level, row.posInSet, row.setSize, row.isExpanded])).toEqual([
+      [0, 0, 2, true],
+      [1, 0, 2, false],
+      [1, 1, 2, false],
+      [0, 1, 2, false],
+    ]);
+  });
+
+  it("recurses into nested expanded folders", () => {
+    const flat = flattenVisibleEntries(childIndex, new Set(["alpha", "alpha/nested"]));
+
+    expect(flat.map((row) => row.entry.id)).toEqual([
+      "alpha",
+      "alpha/nested",
+      "alpha/nested/deep.excalidraw",
+      "alpha/one.excalidraw",
+      "beta",
+    ]);
+    expect(flat.map((row) => row.level)).toEqual([0, 1, 2, 1, 0]);
   });
 });
 

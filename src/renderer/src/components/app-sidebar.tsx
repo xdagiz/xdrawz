@@ -105,7 +105,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
   const ignoreSelectionChange = useCallback(() => {}, []);
 
-  const tree = useFileTree({
+  const { tree, rows: treeItems } = useFileTree({
     childIndex,
     expandedItems,
     onExpandedItemsChange: setExpandedItems,
@@ -113,11 +113,6 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     onSelectedItemsChange: ignoreSelectionChange,
     onPrimaryAction: handlePrimaryAction,
   });
-
-  useEffect(() => {
-    tree.rebuildTree();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [tree, childIndex]);
 
   useEffect(() => {
     if (!openFileId || entries.length === 0) return;
@@ -131,7 +126,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     if (openFileId && entries.length > 0) {
       outerFrame = requestAnimationFrame(() => {
         innerFrame = requestAnimationFrame(() => {
-          const index = tree.getItems().findIndex((item) => item.getItemData()?.id === openFileId);
+          const index = treeItems.findIndex((row) => row.id === openFileId);
           const viewport = contentRef.current;
           if (index < 0 || !viewport) return;
           const top = index * TREE_ROW_HEIGHT;
@@ -149,7 +144,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       cancelAnimationFrame(outerFrame);
       cancelAnimationFrame(innerFrame);
     };
-  }, [openFileId, tree, entries.length, updateScrollMetrics]);
+  }, [openFileId, treeItems, entries.length, updateScrollMetrics]);
 
   const performDelete = useCallback(
     async (target: { id: string; name: string; mode: FileDeleteMode }) => {
@@ -408,13 +403,12 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     };
   }, [updateScrollMetrics]);
 
-  const treeItems = tree.getItems();
   const firstVisibleRow = Math.max(
     0,
     Math.floor(scrollMetrics.top / TREE_ROW_HEIGHT) - TREE_OVERSCAN,
   );
   const visibleRowCount = Math.ceil(scrollMetrics.height / TREE_ROW_HEIGHT) + TREE_OVERSCAN * 2;
-  const focusedTreeRow = treeItems.findIndex((item) => item.isFocused());
+  const focusedTreeRow = treeItems.findIndex((row) => row.isFocused);
   const virtualStart =
     focusedTreeRow < 0 ? firstVisibleRow : Math.min(firstVisibleRow, focusedTreeRow);
   const virtualEnd =
@@ -495,16 +489,16 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                           right: 0,
                         }}
                       >
-                        {visibleTreeItems.map((item) => {
-                          const entry = item.getItemData();
+                        {visibleTreeItems.map((row) => {
+                          const entry = row.entry;
                           if (!entry || !entry.name) return null;
 
                           return (
-                            <Fragment key={item.getKey()}>
+                            <Fragment key={row.id}>
                               {renamingId === entry.id ? (
                                 <div
                                   style={{
-                                    paddingLeft: `${item.getItemMeta().level * 16 + 16 + 6 - 11}px`,
+                                    paddingLeft: `${row.level * 16 + 16 + 6 - 11}px`,
                                   }}
                                   className="flex h-7 items-center pr-2"
                                 >
@@ -525,8 +519,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                                 </div>
                               ) : (
                                 <TreeRow
-                                  item={item}
-                                  label={stripExcalidraw(entry.name)}
+                                  row={row}
                                   isActive={entry.id === openFileId}
                                   isDirty={dirtyById[entry.id] !== undefined}
                                   timeLabel={

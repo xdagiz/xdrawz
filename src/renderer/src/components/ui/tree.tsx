@@ -8,10 +8,11 @@ import {
 import { useTree } from "@headless-tree/react";
 import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react";
 import type { KeyboardEventHandler, MouseEvent, MouseEventHandler, ReactNode } from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { FileEntry } from "@shared/ipc";
 
+import { flattenVisibleEntries } from "@/lib/tree";
 import { cn, stripExcalidraw } from "@/lib/utils";
 
 export type FileTreePayload = FileEntry | null;
@@ -29,6 +30,24 @@ type UseFileTreeConfig = {
   onPrimaryAction: (item: FileTreeItem) => void;
 };
 
+export type FileTreeRow = {
+  id: string;
+  entry: FileEntry;
+  name: string;
+  level: number;
+  posInSet: number;
+  setSize: number;
+  isFolder: boolean;
+  isExpanded: boolean;
+  isFocused: boolean;
+  item: FileTreeItem;
+};
+
+type UseFileTreeResult = {
+  tree: FileTreeInstance;
+  rows: FileTreeRow[];
+};
+
 export const useFileTree = ({
   childIndex,
   expandedItems,
@@ -36,7 +55,7 @@ export const useFileTree = ({
   selectedItems,
   onSelectedItemsChange,
   onPrimaryAction,
-}: UseFileTreeConfig): FileTreeInstance => {
+}: UseFileTreeConfig): UseFileTreeResult => {
   const entriesById = useMemo(() => {
     const map = new Map<string, FileEntry>();
     for (const children of childIndex.values()) {
@@ -58,7 +77,8 @@ export const useFileTree = ({
     [entriesById],
   );
 
-  return useTree<FileTreePayload>({
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const tree = useTree<FileTreePayload>({
     rootItemId: "",
     getItemName: (item) => {
       const name = item.getItemData()?.name ?? "";
@@ -76,7 +96,59 @@ export const useFileTree = ({
     onPrimaryAction,
     indent: 16,
     features: [syncDataLoaderFeature, selectionFeature, hotkeysCoreFeature],
+    setState: (state) => {
+      if (typeof state === "function") return;
+      const id = state.focusedItem ?? null;
+      setFocusedId((prev) => (prev === id ? prev : id));
+    },
   });
+
+  useEffect(() => {
+    tree.rebuildTree();
+  }, [tree, childIndex]);
+
+  const rowsCache = useRef(new Map<string, FileTreeRow>());
+  const rows = useMemo<FileTreeRow[]>(() => {
+    const expandedSet = new Set(expandedItems);
+    const prevCache = rowsCache.current;
+    const nextCache = new Map<string, FileTreeRow>();
+    const nextRows = flattenVisibleEntries(childIndex, expandedSet).map(
+      ({ entry, level, posInSet, setSize, isExpanded }) => {
+        const isFocused = focusedId === entry.id;
+        const cached = prevCache.get(entry.id);
+        if (
+          cached &&
+          cached.entry === entry &&
+          cached.level === level &&
+          cached.posInSet === posInSet &&
+          cached.setSize === setSize &&
+          cached.isExpanded === isExpanded &&
+          cached.isFocused === isFocused
+        ) {
+          nextCache.set(entry.id, cached);
+          return cached;
+        }
+        const row: FileTreeRow = {
+          id: entry.id,
+          entry,
+          name: stripExcalidraw(entry.name),
+          level,
+          posInSet,
+          setSize,
+          isFolder: entry.kind === "directory",
+          isExpanded,
+          isFocused,
+          item: tree.getItemInstance(entry.id),
+        };
+        nextCache.set(entry.id, row);
+        return row;
+      },
+    );
+    rowsCache.current = nextCache;
+    return nextRows;
+  }, [childIndex, expandedItems, focusedId, tree]);
+
+  return { tree, rows };
 };
 
 export const TreeContainer = ({
@@ -110,8 +182,7 @@ export const TreeContainer = ({
 };
 
 export const TreeRow = ({
-  item,
-  label,
+  row,
   isActive,
   isDirty,
   indentPx = 16,
@@ -119,8 +190,7 @@ export const TreeRow = ({
   onMenuClick,
   onContextMenu,
 }: {
-  item: FileTreeItem;
-  label: string;
+  row: FileTreeRow;
   isActive?: boolean;
   isDirty?: boolean;
   indentPx?: number;
@@ -128,13 +198,8 @@ export const TreeRow = ({
   onMenuClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: MouseEventHandler<HTMLElement>;
 }) => {
-  const meta = item.getItemMeta();
-  const level = meta.level;
-  const isFolder = item.isFolder();
-  const expanded = isFolder && item.isExpanded();
-
-  const isLastSibling = meta.posInSet === meta.setSize - 1;
-
+  const { item, level, isFolder, isExpanded: expanded, posInSet, setSize, name: label } = row;
+  const isLastSibling = posInSet === setSize - 1;
   const guides: ReactNode[] = [];
 
   for (let depth = 0; depth < level; depth++) {

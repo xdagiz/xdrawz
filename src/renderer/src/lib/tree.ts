@@ -36,6 +36,32 @@ export const buildEntriesById = (entries: FileEntry[]) => {
   return map;
 };
 
+export type VisibleTreeEntry = {
+  entry: FileEntry;
+  level: number;
+  posInSet: number;
+  setSize: number;
+  isExpanded: boolean;
+};
+
+export const flattenVisibleEntries = (
+  childIndex: Map<string | null, FileEntry[]>,
+  expandedIds: Set<string>,
+): VisibleTreeEntry[] => {
+  const visible: VisibleTreeEntry[] = [];
+
+  const walk = (siblings: FileEntry[], level: number) => {
+    siblings.forEach((entry, posInSet) => {
+      const isExpanded = expandedIds.has(entry.id);
+      visible.push({ entry, level, posInSet, setSize: siblings.length, isExpanded });
+      if (isExpanded) walk(childIndex.get(entry.id) ?? [], level + 1);
+    });
+  };
+
+  walk(childIndex.get(null) ?? [], 0);
+  return visible;
+};
+
 export const TYPEAHEAD_RESET_MS = 500;
 
 export const findTypeaheadMatch = (names: string[], startIndex: number, query: string) => {
