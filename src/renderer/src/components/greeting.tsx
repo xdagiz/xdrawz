@@ -23,13 +23,10 @@ export function Greeting() {
     setPicking(true);
 
     try {
-      const info = await window.api.drawings.pick();
-      if (info) {
-        return;
-      }
-      setPicking(false);
+      await window.api.drawings.pick();
     } catch (err) {
-      setError(toAppError(err, "load"));
+      setError(toAppError(err, "folder"));
+    } finally {
       setPicking(false);
     }
   };

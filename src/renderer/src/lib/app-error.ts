@@ -21,6 +21,13 @@ export type AppError = {
 };
 
 const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "message"> => {
+  if (operation === "folder") {
+    return {
+      title: "Couldn’t use that folder",
+      message: "Pick a different folder, or choose one with fewer files in it.",
+    };
+  }
+
   if (operation === "read" || operation === "load") {
     return {
       title: "Couldn’t open this drawing",

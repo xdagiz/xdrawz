@@ -67,6 +67,9 @@ const isStillPresent = (entries: FileEntry[], fileId: string | null) =>
 
 const findOnDisk = (entries: FileEntry[], fileId: string) => entries.find((e) => e.id === fileId);
 
+const isStale = (oldEntry: FileEntry, newEntry: FileEntry) =>
+  newEntry.modifiedAt > oldEntry.modifiedAt || newEntry.size !== oldEntry.size;
+
 export const reduceEntries = (
   state: EntryReductionState,
   event: FilesChangedEvent,
@@ -100,7 +103,7 @@ export const reduceEntries = (
           fileId: openFileId,
           diskModifiedAt: Math.max(prevConflict.diskModifiedAt, newEntry.modifiedAt),
         };
-      } else if (oldEntry && newEntry && newEntry.modifiedAt > oldEntry.modifiedAt) {
+      } else if (oldEntry && newEntry && isStale(oldEntry, newEntry)) {
         externalConflict = {
           type: "changed",
           fileId: openFileId,
@@ -120,7 +123,7 @@ export const reduceEntries = (
     } else if (stillExists && !openFileDirty) {
       const oldEntry = findOnDisk(state.entries, openFileId);
       const newEntry = findOnDisk(entries, openFileId);
-      if (oldEntry && newEntry && newEntry.modifiedAt > oldEntry.modifiedAt) {
+      if (oldEntry && newEntry && isStale(oldEntry, newEntry)) {
         nextEditorGeneration = state.editorGeneration + 1;
       }
     }

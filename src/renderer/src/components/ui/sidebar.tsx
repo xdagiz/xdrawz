@@ -3,7 +3,6 @@
 import * as React from "react"
 import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
-import { useHotkey } from "@tanstack/react-hotkeys"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
@@ -77,10 +76,6 @@ function SidebarProvider({
   const toggleSidebar = React.useCallback(() => {
     return setOpen((open) => !open)
   }, [setOpen])
-
-  useHotkey("Mod+B", () => {
-    toggleSidebar()
-  })
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.

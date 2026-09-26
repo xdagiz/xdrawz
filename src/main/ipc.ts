@@ -507,7 +507,7 @@ export const registerIpcHandlers = (deps: Deps) => {
     return deps.deleteEntry(validId, mode);
   });
 
-  handle(DRAWINGS_PICK, "load", (event) => deps.pickDrawings(windowFromEvent(event)));
+  handle(DRAWINGS_PICK, "folder", (event) => deps.pickDrawings(windowFromEvent(event)));
   handle(APP_QUIT, "unexpected", () => app.quit());
 
   handle(CONTEXT_MENU_SHOW, "unexpected", async (event, request) => {

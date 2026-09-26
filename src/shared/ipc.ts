@@ -14,7 +14,7 @@ export type ContextMenuRequest = {
 export type ChannelMap = {
   "drawings:get": { args: []; result: DrawingInfo; operation: "load" };
   "drawings:load": { args: []; result: DrawingsSnapshot; operation: "load" };
-  "drawings:pick": { args: []; result: DrawingInfo | null; operation: "load" };
+  "drawings:pick": { args: []; result: DrawingInfo | null; operation: "folder" };
   "files:list": { args: []; result: FileEntry[]; operation: "read" };
   "files:read": { args: [id: string]; result: string; operation: "read" };
   "files:write": { args: [id: string, content: string]; result: FileEntry; operation: "save" };

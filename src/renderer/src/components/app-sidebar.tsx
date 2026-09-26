@@ -30,6 +30,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { toast } from "@/components/ui/toast";
 import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/components/ui/tree";
@@ -53,6 +54,8 @@ const TREE_ROW_HEIGHT = 28;
 const TREE_OVERSCAN = 10;
 
 export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) => {
+  const { toggleSidebar } = useSidebar();
+
   const entries = useStore((s) => s.entries);
   const openFileId = useStore((s) => s.openFileId);
   const dirtyById = useStore((s) => s.dirtyById);
@@ -321,6 +324,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     [handleCreate],
   );
 
+  useHotkey("Mod+B", () => toggleSidebar(), { enabled: !dialogsOpen });
   useHotkey("Mod+N", () => void handleCreate(null, "file"), { enabled: !dialogsOpen });
   useHotkey("Mod+Shift+N", () => void handleCreate(null, "directory"), {
     enabled: !dialogsOpen,
@@ -633,12 +637,17 @@ const RenameInput = ({
   const ref = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
   const lastCommitted = useRef<string | null>(null);
+  const onValueChangeRef = useRef(onValueChange);
+
+  useEffect(() => {
+    onValueChangeRef.current = onValueChange;
+  }, [onValueChange]);
 
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
-    onValueChange?.(initial);
-  }, [onValueChange, initial]);
+    onValueChangeRef.current?.(initial);
+  }, [initial]);
 
   useEffect(() => {
     if (!error) return;

@@ -1,4 +1,5 @@
 export type ErrorOperation =
+  | "folder"
   | "load"
   | "read"
   | "save"
@@ -91,6 +92,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set([
 ]);
 
 const ERROR_OPERATIONS: ReadonlySet<string> = new Set([
+  "folder",
   "load",
   "read",
   "save",

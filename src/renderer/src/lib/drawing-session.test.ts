@@ -59,6 +59,7 @@ type Session = ReturnType<typeof createDrawingSession>;
 const makeSession = (overrides?: {
   save?: (id: string, content: string) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
+  onSaveGaveUp?: (fileId: string) => void;
   initialBaseline?: string | null;
   initialAutosave?: AutosaveSetting;
   scheduleFrame?: FrameScheduler;
@@ -69,6 +70,7 @@ const makeSession = (overrides?: {
     fileId: "f1",
     save,
     onDirtyChange: overrides?.onDirtyChange ?? dirty,
+    onSaveGaveUp: overrides?.onSaveGaveUp,
     initialBaseline: overrides?.initialBaseline,
     initialAutosave: overrides?.initialAutosave ?? { mode: "interval", ms: 5000 },
     scheduleFrame: overrides?.scheduleFrame,
@@ -511,6 +513,27 @@ describe("createDrawingSession", () => {
 
     await vi.advanceTimersByTimeAsync(5100);
     expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+  });
+
+  it("keeps suppressing the marker after autosave has given up", async () => {
+    const gaveUp = vi.fn();
+    const { session, dirty } = makeSession({
+      save: () => Promise.resolve(false),
+      onSaveGaveUp: gaveUp,
+      initialAutosave: { mode: "always" },
+    });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (let attempt = 0; attempt < MAX_SAVE_RETRIES + 1; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(300);
+    }
+
+    expect(gaveUp).toHaveBeenCalledExactlyOnceWith("f1");
+    expect(session.isDirty()).toBe(true);
+    expect(dirty).not.toHaveBeenCalled();
   });
 
   it("retries a save whose target moved mid-flight under the new id without counting a failure", async () => {

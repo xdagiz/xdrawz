@@ -3,13 +3,18 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { conflictBelongsTo, conflictKeyOf, reduceEntries } from "./conflicts";
 
-const entry = (id: string, modifiedAt: number, kind: "file" | "directory" = "file"): FileEntry => ({
+const entry = (
+  id: string,
+  modifiedAt: number,
+  kind: "file" | "directory" = "file",
+  size = 100,
+): FileEntry => ({
   id,
   name: id,
   kind,
   parentId: null,
   modifiedAt,
-  size: 100,
+  size,
 });
 
 const baseState = () => ({
@@ -20,8 +25,8 @@ const baseState = () => ({
   editorGeneration: 0,
 });
 
-const event = (ids: Array<[string, number]>, revision = 1) => ({
-  entries: ids.map(([id, mtime]) => entry(id, mtime)),
+const event = (ids: Array<[string, number, number?]>, revision = 1) => ({
+  entries: ids.map(([id, mtime, size]) => entry(id, mtime, "file", size ?? 100)),
   revision,
   root: "/drawings",
 });
@@ -57,6 +62,14 @@ describe("reduceEntries", () => {
     expect(next.externalConflict).toBeNull();
   });
 
+  it("bumps the editor generation when the clean open file changes size with an unchanged mtime", () => {
+    const state = { ...baseState(), openFileId: "a.excalidraw" };
+    const next = reduceEntries(state, event([["a.excalidraw", 100, 140]]), false);
+
+    expect(next.editorGeneration).toBe(1);
+    expect(next.externalConflict).toBeNull();
+  });
+
   it("flags a changed conflict when the dirty open file changes on disk", () => {
     const state = {
       ...baseState(),
@@ -70,6 +83,22 @@ describe("reduceEntries", () => {
       fileId: "a.excalidraw",
       diskModifiedAt: 300,
     });
+  });
+
+  it("flags a changed conflict when the dirty open file changes size with an unchanged mtime", () => {
+    const state = {
+      ...baseState(),
+      openFileId: "a.excalidraw",
+      dirtyById: { "a.excalidraw": true as const },
+    };
+    const next = reduceEntries(state, event([["a.excalidraw", 100, 140]]), true);
+
+    expect(next.externalConflict).toEqual({
+      type: "changed",
+      fileId: "a.excalidraw",
+      diskModifiedAt: 100,
+    });
+    expect(next.editorGeneration).toBe(0);
   });
 
   it("keeps an existing changed conflict when the disk mtime catches up", () => {
