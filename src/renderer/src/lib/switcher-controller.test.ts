@@ -49,6 +49,18 @@ describe("switcher-controller", () => {
     expect(h.committed).toEqual([]);
   });
 
+  it("cancels instead of committing when the candidate list shrinks past the index", () => {
+    const h = harness();
+    h.controller.start();
+    expect(h.controller.getState()).toEqual({ phase: "cycling", index: 1 });
+
+    h.setCandidates(["a"]);
+    h.controller.commit();
+
+    expect(h.committed).toEqual([]);
+    expect(h.controller.getState()).toEqual({ phase: "idle" });
+  });
+
   it("reverse start opens cycling with the last drawing highlighted", () => {
     const h = harness();
     h.controller.start(-1);

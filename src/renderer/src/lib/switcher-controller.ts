@@ -98,7 +98,13 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
     commit: () => {
       if (state.phase !== "cycling") return;
 
-      const target = deps.getCandidates()[state.index];
+      const candidates = deps.getCandidates();
+      if (state.index >= candidates.length) {
+        controller.cancel();
+        return;
+      }
+
+      const target = candidates[state.index];
       clearFallback();
       state = { phase: "idle" };
       emit();

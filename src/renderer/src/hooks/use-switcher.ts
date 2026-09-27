@@ -24,8 +24,8 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
         ).map((entry) => entry.id),
       canSwitchNow: () => {
         if (isCloseHandshakeActive()) return false;
-        const { externalConflict, settingsDialogOpen } = useStore.getState();
-        return !externalConflict && !settingsDialogOpen && !paletteOpenRef.current;
+        const { externalConflict, settingsDialogOpen, searchOpen } = useStore.getState();
+        return !externalConflict && !settingsDialogOpen && !searchOpen && !paletteOpenRef.current;
       },
       canAutoCommit: () => heldKeysRef.current.size === 0,
       commit: (fileId) => {

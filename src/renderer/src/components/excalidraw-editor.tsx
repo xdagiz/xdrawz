@@ -154,6 +154,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
   const autosave = useStore((s) => s.settings.autosave);
   const editorGeneration = useStore((s) => s.editorGeneration);
+  const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
+  const paletteOpen = useStore((s) => s.paletteOpen);
+  const searchOpen = useStore((s) => s.searchOpen);
   const fileName = useStore((s) =>
     fileId ? (s.entries.find((e) => e.id === fileId)?.name ?? fileId) : "",
   );
@@ -653,21 +656,25 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     [fileId],
   );
 
-  useHotkey("Mod+S", () => {
-    void (async () => {
-      const session = sessionRef.current;
-      if (session) {
-        const saved = await session.saveNow();
-        if (saved === "saved") toast.add({ title: "Saved", type: "success" });
-        return;
-      }
+  useHotkey(
+    "Mod+S",
+    () => {
+      void (async () => {
+        const session = sessionRef.current;
+        if (session) {
+          const saved = await session.saveNow();
+          if (saved === "saved") toast.add({ title: "Saved", type: "success" });
+          return;
+        }
 
-      const scene = pendingSceneRef.current;
-      if (scene?.elements.some((element) => !element.isDeleted)) {
-        startScratchCreation();
-      }
-    })();
-  });
+        const scene = pendingSceneRef.current;
+        if (scene?.elements.some((element) => !element.isDeleted)) {
+          startScratchCreation();
+        }
+      })();
+    },
+    { enabled: !settingsDialogOpen && !paletteOpen && !searchOpen },
+  );
 
   const innerKey = `${editorGeneration}:${loadAttempt}`;
 

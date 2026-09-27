@@ -108,6 +108,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   let blocked = false;
   let dirty = false;
   let dirtyPublished = false;
+  let gaveUp = false;
   let mode: AutosaveMode = initialAutosave.mode;
   let saveFailures = 0;
   let saveNowTail: Promise<void> = Promise.resolve();
@@ -116,7 +117,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
   const setDirty = (next: boolean) => {
     dirty = next;
-    const visible = mode === "always" ? false : next;
+    const visible = mode === "always" && !gaveUp ? false : next;
     if (dirtyPublished === visible) return;
     dirtyPublished = visible;
     onDirtyChange?.(currentFileId, visible);
@@ -199,9 +200,13 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     }
 
     saveFailures += 1;
-    if (saveFailures === MAX_SAVE_RETRIES + 1) onSaveGaveUp?.(currentFileId);
-    if (saveFailures > MAX_SAVE_RETRIES || disposed) {
-      if (saveFailures > MAX_SAVE_RETRIES) debounced.cancel();
+    if (saveFailures > MAX_SAVE_RETRIES) {
+      debounced.cancel();
+      if (!gaveUp) {
+        gaveUp = true;
+        setDirty(true);
+        onSaveGaveUp?.(currentFileId);
+      }
       return;
     }
 
@@ -243,6 +248,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
         runPendingEvaluation();
         persistedSeq = mySeq;
         saveFailures = 0;
+        gaveUp = false;
         if (epochAtStart === retargetEpoch) {
           baseline = targetSignature;
           diskBaseline = targetSignature;
@@ -415,6 +421,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
     if (current === latestSignature) return;
 
+    saveFailures = 0;
     latestSignature = current;
     latestRevision += 1;
 
@@ -489,6 +496,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   const abandon = () => {
     debounced.cancel();
     saveFailures = 0;
+    gaveUp = false;
     if (latestDrawing) {
       const [elements, appState, files] = latestDrawing;
       baseline = signatureFor(elements, appState, files);
@@ -519,6 +527,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
         baseline = signature;
         diskBaseline = signature;
         saveFailures = 0;
+        gaveUp = false;
         setDirty(latestSignature !== baseline);
         if (!dirty) debounced.cancel();
         else if (mode !== "off") retryLatest();
@@ -597,6 +606,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
       appliedSeq = saveSeq;
       persistedSeq = saveSeq;
       saveFailures = 0;
+      gaveUp = false;
       latestDrawing = null;
       latestSignature = null;
       cachedInputs = null;

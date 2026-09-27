@@ -64,7 +64,7 @@ const App = () => {
   useHotkey("Mod+P", () => setSearchOpen(!searchOpen));
   useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
   useHotkey("Mod+W", () => void setOpenFileId(null), {
-    enabled: !settingsDialogOpen && !paletteOpen,
+    enabled: !settingsDialogOpen && !paletteOpen && !searchOpen,
     requireReset: true,
   });
 

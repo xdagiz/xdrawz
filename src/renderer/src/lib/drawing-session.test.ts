@@ -515,7 +515,29 @@ describe("createDrawingSession", () => {
     expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
   });
 
-  it("keeps suppressing the marker after autosave has given up", async () => {
+  it("resets the retry budget when a new edit arrives after giving up", async () => {
+    const save = vi.fn().mockResolvedValue(false);
+    const { session } = makeSession({ save });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5100);
+    for (let retry = 0; retry < MAX_SAVE_RETRIES; retry += 1) {
+      await vi.advanceTimersByTimeAsync(5100);
+    }
+    expect(save).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+
+    session.onChange([el("a"), el("b"), el("new-edit")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+    for (let retry = 0; retry < MAX_SAVE_RETRIES + 1; retry += 1) {
+      await vi.advanceTimersByTimeAsync(5100);
+    }
+
+    expect(save).toHaveBeenCalledTimes(2 * (1 + MAX_SAVE_RETRIES));
+  });
+
+  it("publishes a dirty marker once always-mode autosave has given up", async () => {
     const gaveUp = vi.fn();
     const { session, dirty } = makeSession({
       save: () => Promise.resolve(false),
@@ -533,7 +555,76 @@ describe("createDrawingSession", () => {
 
     expect(gaveUp).toHaveBeenCalledExactlyOnceWith("f1");
     expect(session.isDirty()).toBe(true);
-    expect(dirty).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+  });
+
+  it("clears the published marker once a later save succeeds", async () => {
+    const save = vi.fn();
+    for (let failure = 0; failure <= MAX_SAVE_RETRIES; failure += 1) {
+      save.mockResolvedValueOnce(false);
+    }
+    save.mockResolvedValue(true);
+    const dirty = vi.fn();
+    const session = createDrawingSession({
+      fileId: "f1",
+      save,
+      onDirtyChange: dirty,
+      initialAutosave: { mode: "always" },
+    });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (let attempt = 0; attempt < MAX_SAVE_RETRIES + 1; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(300);
+    }
+
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+    expect(session.isDirty()).toBe(true);
+
+    await session.saveNow();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+    expect(session.isDirty()).toBe(false);
+  });
+
+  it("keeps the marker published across edits after giving up, clears it when a later save succeeds", async () => {
+    const save = vi.fn();
+    for (let failure = 0; failure <= MAX_SAVE_RETRIES; failure += 1) {
+      save.mockResolvedValueOnce(false);
+    }
+    save.mockResolvedValue(true);
+    const dirty = vi.fn();
+    const session = createDrawingSession({
+      fileId: "f1",
+      save,
+      onDirtyChange: dirty,
+      initialAutosave: { mode: "always" },
+    });
+
+    session.onChange([el("a")], appState(), emptyFiles);
+    session.onChange([el("a"), el("b")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (let attempt = 0; attempt <= MAX_SAVE_RETRIES; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(300);
+    }
+
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+
+    session.onChange([el("a"), el("b"), el("c")], appState(), emptyFiles);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(dirty).toHaveBeenLastCalledWith("f1", true);
+    expect(session.isDirty()).toBe(true);
+
+    await session.saveNow();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(dirty).toHaveBeenLastCalledWith("f1", false);
+    expect(session.isDirty()).toBe(false);
   });
 
   it("retries a save whose target moved mid-flight under the new id without counting a failure", async () => {
