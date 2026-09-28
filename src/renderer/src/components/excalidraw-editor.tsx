@@ -33,7 +33,8 @@ import { useTheme } from "@/hooks/use-theme";
 import { libraryErrorToastId, saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
 import { createLibraryPersistenceAdapter, defaultLibraryStorage } from "@/lib/library-persistence";
-import { sessionOwner, type BoundDrawingSession } from "@/lib/session-owner";
+import { createScratchController } from "@/lib/scratch-session";
+import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 import { applyViewport, createViewportCache, viewportOf } from "@/lib/viewport-cache";
@@ -61,14 +62,6 @@ type LoadedDrawing = {
   drawing: ExcalidrawInitialDataState | null;
   baseline: string | null;
 };
-
-type PendingScene = {
-  elements: readonly OrderedExcalidrawElement[];
-  appState: AppState;
-  files: BinaryFiles;
-};
-
-const SCRATCH_CREATE_ERROR_TOAST_ID = "scratch-create";
 
 const viewportCache = createViewportCache();
 
@@ -145,9 +138,7 @@ const SIDEBAR_TOGGLE_ICONS = {
 export const ExcalidrawEditor = ({ fileId }: Props) => {
   const theme = useTheme();
   const { toggleSidebar, open } = useSidebar();
-  const createEntry = useStore((s) => s.createEntry);
   const createAndOpenEntry = useStore((s) => s.createAndOpenEntry);
-  const openReservedFile = useStore((s) => s.openReservedFile);
   const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
 
   const pendingCanvasAction = useStore((s) => s.pendingCanvasAction);
@@ -162,14 +153,77 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   );
 
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const sessionRef = useRef<BoundDrawingSession | null>(null);
-  const boundFileIdRef = useRef<string | null>(null);
-  const reservedIdRef = useRef<string | null>(null);
-  const pendingSceneRef = useRef<PendingScene | null>(null);
-  const creatingRef = useRef(false);
-  const generationRef = useRef(0);
+  const [scratch] = useState(() =>
+    createScratchController({
+      createEntry: () => useStore.getState().createEntry(null, "file"),
+      readFile: (id) => window.api.files.read(id),
+      deleteFile: (id) => {
+        viewportCache.delete(id);
+        void window.api.files.delete(id, "permanent").catch(() => undefined);
+      },
+      deleteViewport: (id) => viewportCache.delete(id),
+      acquireSession: (scratchFileId, diskBaseline) =>
+        sessionOwner.acquire(
+          scratchFileId,
+          createDrawingSession({
+            fileId: scratchFileId,
+            hasExternalConflict: () => useStore.getState().externalConflict !== null,
+            save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
+            onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
+            initialAutosave: useStore.getState().settings.autosave,
+            initialBaseline: diskBaseline,
+            onSaveGaveUp: (failedId) => {
+              toast.add({
+                id: saveErrorToastId(failedId),
+                title: "Autosave stopped",
+                description: "Couldn't save after several attempts. Press Ctrl+S to retry.",
+                type: "error",
+                timeout: 0,
+              });
+            },
+          }),
+        ),
+      releaseIfOwned: (session) => {
+        if (sessionOwner.getSession() !== session) return;
+        const activeId = sessionOwner.getActiveFileId();
+        sessionOwner.releaseActive();
+        if (activeId) useStore.getState().setFileDirty(activeId, false);
+      },
+      isOpenFileId: () => useStore.getState().openFileId,
+      openReservedFile: (id) => useStore.getState().openReservedFile(id),
+      setFileDirty: (id, dirty) => useStore.getState().setFileDirty(id, dirty),
+      setPendingCanvasAction: (pending) => useStore.getState().setPendingCanvasAction(pending),
+      setScratchUnsaved: (unsaved) => useStore.getState().setScratchUnsaved(unsaved),
+      notifyError: (error) => {
+        const appError = toAppError(error, "create");
+        toast.add({
+          id: "scratch-create",
+          title: appError.title,
+          description: appError.detail,
+          type: "error",
+        });
+      },
+      computeDiskBaseline: (raw) => {
+        const parsed: DrawingData = JSON.parse(raw);
+        const rawElements: ExcalidrawElement[] = Array.isArray(parsed.elements)
+          ? parsed.elements
+          : [];
+        const restored = restoreElements(rawElements, null, { repairBindings: true });
+        return drawingSignature(
+          restored,
+          restoreAppState(parsed.appState ?? null, null),
+          parsed.files ?? undefined,
+        );
+      },
+      seedSession: (session, scene) => {
+        if (!scene) return;
+        session.onChange([], scene.appState, scene.files);
+        session.onChange(scene.elements, scene.appState, scene.files);
+      },
+    }),
+  );
 
-  const [loadError, setLoadError] = useState<AppError | null>(null);
+  const [loadError, setLoadError] = useState<{ fileId: string; error: AppError } | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawImperativeAPI | null>(null);
 
@@ -239,12 +293,12 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }, []);
 
   useEffect(() => {
-    sessionRef.current?.setAutosaveMode(autosave);
-  }, [autosave]);
+    scratch.getSession()?.setAutosaveMode(autosave);
+  }, [autosave, scratch]);
 
   useEffect(() => {
     const flushOnEdge = () => {
-      void sessionRef.current?.flush();
+      void scratch.getSession()?.flush();
     };
     const flushOnHidden = () => {
       if (document.visibilityState === "hidden") flushOnEdge();
@@ -259,79 +313,21 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       document.removeEventListener("visibilitychange", flushOnHidden);
       window.removeEventListener("beforeunload", flushOnEdge);
     };
-  }, []);
+  }, [scratch]);
 
   useEffect(() => {
-    generationRef.current += 1;
-    return () => {
-      generationRef.current += 1;
-
-      const session = sessionRef.current;
-      const reservedId = reservedIdRef.current;
-      const bound = boundFileIdRef.current;
-
-      sessionRef.current = null;
-      boundFileIdRef.current = null;
-      reservedIdRef.current = null;
-      pendingSceneRef.current = null;
-      useStore.getState().setScratchUnsaved(false);
-      creatingRef.current = false;
-
-      if (session && sessionOwner.getSession() === session) {
-        const activeId = sessionOwner.getActiveFileId();
-        sessionOwner.releaseActive();
-        if (activeId) useStore.getState().setFileDirty(activeId, false);
-      }
-
-      if (reservedId) {
-        viewportCache.delete(reservedId);
-        void window.api.files.delete(reservedId, "permanent").catch(() => undefined);
-      }
-
-      if (bound && useStore.getState().openFileId !== bound) viewportCache.delete(bound);
-      useStore.getState().setPendingCanvasAction(false);
-    };
-  }, []);
+    return () => scratch.invalidate();
+  }, [scratch]);
 
   useEffect(() => {
-    if (fileId === boundFileIdRef.current) return;
-    if (
-      fileId !== null &&
-      fileId === reservedIdRef.current &&
-      sessionRef.current &&
-      sessionOwner.getSession() === sessionRef.current
-    ) {
-      boundFileIdRef.current = fileId;
-      reservedIdRef.current = null;
-      creatingRef.current = false;
-      pendingSceneRef.current = null;
-      useStore.getState().setScratchUnsaved(false);
+    const bound = scratch.getState();
+    if (bound.phase === "bound" && bound.fileId === fileId) return;
+    if (bound.phase === "reserved" && fileId !== null && bound.fileId === fileId) {
+      scratch.bindFile(fileId);
       return;
     }
 
-    generationRef.current += 1;
-    const scratch = sessionRef.current;
-    const reserved = reservedIdRef.current;
-    const bound = boundFileIdRef.current;
-
-    if (reserved && scratch && sessionOwner.getSession() === scratch) {
-      sessionOwner.releaseActive();
-      useStore.getState().setFileDirty(reserved, false);
-      viewportCache.delete(reserved);
-      void window.api.files.delete(reserved, "permanent").catch(() => undefined);
-    }
-
-    if (fileId === null && scratch && !reserved && sessionOwner.getSession() === scratch) {
-      sessionOwner.releaseActive();
-      if (bound) useStore.getState().setFileDirty(bound, false);
-    }
-
-    sessionRef.current = null;
-    boundFileIdRef.current = null;
-    reservedIdRef.current = null;
-    pendingSceneRef.current = null;
-    useStore.getState().setScratchUnsaved(false);
-    creatingRef.current = false;
+    scratch.invalidate();
 
     if (fileId === null) {
       const api = excalidrawApi;
@@ -343,7 +339,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         const unsubscribe = api.onChange((_elements, appState) => {
           if (appState.isLoading) return;
           unsubscribe();
-          if (boundFileIdRef.current !== null) return;
+          if (scratch.getState().phase === "bound") return;
           reset();
         });
       } else {
@@ -351,238 +347,15 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       }
     }
 
-    setLoadError(null);
     if (fileId === null) return;
 
-    const acquired = sessionOwner.acquire(
-      fileId,
-      createDrawingSession({
-        fileId,
-        hasExternalConflict: () => useStore.getState().externalConflict !== null,
-        save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
-        onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
-        initialAutosave: useStore.getState().settings.autosave,
-        onSaveGaveUp: (failedId) => {
-          toast.add({
-            id: saveErrorToastId(failedId),
-            title: "Autosave stopped",
-            description: "Couldn't save after several attempts. Press Ctrl+S to retry.",
-            type: "error",
-            timeout: 0,
-          });
-        },
-      }),
-    );
-
-    sessionRef.current = acquired;
-    boundFileIdRef.current = fileId;
-  }, [fileId, excalidrawApi]);
-
-  const startScratchCreation = useCallback(() => {
-    if (creatingRef.current || sessionRef.current || reservedIdRef.current) return;
-    creatingRef.current = true;
-
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
-    const startOpenFileId = useStore.getState().openFileId;
-
-    useStore.getState().setPendingCanvasAction(true);
-
-    void (async () => {
-      try {
-        const id = await createEntry(null, "file");
-        if (!id) throw new Error("Could not create drawing");
-        if (generation !== generationRef.current) {
-          viewportCache.delete(id);
-          void window.api.files.delete(id, "permanent").catch(() => undefined);
-          creatingRef.current = false;
-          pendingSceneRef.current = null;
-          useStore.getState().setScratchUnsaved(false);
-          useStore.getState().setPendingCanvasAction(false);
-          return;
-        }
-
-        const raw = await window.api.files.read(id);
-        if (generation !== generationRef.current) {
-          viewportCache.delete(id);
-          void window.api.files.delete(id, "permanent").catch(() => undefined);
-          creatingRef.current = false;
-          pendingSceneRef.current = null;
-          useStore.getState().setScratchUnsaved(false);
-          useStore.getState().setPendingCanvasAction(false);
-          return;
-        }
-
-        const parsed: {
-          elements?: unknown;
-          appState?: Partial<AppState> | null;
-          files?: BinaryFiles;
-        } = JSON.parse(raw);
-
-        const rawElements = Array.isArray(parsed.elements) ? parsed.elements : [];
-        const restoredAppState = restoreAppState(parsed.appState ?? null, null);
-        const restoredElements = restoreElements(rawElements, null, { repairBindings: true });
-        const diskBaseline = drawingSignature(
-          restoredElements,
-          restoredAppState,
-          parsed.files ?? undefined,
-        );
-        const acquired = sessionOwner.acquire(
-          id,
-          createDrawingSession({
-            fileId: id,
-            hasExternalConflict: () => useStore.getState().externalConflict !== null,
-            save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
-            onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
-            initialAutosave: useStore.getState().settings.autosave,
-            onSaveGaveUp: (failedId) => {
-              toast.add({
-                id: saveErrorToastId(failedId),
-                title: "Autosave stopped",
-                description:
-                  "Your latest strokes are still on the canvas and will save on the next change.",
-                type: "error",
-                timeout: 0,
-              });
-            },
-          }),
-        );
-
-        if (generation !== generationRef.current) {
-          if (sessionOwner.getSession() === acquired) sessionOwner.releaseActive();
-          viewportCache.delete(id);
-          void window.api.files.delete(id, "permanent").catch(() => undefined);
-          creatingRef.current = false;
-          pendingSceneRef.current = null;
-          useStore.getState().setScratchUnsaved(false);
-          useStore.getState().setPendingCanvasAction(false);
-          return;
-        }
-
-        acquired.setInitialBaseline(diskBaseline);
-
-        // The first call primes the session baseline clean against the disk state;
-        // the second seeds the captured strokes and schedules the first save.
-        const captured = pendingSceneRef.current;
-        if (captured) {
-          acquired.onChange([], captured.appState, captured.files);
-        }
-
-        if (captured) {
-          viewportCache.set(id, viewportOf(captured.appState));
-          acquired.onChange(captured.elements, captured.appState, captured.files);
-        }
-
-        sessionRef.current = acquired;
-        reservedIdRef.current = id;
-        useStore.getState().setScratchUnsaved(false);
-
-        if (useStore.getState().openFileId !== startOpenFileId) {
-          if (sessionOwner.getSession() === acquired) sessionOwner.releaseActive();
-          useStore.getState().setFileDirty(id, false);
-          viewportCache.delete(id);
-          void window.api.files.delete(id, "permanent").catch(() => undefined);
-          sessionRef.current = null;
-          reservedIdRef.current = null;
-          creatingRef.current = false;
-          pendingSceneRef.current = null;
-          useStore.getState().setScratchUnsaved(false);
-          useStore.getState().setPendingCanvasAction(false);
-          return;
-        }
-
-        try {
-          const opened = await openReservedFile(id);
-          if (!opened) throw new Error("The drawing was removed before it could be opened");
-        } catch (error) {
-          if (generation !== generationRef.current) {
-            creatingRef.current = false;
-            pendingSceneRef.current = null;
-            useStore.getState().setScratchUnsaved(false);
-            useStore.getState().setPendingCanvasAction(false);
-            return;
-          }
-          if (sessionOwner.getSession() === acquired) sessionOwner.releaseActive();
-
-          useStore.getState().setFileDirty(id, false);
-          viewportCache.delete(id);
-          void window.api.files.delete(id, "permanent").catch(() => undefined);
-
-          sessionRef.current = null;
-          reservedIdRef.current = null;
-          creatingRef.current = false;
-          useStore
-            .getState()
-            .setScratchUnsaved(
-              pendingSceneRef.current?.elements.some((element) => !element.isDeleted) ?? false,
-            );
-
-          useStore.getState().setPendingCanvasAction(false);
-          const appError = toAppError(error, "create");
-          toast.add({
-            id: SCRATCH_CREATE_ERROR_TOAST_ID,
-            title: appError.title,
-            description: appError.detail,
-            type: "error",
-          });
-        }
-      } catch (error) {
-        if (generation !== generationRef.current) {
-          creatingRef.current = false;
-          pendingSceneRef.current = null;
-          useStore.getState().setScratchUnsaved(false);
-          useStore.getState().setPendingCanvasAction(false);
-          return;
-        }
-
-        creatingRef.current = false;
-        useStore
-          .getState()
-          .setScratchUnsaved(
-            pendingSceneRef.current?.elements.some((element) => !element.isDeleted) ?? false,
-          );
-
-        useStore.getState().setPendingCanvasAction(false);
-        const appError = toAppError(error, "create");
-        toast.add({
-          id: SCRATCH_CREATE_ERROR_TOAST_ID,
-          title: appError.title,
-          description: appError.detail,
-          type: "error",
-        });
-      }
-    })();
-  }, [createEntry, openReservedFile]);
+    scratch.bindFile(fileId);
+  }, [fileId, excalidrawApi, scratch]);
 
   useEffect(() => {
     if (!isLoadingDrawings) return;
-    generationRef.current += 1;
-
-    const scratch = sessionRef.current;
-    const reserved = reservedIdRef.current;
-    const bound = boundFileIdRef.current;
-    const owned = sessionOwner.getSession();
-    const ownedId = sessionOwner.getActiveFileId();
-
-    if (reserved && scratch && owned === scratch) {
-      sessionOwner.releaseActive();
-      useStore.getState().setFileDirty(reserved, false);
-      viewportCache.delete(reserved);
-      void window.api.files.delete(reserved, "permanent").catch(() => undefined);
-    } else if (owned) {
-      sessionOwner.releaseActive();
-      if (ownedId) useStore.getState().setFileDirty(ownedId, false);
-    }
-
-    sessionRef.current = null;
-    boundFileIdRef.current = null;
-    reservedIdRef.current = null;
-    pendingSceneRef.current = null;
-    useStore.getState().setScratchUnsaved(false);
-    creatingRef.current = false;
-
-    if (bound && useStore.getState().openFileId !== bound) viewportCache.delete(bound);
-  }, [isLoadingDrawings]);
+    scratch.invalidate();
+  }, [isLoadingDrawings, scratch]);
 
   useEffect(() => {
     const root = editorRef.current;
@@ -644,32 +417,32 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       if (fileId === null) return null;
       try {
         const loaded = await loadDrawing(fileId);
-        sessionRef.current?.setInitialBaseline(loaded.baseline);
+        scratch.getSession()?.setInitialBaseline(loaded.baseline);
         return loaded.drawing;
       } catch (error) {
         console.error("Failed to load drawing:", error);
-        sessionRef.current?.invalidate();
-        setLoadError(toAppError(error, "read"));
+        scratch.getSession()?.invalidate();
+        setLoadError({ fileId, error: toAppError(error, "read") });
         return null;
       }
     },
-    [fileId],
+    [fileId, scratch],
   );
 
   useHotkey(
     "Mod+S",
     () => {
       void (async () => {
-        const session = sessionRef.current;
+        const session = scratch.getSession();
         if (session) {
           const saved = await session.saveNow();
           if (saved === "saved") toast.add({ title: "Saved", type: "success" });
           return;
         }
 
-        const scene = pendingSceneRef.current;
+        const scene = scratch.getScene();
         if (scene?.elements.some((element) => !element.isDeleted)) {
-          startScratchCreation();
+          scratch.start();
         }
       })();
     },
@@ -705,27 +478,18 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         if (!appState.isLoading) {
           viewportCache.set(fileId, viewportOf(appState));
         }
-        sessionRef.current?.onChange(elements, appState, files);
+        scratch.getSession()?.onChange(elements, appState, files);
         return;
       }
 
       if (appState.isLoading) return;
-      const session = sessionRef.current;
-      if (session && reservedIdRef.current) {
-        viewportCache.set(reservedIdRef.current, viewportOf(appState));
-        session.onChange(elements, appState, files);
-        return;
+      const reserved = scratch.getState();
+      if (reserved.phase === "reserved") {
+        viewportCache.set(reserved.fileId, viewportOf(appState));
       }
-
-      pendingSceneRef.current = { elements, appState, files };
-
-      const hasContent = elements.some((element) => !element.isDeleted);
-      useStore.getState().setScratchUnsaved(hasContent);
-      if (!hasContent) return;
-
-      startScratchCreation();
+      scratch.capture(elements, appState, files);
     },
-    [fileId, startScratchCreation],
+    [fileId, scratch],
   );
 
   // TODO: update this with renderTopLeftUI when a new release includes it
@@ -783,7 +547,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     if (button) button.innerHTML = SIDEBAR_TOGGLE_ICONS[open ? "open" : "closed"];
   }, [open]);
 
-  if (loadError && fileId !== null) {
+  if (loadError && fileId !== null && loadError.fileId === fileId) {
     return (
       <div ref={editorRef} className="relative h-full min-h-0 w-full overflow-hidden">
         <Empty className="bg-background h-full border-0">
@@ -791,9 +555,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
             <EmptyMedia variant="icon">
               <TriangleAlertIcon className="text-destructive" />
             </EmptyMedia>
-            <EmptyTitle>{loadError.title}</EmptyTitle>
+            <EmptyTitle>{loadError.error.title}</EmptyTitle>
             <EmptyDescription>
-              {loadError.message}
+              {loadError.error.message}
               <span className="mt-1 block font-mono text-xs break-all">{fileName}</span>
             </EmptyDescription>
           </EmptyHeader>
