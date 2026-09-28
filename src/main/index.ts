@@ -63,13 +63,16 @@ import {
 
 process.on("uncaughtException", (error) => {
   log.error("[main:uncaughtException]", error);
-  dialog.showErrorBox("xdrawz crashed", error instanceof Error ? error.message : String(error));
+  dialog.showErrorBox("xcalidraw crashed", error instanceof Error ? error.message : String(error));
   app.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
   log.error("[main:unhandledRejection]", reason);
-  dialog.showErrorBox("xdrawz crashed", reason instanceof Error ? reason.message : String(reason));
+  dialog.showErrorBox(
+    "xcalidraw crashed",
+    reason instanceof Error ? reason.message : String(reason),
+  );
   app.exit(1);
 });
 
@@ -113,7 +116,7 @@ app.on("render-process-gone", (_event, webContents, details) => {
         buttons: ["Quit"],
         defaultId: 0,
         cancelId: 0,
-        message: "xdrawz renderer keeps crashing",
+        message: "xcalidraw renderer keeps crashing",
         detail:
           "The window crashed repeatedly. Your saved drawings are safe, but unsaved changes may be lost.",
       })
@@ -130,7 +133,7 @@ app.on("render-process-gone", (_event, webContents, details) => {
       buttons: ["Reload window", "Quit"],
       defaultId: 0,
       cancelId: 1,
-      message: "xdrawz renderer crashed",
+      message: "xcalidraw renderer crashed",
       detail: `${details.reason} (${details.exitCode}). Your saved drawings are safe, but unsaved changes may be lost.`,
     })
     .then(({ response }) => {
@@ -407,7 +410,7 @@ const installLibraryCsp = () => {
 void app.whenReady().then(async () => {
   if (!gotTheLock) return;
 
-  electronApp.setAppUserModelId("com.xdrawz");
+  electronApp.setAppUserModelId("com.xcalidraw.app");
   initLogger();
   installLibraryCsp();
   installPermissionHandlers();

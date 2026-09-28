@@ -43,7 +43,7 @@ describe("thumbnails cache", () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "xdrawz-thumbs-"));
+    dir = await mkdtemp(path.join(tmpdir(), "xcalidraw-thumbs-"));
   });
 
   afterEach(async () => {

@@ -1,10 +1,6 @@
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 import { memo, useCallback, useDeferredValue, useMemo, useState } from "react";
 
-import { useListBottomFade } from "@/hooks/use-list-bottom-fade";
-import { buildDrawingSearchEntries, rankDrawingHits, type DrawingRow } from "@/lib/drawing-search";
-import { useStore } from "@/lib/store";
-
 import {
   Command,
   CommandCollection,
@@ -16,8 +12,11 @@ import {
   CommandItem,
   CommandList,
   CommandPanel,
-} from "./ui/command";
-import { Kbd, KbdGroup } from "./ui/kbd";
+} from "@/components/ui/command";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { useListBottomFade } from "@/hooks/use-list-bottom-fade";
+import { buildDrawingSearchEntries, rankDrawingHits, type DrawingRow } from "@/lib/drawing-search";
+import { useStore } from "@/lib/store";
 
 type Props = {
   open: boolean;

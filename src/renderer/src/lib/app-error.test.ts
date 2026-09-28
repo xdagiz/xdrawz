@@ -190,7 +190,7 @@ describe("toAppError", () => {
       toAppError({ details: { code: "NOT_FOUND", reason: "missing-file" } }, "read").detail,
     ).toBe("The file no longer exists on disk.");
     expect(toAppError({ details: { code: "UNKNOWN", reason: "busy" } }, "read").detail).toBe(
-      "Xdrawz is busy with file changes. Wait a moment and try again.",
+      "xcalidraw is busy with file changes. Wait a moment and try again.",
     );
     expect(toAppError(new Error("some raw failure"), "read").detail).toBe(
       "Something went wrong with file access. Try again.",

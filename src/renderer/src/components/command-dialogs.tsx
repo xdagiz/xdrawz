@@ -1,10 +1,5 @@
 import { useState } from "react";
 
-import { toAppError } from "@/lib/app-error";
-import { fileNameOf } from "@/lib/conflicts";
-import { useStore } from "@/lib/store";
-import { stripExcalidraw } from "@/lib/utils";
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,10 +9,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "./ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Input } from "./ui/input";
-import { toast } from "./ui/toast";
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
+import { toAppError } from "@/lib/app-error";
+import { fileNameOf } from "@/lib/conflicts";
+import { useStore } from "@/lib/store";
+import { stripExcalidraw } from "@/lib/utils";
 
 type DialogProps = {
   open: boolean;

@@ -11,7 +11,7 @@ import { ThemeProvider } from "./components/theme-provider";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider preference={readStoredTheme(window.localStorage)}>
-      <ErrorBoundary title="xdrawz couldn’t start">
+      <ErrorBoundary title="xcalidraw couldn’t start">
         <Greeting />
       </ErrorBoundary>
     </ThemeProvider>

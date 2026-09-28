@@ -1,5 +1,6 @@
 import type { FileEntry } from "@shared/ipc";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { useTheme } from "@/hooks/use-theme";
 import {
   resolveThumbnailPreview,
@@ -11,8 +12,6 @@ import { formatRelativeTimeShort } from "@/lib/relative-time";
 import { useStore } from "@/lib/store";
 import { THUMBNAIL_CANVAS_BG } from "@/lib/thumbnails";
 import { formatFileSize, stripExcalidraw } from "@/lib/utils";
-
-import { Skeleton } from "./ui/skeleton";
 
 const formatDateAttr = (value: number) => {
   if (!Number.isFinite(value)) return "";

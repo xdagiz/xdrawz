@@ -53,7 +53,7 @@ export function Greeting() {
         <div className="space-y-1.5">
           <h1 className="text-lg font-semibold tracking-tight">Choose your drawings folder</h1>
           <p className="text-muted-foreground max-w-xs text-sm leading-relaxed">
-            xdrawz stores drawings locally.
+            xcalidraw stores drawings locally.
             <br />
             Pick a folder as your drawings library.
           </p>

@@ -43,7 +43,7 @@ const serveFontFile = (req: IncomingMessage, res: ServerResponse, next: () => vo
 };
 
 const excalidrawFonts = (): Plugin => ({
-  name: "xdrawz-excalidraw-fonts",
+  name: "xcalidraw-excalidraw-fonts",
   generateBundle() {
     for (const filePath of collectFontFiles(excalidrawFontsDir)) {
       const fileName = relative(excalidrawFontsDir, filePath).split(sep).join("/");

@@ -1,12 +1,12 @@
 import { ArrowLeftIcon } from "lucide-react";
 import { useMemo } from "react";
 
+import { Button } from "@/components/ui/button";
 import { useRecentDrawings } from "@/hooks/use-recent-drawings";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { RecentDrawings } from "./recent-drawings";
-import { Button } from "./ui/button";
 
 export const Home = () => {
   const { recentFiles } = useRecentDrawings();

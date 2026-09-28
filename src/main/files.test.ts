@@ -34,7 +34,7 @@ const SCENE = '{"elements":[],"files":{}}\n';
 describe("files", () => {
   beforeEach(async () => {
     ctx.configured = true;
-    ctx.root = await mkdtemp(path.join(tmpdir(), "xdrawz-files-"));
+    ctx.root = await mkdtemp(path.join(tmpdir(), "xcalidraw-files-"));
   });
 
   afterEach(async () => {

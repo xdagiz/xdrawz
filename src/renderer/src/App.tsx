@@ -70,13 +70,13 @@ const App = () => {
 
   useEffect(() => {
     if (!openFileId) {
-      document.title = "xdrawz";
+      document.title = "xcalidraw";
       return;
     }
 
     const name = stripExcalidraw(fileNameOf(entries, openFileId));
     const marker = dirtyById[openFileId] ? "* " : "";
-    document.title = `${marker}${name} - xdrawz`;
+    document.title = `${marker}${name} - xcalidraw`;
   }, [openFileId, entries, dirtyById]);
 
   useEffect(() => {

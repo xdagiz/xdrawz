@@ -89,5 +89,3 @@ export const installRendererErrorHandlers = () => {
     if (event.error) reportRendererError(event.error, "unexpected");
   });
 };
-
-installRendererErrorHandlers();

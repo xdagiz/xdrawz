@@ -40,7 +40,7 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
       title:
         operation === "recover" ? "Couldn’t recover this drawing" : "Couldn’t save this drawing",
       message:
-        "Your latest edits are still open in xdrawz. Check that the drawings folder is available and try again.",
+        "Your latest edits are still open in xcalidraw. Check that the drawings folder is available and try again.",
     };
   }
 
@@ -95,6 +95,8 @@ export const detailFor = (details: ErrorDetails): string => {
   if (details.code === "TOO_LARGE") {
     if (details.reason === "too-many-entries")
       return "The drawings folder has too many files to list safely. Choose a smaller folder.";
+    if (details.reason === "too-many-ids")
+      return "Too many drawings were requested at once. Try again with fewer selected.";
     if (details.reason === "library-too-large")
       return "The library is too large to store. Remove unused items and try again.";
     if (details.reason === "thumbnail-too-large") return "The thumbnail is too large to store.";
@@ -119,7 +121,7 @@ export const detailFor = (details: ErrorDetails): string => {
   }
   if (details.code === "UNKNOWN") {
     if (details.reason === "busy" || details.reason === "lock-conflict")
-      return "Xdrawz is busy with file changes. Wait a moment and try again.";
+      return "xcalidraw is busy with file changes. Wait a moment and try again.";
     if (details.reason === "trash-unavailable")
       return "The system trash is unavailable. Check permissions and try again.";
     if (details.reason === "permission-denied")

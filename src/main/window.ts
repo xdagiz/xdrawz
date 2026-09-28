@@ -47,7 +47,7 @@ const SHUTDOWN_FLUSH_SILENCE_TIMEOUT_MS = 1000;
 const SHUTDOWN_FLUSH_WRITE_TIMEOUT_MS = 3000;
 const MAX_LIBRARY_HASH_LENGTH = 2048;
 export const LIBRARY_BROWSE_HOST = "libraries.excalidraw.com";
-export const LIBRARY_PARTITION = "xdrawz-library";
+export const LIBRARY_PARTITION = "xcalidraw-library";
 
 const approvedCloses = new WeakSet<BrowserWindow>();
 const readyWindows = new WeakSet<BrowserWindow>();
@@ -181,14 +181,14 @@ const onRendererSilent = async (win: BrowserWindow) => {
   try {
     const detail =
       state.kind === "flush"
-        ? "The window stopped responding while xdrawz was saving your changes. Close it anyway, or keep waiting for it to recover."
-        : "The window stopped responding while xdrawz was checking for unsaved changes. Close it anyway, or keep waiting for it to recover.";
+        ? "The window stopped responding while xcalidraw was saving your changes. Close it anyway, or keep waiting for it to recover."
+        : "The window stopped responding while xcalidraw was checking for unsaved changes. Close it anyway, or keep waiting for it to recover.";
     const { response } = await dialog.showMessageBox(win, {
       type: "warning",
       buttons: ["Close anyway", "Keep waiting"],
       defaultId: 1,
       cancelId: 1,
-      message: "xdrawz isn't responding",
+      message: "xcalidraw isn't responding",
       detail,
     });
     keepWaiting = response !== 0;

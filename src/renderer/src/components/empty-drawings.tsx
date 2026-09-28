@@ -8,7 +8,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "./ui/empty";
+} from "@/components/ui/empty";
 
 export const EmptyDrawings = ({ action }: { action?: ReactNode }) => (
   <Empty className="border-0 px-1">

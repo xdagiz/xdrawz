@@ -2,7 +2,7 @@ import { DEFAULT_THEME, type ThemePreference } from "@shared/ipc";
 
 export type ResolvedTheme = "light" | "dark";
 const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
-export const THEME_STORAGE_KEY = "xdrawz:theme";
+export const THEME_STORAGE_KEY = "xcalidraw:theme";
 
 export const resolveTheme = (preference: ThemePreference, systemDark: boolean): ResolvedTheme => {
   if (preference === "system") return systemDark ? "dark" : "light";

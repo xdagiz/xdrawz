@@ -1,6 +1,7 @@
 import type { FileEntry } from "@shared/ipc";
 import { useEffect } from "react";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { useTheme } from "@/hooks/use-theme";
 import {
   resolveThumbnailPreview,
@@ -11,8 +12,6 @@ import { selectSwitcherCandidates } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
 import { THUMBNAIL_CANVAS_BG, thumbnails } from "@/lib/thumbnails";
 import { stripExcalidraw } from "@/lib/utils";
-
-import { Skeleton } from "./ui/skeleton";
 
 type DrawingSwitcherProps = {
   index: number;

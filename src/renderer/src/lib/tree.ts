@@ -1,7 +1,7 @@
 import type { FileEntry } from "@shared/ipc";
 import { parentIdOf } from "@shared/ipc";
 
-export const EXPANDED_FOLDERS_STORAGE_KEY = "xdrawz.expandedFolderIds";
+export const EXPANDED_FOLDERS_STORAGE_KEY = "xcalidraw.expandedFolderIds";
 
 const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 

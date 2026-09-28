@@ -300,7 +300,7 @@ describe("createDrawingsWatcher", () => {
       overrideDeps: { watch: watchSpy as unknown as WatcherDeps["watch"] },
     });
 
-    await watcher.start("/tmp/xdrawz-roots");
+    await watcher.start("/tmp/xcalidraw-roots");
 
     expect(captured).not.toBeNull();
     expect(captured!.followSymlinks).toBe(false);
@@ -312,13 +312,13 @@ describe("createDrawingsWatcher", () => {
   it("drops events whose path shares a prefix with the root but lies outside it", async () => {
     const { watcher, fakeWatcher, onChange } = setupWatcher();
 
-    await watcher.start("/tmp/xdrawz");
+    await watcher.start("/tmp/xcalidraw");
 
-    void fakeWatcher._emit("change", "/tmp/xdrawz-evil/.secret.excalidraw");
+    void fakeWatcher._emit("change", "/tmp/xcalidraw-evil/.secret.excalidraw");
     await tick(60);
     expect(onChange).not.toHaveBeenCalled();
 
-    void fakeWatcher._emit("change", "/tmp/xdrawz/a.excalidraw");
+    void fakeWatcher._emit("change", "/tmp/xcalidraw/a.excalidraw");
     await tick(60);
     expect(onChange).toHaveBeenCalledTimes(1);
   });

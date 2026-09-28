@@ -2,15 +2,8 @@ import { formatForDisplay } from "@tanstack/react-hotkeys";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 
-import { useListBottomFade } from "@/hooks/use-list-bottom-fade";
-import { buildCommands, type CommandDef } from "@/lib/commands";
-import { buildDrawingSearchEntries, rankDrawingHits, type DrawingRow } from "@/lib/drawing-search";
-import { rankEntries } from "@/lib/fuzzy-rank";
-import { sessionOwner } from "@/lib/session-owner";
-import { useStore } from "@/lib/store";
-
-import { CommandDeleteDialog, CommandRenameDialog } from "./command-dialogs";
-import { DrawingRowItem } from "./drawing-search";
+import { CommandDeleteDialog, CommandRenameDialog } from "@/components/command-dialogs";
+import { DrawingRowItem } from "@/components/drawing-search";
 import {
   Command,
   CommandCollection,
@@ -24,9 +17,15 @@ import {
   CommandPanel,
   CommandSeparator,
   CommandShortcut,
-} from "./ui/command";
-import { Kbd, KbdGroup } from "./ui/kbd";
-import { useSidebar } from "./ui/sidebar";
+} from "@/components/ui/command";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { useSidebar } from "@/components/ui/sidebar";
+import { useListBottomFade } from "@/hooks/use-list-bottom-fade";
+import { buildCommands, type CommandDef } from "@/lib/commands";
+import { buildDrawingSearchEntries, rankDrawingHits, type DrawingRow } from "@/lib/drawing-search";
+import { rankEntries } from "@/lib/fuzzy-rank";
+import { sessionOwner } from "@/lib/session-owner";
+import { useStore } from "@/lib/store";
 
 type Props = {
   open: boolean;
@@ -38,7 +37,6 @@ const MAX_HITS_PER_SOURCE = 8;
 type CommandRow = {
   id: string;
   command: CommandDef;
-  disabled: boolean;
   suffix: string;
 };
 
@@ -53,9 +51,8 @@ const CommandRowItem = memo(function CommandRowItem({
   return (
     <CommandItem
       value={`command:${command.id}`}
-      disabled={row.disabled}
       onClick={() => {
-        if (!row.disabled) onRun(command);
+        onRun(command);
       }}
     >
       <command.icon className="text-muted-foreground" />
@@ -139,10 +136,9 @@ export const CommandPalette = ({ open, onOpenChange }: Props) => {
     return hits.map((command) => ({
       id: command.id,
       command,
-      disabled: conflictActive && command.gatedOnConflict === true,
       suffix: command.titleSuffix?.(renderState) ?? "",
     }));
-  }, [trimmedQuery, visibleCommands, conflictActive, renderState]);
+  }, [trimmedQuery, visibleCommands, renderState]);
 
   const drawingHits = useMemo(
     () =>

@@ -123,7 +123,7 @@ const schemaIdArray = (value: unknown) => {
   if (value.length > MAX_THUMBNAIL_BATCH) {
     throw codedError(`Too many ids, max ${MAX_THUMBNAIL_BATCH}`, {
       code: "TOO_LARGE",
-      reason: "content-too-large",
+      reason: "too-many-ids",
       limit: MAX_THUMBNAIL_BATCH,
     });
   }
@@ -668,7 +668,7 @@ export const registerIpcHandlers = (deps: Deps) => {
           buttons: ["Quit", "Continue"],
           defaultId: 0,
           cancelId: 1,
-          message: "xdrawz encountered a fatal error",
+          message: "xcalidraw encountered a fatal error",
           detail: payload.message,
         })
         .then(({ response }) => {

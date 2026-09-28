@@ -29,6 +29,18 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { ErrorBoundary } from "@/components/error-boundary";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { useSidebar } from "@/components/ui/sidebar";
+import { toast } from "@/components/ui/toast";
 import { useTheme } from "@/hooks/use-theme";
 import { libraryErrorToastId, saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
@@ -38,19 +50,6 @@ import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 import { applyViewport, createViewportCache, viewportOf } from "@/lib/viewport-cache";
-
-import { ErrorBoundary } from "./error-boundary";
-import { Button } from "./ui/button";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "./ui/empty";
-import { useSidebar } from "./ui/sidebar";
-import { toast } from "./ui/toast";
 
 type DrawingData = {
   elements?: ExcalidrawElement[];
@@ -401,6 +400,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const toggleSidebarRef = useRef(toggleSidebar);
   const openRef = useRef(open);
+  const sidebarButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     toggleSidebarRef.current = toggleSidebar;
@@ -409,8 +409,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   useEffect(() => {
     openRef.current = open;
   }, [open]);
-
-  const sidebarButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const initialData = useMemo(
     () => async () => {
@@ -475,9 +473,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const handleChange = useCallback(
     (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
       if (fileId !== null) {
-        if (!appState.isLoading) {
-          viewportCache.set(fileId, viewportOf(appState));
-        }
+        if (!appState.isLoading) viewportCache.set(fileId, viewportOf(appState));
         scratch.getSession()?.onChange(elements, appState, files);
         return;
       }
@@ -500,13 +496,17 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     let observer: MutationObserver | null = null;
 
     const sync = () => {
+      if (anchor && anchor.isConnected) return;
+
       const canvasActions = root?.querySelector<HTMLElement>(".App-menu_top__left > :first-child");
       if (!canvasActions) return;
 
-      let host = canvasActions.querySelector<HTMLElement>(":scope > [data-xdrawz-sidebar-anchor]");
+      let host = canvasActions.querySelector<HTMLElement>(
+        ":scope > [data-xcalidraw-sidebar-anchor]",
+      );
       if (!host) {
         host = document.createElement("div");
-        host.dataset.xdrawzSidebarAnchor = "";
+        host.dataset.xcalidrawSidebarAnchor = "";
         host.style.position = "absolute";
         host.style.top = "0";
         host.style.left = "0";
@@ -639,7 +639,7 @@ const WelcomeShared = ({ heading, children }: { heading: string; children: React
       <WelcomeScreen.Hints.MenuHint />
       <WelcomeScreen.Center>
         <WelcomeScreen.Center.Logo>
-          <span className="text-foreground">xdrawz</span>
+          <span className="text-foreground">xcalidraw</span>
         </WelcomeScreen.Center.Logo>
         <WelcomeScreen.Center.Heading>{heading}</WelcomeScreen.Center.Heading>
         <WelcomeScreen.Center.Menu>{children}</WelcomeScreen.Center.Menu>

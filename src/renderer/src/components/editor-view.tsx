@@ -1,10 +1,8 @@
 import { Suspense, lazy } from "react";
 
+import { Home } from "@/components/home";
 import { useRecentDrawings } from "@/hooks/use-recent-drawings";
 import { useStore } from "@/lib/store";
-
-import { CanvasLoading } from "./canvas-loading";
-import { Home } from "./home";
 
 const ExcalidrawEditor = lazy(() =>
   import("./excalidraw-editor").then((module) => ({ default: module.ExcalidrawEditor })),
@@ -28,5 +26,17 @@ export const EditorView = () => {
     <Suspense fallback={<CanvasLoading />}>
       <ExcalidrawEditor key="canvas" fileId={openFileId} />
     </Suspense>
+  );
+};
+
+const CanvasLoading = () => {
+  return (
+    <div
+      className="flex h-full min-h-0 w-full items-center justify-center bg-[var(--excalidraw-canvas-bg,var(--background))] text-sm"
+      aria-busy="true"
+      aria-label="Loading canvas"
+    >
+      <span>Loading canvas...</span>
+    </div>
   );
 };

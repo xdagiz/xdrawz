@@ -21,6 +21,7 @@ export type ErrorDetails =
       code: "TOO_LARGE";
       reason:
         | "too-many-entries"
+        | "too-many-ids"
         | "content-too-large"
         | "file-too-large"
         | "library-too-large"
@@ -129,6 +130,7 @@ const NOT_FOUND_REASONS: ReadonlySet<string> = new Set([
 
 const TOO_LARGE_REASONS: ReadonlySet<string> = new Set([
   "too-many-entries",
+  "too-many-ids",
   "content-too-large",
   "file-too-large",
   "library-too-large",

@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "xdrawz:theme";
+  const STORAGE_KEY = "xcalidraw:theme";
   const prefersDarkQuery = "(prefers-color-scheme: dark)";
 
   const readPreference = () => {

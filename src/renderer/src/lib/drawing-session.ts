@@ -14,6 +14,15 @@ export type SaveResult = "saved" | "saved-with-changes" | "unchanged" | "failed"
 
 type DrawingSnapshot = [readonly OrderedExcalidrawElement[], AppState, BinaryFiles];
 
+type SaveTarget = {
+  snapshot: DrawingSnapshot;
+  revision: number;
+};
+
+type SaveFailure = SaveTarget & {
+  epochAtStart: number;
+};
+
 type FlushOpts = {
   force?: boolean;
   explicit?: boolean;
@@ -161,15 +170,6 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
 
     cachedSignature = drawingSignature(elements, appState, files);
     return cachedSignature;
-  };
-
-  type SaveTarget = {
-    snapshot: DrawingSnapshot;
-    revision: number;
-  };
-
-  type SaveFailure = SaveTarget & {
-    epochAtStart: number;
   };
 
   const resolveTarget = (

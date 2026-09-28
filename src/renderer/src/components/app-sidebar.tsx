@@ -5,7 +5,6 @@ import { PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyDrawings } from "@/components/empty-drawings";
-import { SidebarLoading } from "@/components/sidebar-loading";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +31,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/components/ui/tree";
 import { useExpandedFolders } from "@/hooks/use-expanded-folders";
@@ -476,7 +476,11 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
             <SidebarGroup className="pt-0">
               <SidebarGroupContent>
                 {isLoadingDrawings && entries.length === 0 ? (
-                  <SidebarLoading />
+                  <div className="flex flex-col gap-4 px-2 py-4" aria-label="Loading drawings">
+                    {[0, 1, 2, 3].map((row) => (
+                      <Skeleton key={row} className="h-4" style={{ width: `${80 - row * 6}%` }} />
+                    ))}
+                  </div>
                 ) : entries.length === 0 ? (
                   <div className="flex justify-center py-2">
                     <EmptyDrawings

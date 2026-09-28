@@ -423,7 +423,7 @@ const requireDrawingsRoot = async () => {
 };
 
 const EMPTY_DRAWING_CONTENT =
-  '{"type":"excalidraw","version":2,"source":"xdrawz","elements":[],"appState":{},"files":{}}';
+  '{"type":"excalidraw","version":2,"source":"xcalidraw","elements":[],"appState":{},"files":{}}';
 
 const assertDrawingJson = (content: string) => {
   let parsed: unknown;

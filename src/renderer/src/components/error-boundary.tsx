@@ -2,10 +2,7 @@ import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { ErrorBoundary as ReactErrorBoundary, type FallbackProps } from "react-error-boundary";
 
-import { toAppError, type AppError } from "@/lib/app-error";
-import { reportRendererError } from "@/lib/report-error";
-
-import { Button } from "./ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyContent,
@@ -13,7 +10,9 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "./ui/empty";
+} from "@/components/ui/empty";
+import { toAppError, type AppError } from "@/lib/app-error";
+import { reportRendererError } from "@/lib/report-error";
 
 type ErrorBoundaryProps = {
   children: ReactNode;

@@ -69,10 +69,10 @@ const holdUnresponsiveResponses = () => {
   const releases: Array<(v: { response: number }) => void> = [];
   const unresponsiveCalls = () =>
     mocks.showMessageBox.mock.calls.filter(
-      ([, options]) => (options as { message: string }).message === "xdrawz isn't responding",
+      ([, options]) => (options as { message: string }).message === "xcalidraw isn't responding",
     );
   mocks.showMessageBox.mockImplementation(async (_win: unknown, options: { message: string }) => {
-    if (options.message === "xdrawz isn't responding") {
+    if (options.message === "xcalidraw isn't responding") {
       return new Promise((resolve) => {
         releases.push(resolve);
       });

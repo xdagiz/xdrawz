@@ -3,15 +3,14 @@ import { autosaveKey, parseAutosaveKey } from "@shared/ipc";
 import { CheckIcon, Folder, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "@/components/ui/toast";
 import { toAppError } from "@/lib/app-error";
 import { useStore } from "@/lib/store";
-
-import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Field, FieldContent, FieldDescription, FieldLabel } from "./ui/field";
-import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
-import { Switch } from "./ui/switch";
-import { toast } from "./ui/toast";
 
 type ThemeOption = {
   value: ThemePreference;

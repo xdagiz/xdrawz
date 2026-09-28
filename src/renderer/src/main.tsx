@@ -66,7 +66,7 @@ try {
     <StrictMode>
       <Toaster />
       <ErrorBoundary
-        title="xdrawz couldn’t start"
+        title="xcalidraw couldn’t start"
         description="Try again. If this keeps happening, copy the details for support."
       >
         <App />
