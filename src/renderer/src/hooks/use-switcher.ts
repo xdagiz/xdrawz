@@ -12,7 +12,6 @@ type UseSwitcherOptions = {
 
 export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) => {
   const [state, setState] = useState<SwitcherState>({ phase: "idle" });
-  const paletteOpenRef = useRef(paletteOpen);
   const heldKeysRef = useRef<Set<string>>(new Set());
   const detachReleaseRef = useRef<(() => void) | null>(null);
   const [controller] = useState(() =>
@@ -25,19 +24,14 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
       canSwitchNow: () => {
         if (isCloseHandshakeActive()) return false;
         const { externalConflict, settingsDialogOpen, searchOpen } = useStore.getState();
-        return !externalConflict && !settingsDialogOpen && !searchOpen && !paletteOpenRef.current;
+        return !externalConflict && !settingsDialogOpen && !searchOpen;
       },
-      canAutoCommit: () => heldKeysRef.current.size === 0,
       commit: (fileId) => {
         void useStore.getState().setOpenFileId(fileId);
       },
       onChange: setState,
     }),
   );
-
-  useEffect(() => {
-    paletteOpenRef.current = paletteOpen;
-  }, [paletteOpen]);
 
   useEffect(() => () => controller.cancel(), [controller]);
 
@@ -49,6 +43,7 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
       const key = event.key;
       if (key !== "Control" && key !== "Meta" && key !== "Tab") return;
       heldKeysRef.current.delete(key);
+      controller.setAutoCommitBlocked(heldKeysRef.current.size > 0);
       if (heldKeysRef.current.size === 0) {
         detachReleaseRef.current?.();
         detachReleaseRef.current = null;
@@ -64,18 +59,20 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
     controller.start(direction);
     if (!wasCycling && controller.getState().phase === "cycling") {
       heldKeysRef.current = new Set(["Control", "Tab"]);
+      controller.setAutoCommitBlocked(true);
       beginReleaseTracking();
     }
   };
 
-  useHotkey("Control+Tab", () => cycle(1), { preventDefault: false });
-  useHotkey("Control+Shift+Tab", () => cycle(-1), { preventDefault: false });
+  useHotkey("Control+Tab", () => cycle(1), { preventDefault: false, enabled: !paletteOpen });
+  useHotkey("Control+Shift+Tab", () => cycle(-1), { preventDefault: false, enabled: !paletteOpen });
 
   useEffect(() => {
     if (state.phase !== "cycling") return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Control" || event.key === "Meta" || event.key === "Tab") {
         heldKeysRef.current.add(event.key);
+        controller.setAutoCommitBlocked(true);
       }
     };
 
@@ -89,6 +86,7 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
       detachReleaseRef.current?.();
       detachReleaseRef.current = null;
       heldKeysRef.current = new Set();
+      controller.setAutoCommitBlocked(false);
     };
   }, [state.phase, controller]);
 

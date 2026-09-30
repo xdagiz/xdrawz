@@ -196,16 +196,16 @@ describe("switcher-controller", () => {
     expect(h.lastState()).toEqual({ phase: "idle" });
   });
 
-  it("the fallback stands down while a combo key is held, then commits once allowed", () => {
-    let allow = false;
-    const h = harness({ canAutoCommit: () => allow });
+  it("the fallback stands down while a combo key is held, then commits once released", () => {
+    const h = harness();
+    h.controller.setAutoCommitBlocked(true);
     h.controller.start();
 
     vi.advanceTimersByTime(1800);
     expect(h.committed).toEqual([]);
     expect(h.lastState()).toEqual({ phase: "cycling", index: 1 });
 
-    allow = true;
+    h.controller.setAutoCommitBlocked(false);
     vi.advanceTimersByTime(600);
     expect(h.committed).toEqual(["b"]);
   });

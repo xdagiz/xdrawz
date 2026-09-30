@@ -138,14 +138,16 @@ describe("renameEntry", () => {
     Object.assign(window.api, { store: { set: vi.fn() } });
 
     const createdId = await useStore.getState().createEntry(null, "file");
-    const result = await useStore.getState().renameEntry(createdId!, "My drawing");
+    if (createdId === null) throw new Error("createEntry returned no id");
+
+    const result = await useStore.getState().renameEntry(createdId, "My drawing");
 
     expect(result).not.toBeNull();
     expect(result).toBe(renamed);
     expect(useStore.getState().entries).toContainEqual(renamed);
     expect(useStore.getState().entries.some((item) => item.id === createdId)).toBe(false);
     expect(useStore.getState().openFileId).toBe(fileId);
-    expect(await useStore.getState().setOpenFileId(createdId!)).toBe(false);
+    expect(await useStore.getState().setOpenFileId(createdId)).toBe(false);
     expect(useStore.getState().openFileId).toBe(fileId);
     expect(await useStore.getState().setOpenFileId(result!.id)).toBe(true);
     expect(useStore.getState().openFileId).toBe("My drawing.excalidraw");

@@ -2,14 +2,13 @@ import type { FileEntry } from "@shared/ipc";
 import { useEffect } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSwitcherCandidates } from "@/hooks/use-recent-drawings";
 import { useTheme } from "@/hooks/use-theme";
 import {
   resolveThumbnailPreview,
   useThumbnailHydration,
   useThumbnailRefresh,
 } from "@/hooks/use-thumbnails";
-import { selectSwitcherCandidates } from "@/lib/recent-files";
-import { useStore } from "@/lib/store";
 import { THUMBNAIL_CANVAS_BG, thumbnails } from "@/lib/thumbnails";
 import { stripExcalidraw } from "@/lib/utils";
 
@@ -23,9 +22,7 @@ const labelOf = (entry: FileEntry) => stripExcalidraw(entry.name);
 
 export const DrawingSwitcher = ({ index, commitAt, onCancel }: DrawingSwitcherProps) => {
   const resolvedTheme = useTheme();
-  const entries = useStore((s) => s.entries);
-  const recentFileIds = useStore((s) => s.recentFileIds);
-  const candidates = selectSwitcherCandidates(recentFileIds, entries);
+  const candidates = useSwitcherCandidates();
 
   useThumbnailRefresh();
   useThumbnailHydration(candidates);

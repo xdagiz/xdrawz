@@ -3,7 +3,6 @@ export type SwitcherState = { phase: "idle" } | { phase: "cycling"; index: numbe
 export type SwitcherControllerDeps = {
   getCandidates: () => string[];
   canSwitchNow: () => boolean;
-  canAutoCommit?: () => boolean;
   commit: (fileId: string) => void;
   onChange: (state: SwitcherState) => void;
   scheduleTimeout?: (fn: () => void, ms: number) => () => void;
@@ -27,6 +26,7 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
 
   let state: SwitcherState = { phase: "idle" };
   let cancelFallback: (() => void) | null = null;
+  let autoCommitBlocked = false;
 
   const emit = () => deps.onChange(state);
   const clearFallback = () => {
@@ -35,7 +35,7 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
   };
 
   const fallbackTick = () => {
-    if (deps.canAutoCommit && !deps.canAutoCommit()) {
+    if (autoCommitBlocked) {
       cancelFallback = schedule(fallbackTick, fallbackMs);
       return;
     }
@@ -51,6 +51,10 @@ export const createSwitcherController = (deps: SwitcherControllerDeps) => {
 
   const controller = {
     getState: (): SwitcherState => state,
+
+    setAutoCommitBlocked: (blocked: boolean) => {
+      autoCommitBlocked = blocked;
+    },
 
     start: (direction: 1 | -1 = 1) => {
       if (state.phase === "cycling") {

@@ -1,5 +1,5 @@
 import type { FileEntry } from "@shared/ipc";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ResolvedTheme } from "@/lib/theme";
 import { pickThumbnailVariant, thumbnails } from "@/lib/thumbnails";
@@ -98,29 +98,8 @@ export const useThumbnailVisibility = (): ((
 let activeHydrations = 0;
 
 export const useThumbnailHydration = (files: FileEntry[]) => {
-  const filesRef = useRef(files);
-
   useEffect(() => {
-    filesRef.current = files;
-  }, [files]);
-
-  const fingerprint = useMemo(() => {
-    let hash = 2166136261;
-    let count = 0;
-    for (const entry of files) {
-      if (entry.kind !== "file") continue;
-      count += 1;
-      const s = `${entry.id}?${entry.modifiedAt}:${entry.size};`;
-      for (let i = 0; i < s.length; i += 1) {
-        hash ^= s.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-      }
-    }
-    return `${count}:${hash >>> 0}`;
-  }, [files]);
-
-  useEffect(() => {
-    const current = filesRef.current.filter((entry) => entry.kind === "file");
+    const current = files.filter((entry) => entry.kind === "file");
     if (current.length === 0) return undefined;
     activeHydrations += 1;
     void thumbnails
@@ -136,5 +115,5 @@ export const useThumbnailHydration = (files: FileEntry[]) => {
         thumbnails.cancelPending();
       }
     };
-  }, [fingerprint]);
+  }, [files]);
 };
