@@ -54,6 +54,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
   const inFlight = new Set<string>();
   const visible = new Set<string>();
   const known = new Map<string, FileEntry>();
+  const overflow = new Map<string, FileEntry>();
 
   let epoch = 0;
   let running = false;
@@ -61,6 +62,62 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
 
   const notify = () => {
     for (const listener of listeners) listener();
+  };
+
+  const tryEnqueueEntry = (entry: FileEntry): boolean => {
+    if (!visible.has(entry.id)) {
+      overflow.delete(entry.id);
+      return false;
+    }
+
+    if (covers(records.get(entry.id), entry)) {
+      overflow.delete(entry.id);
+      return false;
+    }
+
+    if (inFlight.has(entry.id)) {
+      overflow.delete(entry.id);
+      return false;
+    }
+
+    if (queue.has(entry.id)) {
+      queue.set(entry.id, entry);
+      overflow.delete(entry.id);
+      return false;
+    }
+
+    if (queue.size >= THUMBNAIL_MAX_QUEUE) {
+      overflow.set(entry.id, entry);
+      return false;
+    }
+
+    queue.set(entry.id, entry);
+    overflow.delete(entry.id);
+    return true;
+  };
+
+  const refillFromOverflow = () => {
+    for (const id of overflow.keys()) {
+      if (queue.size >= THUMBNAIL_MAX_QUEUE) break;
+      const latest = known.get(id);
+      if (!latest || !visible.has(id)) {
+        overflow.delete(id);
+        continue;
+      }
+
+      if (covers(records.get(id), latest)) {
+        overflow.delete(id);
+        continue;
+      }
+
+      if (inFlight.has(id) || queue.has(id)) {
+        overflow.delete(id);
+        continue;
+      }
+
+      queue.set(id, latest);
+      overflow.delete(id);
+    }
   };
 
   const generateOne = async (entry: FileEntry, myEpoch: number) => {
@@ -94,12 +151,9 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     const myEpoch = epoch;
 
     try {
-      let skips = 0;
-
       do {
         if (myEpoch !== epoch) return;
         if (queue.size === 0) return;
-        if (skips >= queue.size) break;
 
         const next = queue.values().next();
         if (next.done) return;
@@ -107,13 +161,14 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
 
         if (!visible.has(entry.id)) {
           queue.delete(entry.id);
-          queue.set(entry.id, entry);
-          skips += 1;
+          overflow.delete(entry.id);
+          refillFromOverflow();
           continue;
         }
 
         queue.delete(entry.id);
         await generateOne(entry, myEpoch);
+        refillFromOverflow();
 
         if (deadline && deadline.timeRemaining() <= MIN_REMAINING_MS && queue.size > 0) {
           return;
@@ -176,32 +231,39 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
         if (entry.kind !== "file") continue;
         present.add(entry.id);
       }
+
       for (const id of records.keys()) {
         if (!present.has(id)) records.delete(id);
       }
+
       for (const id of known.keys()) {
         if (!present.has(id)) known.delete(id);
       }
+
       for (const id of queue.keys()) {
         if (!present.has(id)) queue.delete(id);
       }
+
+      for (const id of overflow.keys()) {
+        if (!present.has(id)) overflow.delete(id);
+      }
+
       while (records.size > 1000) {
         const oldest = records.keys().next().value;
         if (oldest === undefined) break;
         records.delete(oldest);
       }
+
       while (known.size > 1000) {
         const oldest = known.keys().next().value;
         if (oldest === undefined) break;
         known.delete(oldest);
       }
+
       for (const entry of entries) {
         if (entry.kind !== "file") continue;
         known.set(entry.id, entry);
-        if (covers(records.get(entry.id), entry)) continue;
-        if (!visible.has(entry.id)) continue;
-        if (queue.size >= THUMBNAIL_MAX_QUEUE) break;
-        queue.set(entry.id, entry);
+        tryEnqueueEntry(entry);
       }
 
       if (queue.size > 0) slotPump.kick();
@@ -211,20 +273,28 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
       if (isVisible) {
         if (visible.has(fileId)) visible.delete(fileId);
         else if (visible.size >= 1000) {
-          const oldest = visible.values().next().value;
-          if (oldest !== undefined) visible.delete(oldest);
+          for (const candidate of visible) {
+            if (!queue.has(candidate) && !inFlight.has(candidate)) {
+              visible.delete(candidate);
+              break;
+            }
+          }
+          if (visible.size >= 1000) return;
         }
         visible.add(fileId);
-      } else visible.delete(fileId);
+      } else {
+        visible.delete(fileId);
+        queue.delete(fileId);
+        overflow.delete(fileId);
+        refillFromOverflow();
+        if (queue.size > 0) slotPump.kick();
+      }
 
       if (!isVisible) return;
 
       const entry = known.get(fileId);
-      if (!entry || covers(records.get(fileId), entry)) return;
-      if (queue.has(fileId) || inFlight.has(fileId)) return;
-
-      queue.set(fileId, entry);
-      slotPump.kick();
+      if (!entry) return;
+      if (tryEnqueueEntry(entry)) slotPump.kick();
     },
 
     force: (entry) => {
@@ -253,6 +323,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
     cancelPending: () => {
       epoch += 1;
       queue.clear();
+      overflow.clear();
       slotPump.cancel();
     },
   };
