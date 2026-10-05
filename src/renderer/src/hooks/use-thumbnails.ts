@@ -5,6 +5,7 @@ import type { ResolvedTheme } from "@/lib/theme";
 import { pickThumbnailVariant, thumbnails } from "@/lib/thumbnails";
 
 const REFRESH_INTERVAL_MS = 60_000;
+let activeHydrations = 0;
 
 export type ThumbnailPreview = {
   image: string | undefined;
@@ -70,8 +71,10 @@ export const useThumbnailVisibility = (): ((
           if (stale) getObserver().unobserve(stale);
           observedRef.current.delete(oldest);
           callbacksRef.current.delete(oldest);
+          thumbnails.setVisible(oldest, false);
         }
       }
+
       let callback = callbacksRef.current.get(fileId);
       if (!callback) {
         callback = (element: HTMLElement | null) => {
@@ -89,18 +92,18 @@ export const useThumbnailVisibility = (): ((
         };
         callbacksRef.current.set(fileId, callback);
       }
+
       return callback;
     },
     [getObserver],
   );
 };
 
-let activeHydrations = 0;
-
 export const useThumbnailHydration = (files: FileEntry[]) => {
   useEffect(() => {
     const current = files.filter((entry) => entry.kind === "file");
     if (current.length === 0) return undefined;
+
     activeHydrations += 1;
     void thumbnails
       .hydrate(current)
@@ -108,6 +111,7 @@ export const useThumbnailHydration = (files: FileEntry[]) => {
         thumbnails.syncWithEntries(current);
       })
       .catch((error) => console.error("thumbnail hydration failed", error));
+
     return () => {
       activeHydrations -= 1;
       if (activeHydrations <= 0) {
