@@ -39,6 +39,7 @@ linux:
   target:
     - AppImage
     - deb
+    - rpm
   maintainer: xdagiz
   category: Utility
 appImage:
