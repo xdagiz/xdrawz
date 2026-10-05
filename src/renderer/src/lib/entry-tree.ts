@@ -21,12 +21,14 @@ export type EntryTreeState = {
   entries: FileEntry[];
   openFileId: string | null;
   dirtyById: Record<string, true>;
+  rawDirtyById: Record<string, true>;
 };
 
 export type SubtreeRemapResult = {
   entries: FileEntry[];
   openFileId: string | null;
   dirtyById: Record<string, true>;
+  rawDirtyById: Record<string, true>;
 };
 
 export const applySubtreeRemap = (
@@ -55,28 +57,40 @@ export const applySubtreeRemap = (
   const entries = opts?.sort ? sortFileEntries(nextEntries) : nextEntries;
   const openFileId = remapNullableId(state.openFileId, oldRoot, newRoot);
   const dirtyById: Record<string, true> = {};
+  const rawDirtyById: Record<string, true> = {};
 
   for (const key of Object.keys(state.dirtyById)) {
     const mapped = remapId(key, oldRoot, newRoot);
     if (mapped) dirtyById[mapped] = true;
   }
 
-  return { entries, openFileId, dirtyById };
+  for (const key of Object.keys(state.rawDirtyById)) {
+    const mapped = remapId(key, oldRoot, newRoot);
+    if (mapped) rawDirtyById[mapped] = true;
+  }
+
+  return { entries, openFileId, dirtyById, rawDirtyById };
 };
 
 export type SubtreeDeleteResult = {
   entries: FileEntry[];
   openFileId: string | null;
   dirtyById: Record<string, true>;
+  rawDirtyById: Record<string, true>;
   openedRemoved: boolean;
 };
 
 export const applySubtreeDelete = (state: EntryTreeState, root: string): SubtreeDeleteResult => {
   const entries = state.entries.filter((e) => !isInsideSubtree(root, e.id));
   const dirtyById: Record<string, true> = {};
+  const rawDirtyById: Record<string, true> = {};
 
   for (const key of Object.keys(state.dirtyById)) {
     if (!isInsideSubtree(root, key)) dirtyById[key] = true;
+  }
+
+  for (const key of Object.keys(state.rawDirtyById)) {
+    if (!isInsideSubtree(root, key)) rawDirtyById[key] = true;
   }
 
   const openedRemoved = isInsideSubtree(root, state.openFileId);
@@ -85,6 +99,7 @@ export const applySubtreeDelete = (state: EntryTreeState, root: string): Subtree
     entries,
     openFileId: openedRemoved ? null : state.openFileId,
     dirtyById,
+    rawDirtyById,
     openedRemoved,
   };
 };

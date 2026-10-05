@@ -56,6 +56,7 @@ export type EntryReductionState = {
   entries: FileEntry[];
   openFileId: string | null;
   dirtyById: Record<string, true>;
+  rawDirtyById: Record<string, true>;
   externalConflict: ExternalConflict;
   editorGeneration: number;
 };
@@ -137,10 +138,17 @@ export const reduceEntries = (
     if (!entries.some((e) => e.id === id)) delete nextDirty[id];
   }
 
+  const nextRawDirty = { ...state.rawDirtyById };
+  for (const id of Object.keys(nextRawDirty)) {
+    if (id === openFileId && externalConflict?.type === "missing") continue;
+    if (!entries.some((e) => e.id === id)) delete nextRawDirty[id];
+  }
+
   return {
     entries,
     openFileId: nextOpenFileId,
     dirtyById: nextDirty,
+    rawDirtyById: nextRawDirty,
     externalConflict,
     editorGeneration: nextEditorGeneration,
   };

@@ -20,7 +20,7 @@ const harness = (overrides: Partial<ScratchDeps> = {}) => {
     deleted: [] as string[],
     viewports: [] as string[],
     released: [] as BoundDrawingSession[],
-    dirty: [] as [string, boolean][],
+    cleared: [] as string[],
     pending: [] as boolean[],
     unsaved: [] as boolean[],
     errors: [] as unknown[],
@@ -40,7 +40,7 @@ const harness = (overrides: Partial<ScratchDeps> = {}) => {
     releaseIfOwned: (s) => calls.released.push(s),
     isOpenFileId: () => openFileId,
     openReservedFile: vi.fn().mockResolvedValue(true),
-    setFileDirty: (id, dirty) => calls.dirty.push([id, dirty]),
+    clearFileMarkers: (id) => calls.cleared.push(id),
     setPendingCanvasAction: (v) => calls.pending.push(v),
     setScratchUnsaved: (v) => calls.unsaved.push(v),
     notifyError: (e) => calls.errors.push(e),
@@ -198,7 +198,7 @@ describe("scratch controller", () => {
 
     expect(h.calls.released).toEqual([h.session]);
     expect(h.calls.deleted).toEqual(["new.excalidraw"]);
-    expect(h.calls.dirty).toContainEqual(["new.excalidraw", false]);
+    expect(h.calls.cleared).toContainEqual("new.excalidraw");
     expect(h.controller.getState().phase).toBe("idle");
   });
 

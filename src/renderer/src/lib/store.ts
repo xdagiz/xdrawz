@@ -117,6 +117,7 @@ export type State = {
   recentFileIds: string[];
   homeReturnFileId: string | null;
   dirtyById: Record<string, true>;
+  rawDirtyById: Record<string, true>;
   error: AppError | null;
   externalConflict: ExternalConflict;
   watcherDown: string | null;
@@ -154,6 +155,8 @@ export type State = {
   saveFile: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   overwriteOpenFileFromSession: () => Promise<boolean>;
   setFileDirty: (id: string, dirty: boolean) => void;
+  setRawDirty: (id: string, dirty: boolean) => void;
+  clearFileMarkers: (id: string) => void;
   setPendingCanvasAction: (pending: boolean) => void;
   setScratchUnsaved: (pending: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
@@ -176,6 +179,13 @@ export type State = {
   pickAndSwitchFolder: () => Promise<boolean>;
 };
 
+type UnsavedSource = Pick<State, "rawDirtyById"> & {
+  getSession: (fileId?: string) => { isDirty: () => boolean } | null;
+};
+
+export const isUnsaved = (fileId: string, state: UnsavedSource) =>
+  state.getSession(fileId)?.isDirty() ?? state.rawDirtyById[fileId] !== undefined;
+
 export const useStore = create<State>((set, get) => {
   const {
     gateConflictedSave,
@@ -194,6 +204,7 @@ export const useStore = create<State>((set, get) => {
         entries: s.entries,
         openFileId: s.openFileId,
         dirtyById: s.dirtyById,
+        rawDirtyById: s.rawDirtyById,
         error: s.error,
         externalConflict: s.externalConflict,
       };
@@ -243,6 +254,7 @@ export const useStore = create<State>((set, get) => {
     recentFileIds: [],
     homeReturnFileId: null,
     dirtyById: {},
+    rawDirtyById: {},
     error: null,
     externalConflict: null,
     watcherDown: null,
@@ -274,6 +286,7 @@ export const useStore = create<State>((set, get) => {
           openFileId,
           recentFileIds: openFileId ? [openFileId] : [],
           dirtyById: {},
+          rawDirtyById: {},
           error: null,
           watcherDown: null,
           isLoadingDrawings: false,
@@ -292,7 +305,12 @@ export const useStore = create<State>((set, get) => {
 
       const state = get();
       const openFileDirty =
-        session?.isDirty() ?? (openFileId !== null && state.dirtyById[openFileId] !== undefined);
+        openFileId !== null
+          ? isUnsaved(openFileId, {
+              rawDirtyById: state.rawDirtyById,
+              getSession: sessionOwner.getSession,
+            })
+          : false;
       const reduced = reduceEntries(state, event, openFileDirty);
 
       syncDismissal(reduced.externalConflict);
@@ -391,7 +409,13 @@ export const useStore = create<State>((set, get) => {
 
     renameEntry: async (id, newName) => {
       const openId = get().openFileId;
-      if (isInsideSubtree(id, openId) && get().dirtyById[openId]) {
+      if (
+        isInsideSubtree(id, openId) &&
+        isUnsaved(openId, {
+          rawDirtyById: get().rawDirtyById,
+          getSession: sessionOwner.getSession,
+        })
+      ) {
         const ok = await get().ensureCleanOrConfirm("switch");
         if (!ok) return null;
       }
@@ -405,11 +429,16 @@ export const useStore = create<State>((set, get) => {
         }
       }
 
-      const { entries, openFileId, dirtyById, recentFileIds } = get();
-      const next = applySubtreeRemap({ entries, openFileId, dirtyById }, id, entry.id, {
-        rootEntry: entry,
-        sort: true,
-      });
+      const { entries, openFileId, dirtyById, rawDirtyById, recentFileIds } = get();
+      const next = applySubtreeRemap(
+        { entries, openFileId, dirtyById, rawDirtyById },
+        id,
+        entry.id,
+        {
+          rootEntry: entry,
+          sort: true,
+        },
+      );
 
       const pairs = new Map<string, string>();
       for (const e of entries) {
@@ -424,6 +453,7 @@ export const useStore = create<State>((set, get) => {
         entries: next.entries,
         openFileId: next.openFileId,
         dirtyById: next.dirtyById,
+        rawDirtyById: next.rawDirtyById,
         homeReturnFileId: remapNullableId(get().homeReturnFileId, id, entry.id),
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         error: null,
@@ -437,11 +467,14 @@ export const useStore = create<State>((set, get) => {
     },
 
     deleteEntry: async (id, mode) => {
-      const { openFileId, dirtyById } = get();
+      const { openFileId, dirtyById, rawDirtyById } = get();
 
       if (
         isInsideSubtree(id, openFileId) &&
-        Object.prototype.hasOwnProperty.call(dirtyById, openFileId)
+        isUnsaved(openFileId, {
+          rawDirtyById: get().rawDirtyById,
+          getSession: sessionOwner.getSession,
+        })
       ) {
         toast.add({
           title: "Couldn’t delete",
@@ -454,7 +487,7 @@ export const useStore = create<State>((set, get) => {
       await window.api.files.delete(id, mode);
 
       const { entries, recentFileIds } = get();
-      const next = applySubtreeDelete({ entries, openFileId, dirtyById }, id);
+      const next = applySubtreeDelete({ entries, openFileId, dirtyById, rawDirtyById }, id);
       const nextRecentFileIds = removeRecentIds(recentFileIds, (rid) => isInsideSubtree(id, rid));
       const recentChanged = nextRecentFileIds.length !== recentFileIds.length;
       const homeReturnFileId = get().homeReturnFileId;
@@ -463,6 +496,7 @@ export const useStore = create<State>((set, get) => {
         entries: next.entries,
         openFileId: next.openFileId,
         dirtyById: next.dirtyById,
+        rawDirtyById: next.rawDirtyById,
         homeReturnFileId:
           homeReturnFileId && isInsideSubtree(id, homeReturnFileId) ? null : homeReturnFileId,
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
@@ -583,6 +617,34 @@ export const useStore = create<State>((set, get) => {
       });
     },
 
+    setRawDirty: (id, dirty) => {
+      if (!id) return;
+      set((state) => {
+        if (dirty) {
+          if (state.rawDirtyById[id]) return state;
+          return { rawDirtyById: { ...state.rawDirtyById, [id]: true } };
+        }
+
+        if (!state.rawDirtyById[id]) return state;
+        const next = { ...state.rawDirtyById };
+        delete next[id];
+
+        return { rawDirtyById: next };
+      });
+    },
+
+    clearFileMarkers: (id) => {
+      if (!id) return;
+      set((state) => {
+        if (!state.dirtyById[id] && !state.rawDirtyById[id]) return state;
+        const dirtyById = { ...state.dirtyById };
+        const rawDirtyById = { ...state.rawDirtyById };
+        delete dirtyById[id];
+        delete rawDirtyById[id];
+        return { dirtyById, rawDirtyById };
+      });
+    },
+
     setPendingCanvasAction: (pending) => set({ pendingCanvasAction: pending }),
     setScratchUnsaved: (pending) => set({ scratchUnsaved: pending }),
 
@@ -600,7 +662,7 @@ export const useStore = create<State>((set, get) => {
     recoverMissingOpenFile,
 
     reloadOpenFileFromDisk: () => {
-      const { openFileId, dirtyById, editorGeneration } = get();
+      const { openFileId, dirtyById, rawDirtyById, editorGeneration } = get();
       if (!openFileId) {
         set({ externalConflict: null });
         return;
@@ -610,13 +672,14 @@ export const useStore = create<State>((set, get) => {
       set({
         externalConflict: null,
         dirtyById: removeKey(dirtyById, openFileId),
+        rawDirtyById: removeKey(rawDirtyById, openFileId),
         editorGeneration: editorGeneration + 1,
         error: null,
       });
     },
 
     discardMissingOpenFile: () => {
-      const { openFileId, dirtyById, recentFileIds } = get();
+      const { openFileId, dirtyById, rawDirtyById, recentFileIds } = get();
       const nextRecentFileIds = openFileId
         ? removeRecentIds(recentFileIds, (rid) => rid === openFileId)
         : recentFileIds;
@@ -626,6 +689,7 @@ export const useStore = create<State>((set, get) => {
         openFileId: null,
         externalConflict: null,
         dirtyById: openFileId ? removeKey(dirtyById, openFileId) : dirtyById,
+        rawDirtyById: openFileId ? removeKey(rawDirtyById, openFileId) : rawDirtyById,
         ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
         ...(openFileId ? { editorGeneration: get().editorGeneration + 1 } : {}),
         error: null,
@@ -638,7 +702,7 @@ export const useStore = create<State>((set, get) => {
       const session = sessionOwner.getSession();
       if (!session) {
         const id = get().openFileId;
-        return !id || !get().dirtyById[id];
+        return !id || get().rawDirtyById[id] === undefined;
       }
 
       return session.ensureCleanOrConfirm(reason);
@@ -699,6 +763,7 @@ export const useStore = create<State>((set, get) => {
           openFileId: null,
           homeReturnFileId: null,
           dirtyById: {},
+          rawDirtyById: {},
           error: null,
           watcherDown: null,
           isLoadingDrawings: true,

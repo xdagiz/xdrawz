@@ -33,6 +33,7 @@ const makeHarness = async (overrides: Partial<ConflictSlice> = {}) => {
     editorGeneration: 1,
     openFileId: "a.excalidraw",
     dirtyById: { "a.excalidraw": true },
+    rawDirtyById: { "a.excalidraw": true },
     error: null,
     externalConflict: null,
     ...overrides,

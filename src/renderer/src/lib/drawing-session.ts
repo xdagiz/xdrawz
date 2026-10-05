@@ -69,6 +69,7 @@ type DrawingSessionDeps = {
   fileId: string;
   save: (id: string, content: string, origin?: SaveOrigin) => Promise<boolean>;
   onDirtyChange?: (id: string, dirty: boolean) => void;
+  onRawDirtyChange?: (id: string, dirty: boolean) => void;
   onSaveGaveUp?: (fileId: string) => void;
   initialBaseline?: string | null;
   initialAutosave?: AutosaveSetting;
@@ -95,6 +96,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     fileId,
     save,
     onDirtyChange,
+    onRawDirtyChange,
     onSaveGaveUp,
     initialBaseline = null,
     initialAutosave = DEFAULT_AUTOSAVE,
@@ -125,11 +127,14 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   let cancelScheduledEvaluation: (() => void) | null = null;
 
   const setDirty = (next: boolean) => {
-    dirty = next;
     const visible = mode === "always" && !gaveUp ? false : next;
-    if (dirtyPublished === visible) return;
+    const rawChanged = dirty !== next;
+    const visibleChanged = dirtyPublished !== visible;
+    if (!rawChanged && !visibleChanged) return;
+    dirty = next;
     dirtyPublished = visible;
-    onDirtyChange?.(currentFileId, visible);
+    if (rawChanged) onRawDirtyChange?.(currentFileId, next);
+    if (visibleChanged) onDirtyChange?.(currentFileId, visible);
   };
 
   let cachedInputs: {
