@@ -25,7 +25,7 @@ export type ScratchDeps = {
   releaseIfOwned: (session: BoundDrawingSession) => void;
   isOpenFileId: () => string | null;
   openReservedFile: (id: string) => Promise<boolean>;
-  setFileDirty: (fileId: string, dirty: boolean) => void;
+  clearFileMarkers: (fileId: string) => void;
   setPendingCanvasAction: (pending: boolean) => void;
   setScratchUnsaved: (unsaved: boolean) => void;
   notifyError: (error: unknown) => void;
@@ -63,6 +63,7 @@ export const createScratchController = (deps: ScratchDeps): ScratchController =>
     if (!owns) return;
 
     deps.deleteFile(fileId);
+    deps.clearFileMarkers(fileId);
     deps.setPendingCanvasAction(false);
     if (preserveScene && hasContent(preserveScene)) {
       state = { phase: "capturing", scene: preserveScene };
@@ -84,17 +85,17 @@ export const createScratchController = (deps: ScratchDeps): ScratchController =>
 
     switch (current.phase) {
       case "creating":
-        deps.setFileDirty(current.fileId, false);
+        deps.clearFileMarkers(current.fileId);
         deps.deleteFile(current.fileId);
         break;
       case "reserved":
         deps.releaseIfOwned(current.session);
-        deps.setFileDirty(current.fileId, false);
+        deps.clearFileMarkers(current.fileId);
         deps.deleteFile(current.fileId);
         break;
       case "bound":
         deps.releaseIfOwned(current.session);
-        deps.setFileDirty(current.fileId, false);
+        deps.clearFileMarkers(current.fileId);
         if (deps.isOpenFileId() !== current.fileId) deps.deleteViewport(current.fileId);
         break;
       case "capturing":

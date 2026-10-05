@@ -19,6 +19,7 @@ export type ConflictSlice = {
   entries: FileEntry[];
   openFileId: string | null;
   dirtyById: Record<string, true>;
+  rawDirtyById: Record<string, true>;
   error: AppError | null;
   externalConflict: ExternalConflict;
 };

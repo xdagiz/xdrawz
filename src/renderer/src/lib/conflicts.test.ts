@@ -21,6 +21,7 @@ const baseState = () => ({
   entries: [entry("a.excalidraw", 100)],
   openFileId: null,
   dirtyById: {},
+  rawDirtyById: {},
   externalConflict: null,
   editorGeneration: 0,
 });

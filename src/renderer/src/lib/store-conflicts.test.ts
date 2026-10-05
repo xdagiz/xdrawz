@@ -65,6 +65,7 @@ const openSession = (id = fileId, initialAutosave?: AutosaveSetting) => {
       fileId: id,
       save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
       onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
+      onRawDirtyChange: (sid, dirty) => useStore.getState().setRawDirty(sid, dirty),
       initialAutosave,
       scheduleFrame,
     }),
@@ -116,6 +117,23 @@ describe("renameEntry", () => {
     expect(session.isDirty()).toBe(true);
   });
 
+  it("prompts in always mode when raw is dirty but the visible marker is suppressed", async () => {
+    const rename = vi.fn();
+    Object.assign(window.api.files, { rename });
+    Object.assign(window.api, { store: { set: vi.fn() } });
+    const { session, fireFrame } = openSession(fileId, { mode: "always" });
+    session.onChange(elements, appState, files);
+    fireFrame();
+
+    expect(session.isDirty()).toBe(true);
+    expect(useStore.getState().dirtyById).toEqual({});
+    expect(useStore.getState().rawDirtyById).toEqual({ [fileId]: true });
+
+    expect(await useStore.getState().renameEntry(fileId, "Renamed")).toBeNull();
+    expect(unsavedChanges).toHaveBeenCalledExactlyOnceWith("switch");
+    expect(rename).not.toHaveBeenCalled();
+  });
+
   it("returns the renamed entry after updating state so a fresh drawing can be opened", async () => {
     const created: FileEntry = {
       id: "Untitled.excalidraw",
@@ -151,6 +169,23 @@ describe("renameEntry", () => {
     expect(useStore.getState().openFileId).toBe(fileId);
     expect(await useStore.getState().setOpenFileId(result!.id)).toBe(true);
     expect(useStore.getState().openFileId).toBe("My drawing.excalidraw");
+  });
+});
+
+describe("deleteEntry", () => {
+  it("blocks in always mode when raw is dirty but the visible marker is suppressed", async () => {
+    const del = vi.fn();
+    Object.assign(window.api.files, { delete: del });
+    const { session, fireFrame } = openSession(fileId, { mode: "always" });
+    session.onChange(elements, appState, files);
+    fireFrame();
+
+    expect(session.isDirty()).toBe(true);
+    expect(useStore.getState().dirtyById).toEqual({});
+    expect(useStore.getState().rawDirtyById).toEqual({ [fileId]: true });
+
+    expect(await useStore.getState().deleteEntry(fileId, "permanent")).toBe(false);
+    expect(del).not.toHaveBeenCalled();
   });
 });
 
@@ -333,7 +368,7 @@ describe("applyEntries with drawing sessions", () => {
 
   it.each([false, true])("uses marker fallback without a matching session: marker %s", (dirty) => {
     openSession("b.excalidraw");
-    useStore.getState().setFileDirty(fileId, dirty);
+    useStore.getState().setRawDirty(fileId, dirty);
 
     useStore.getState().applyEntries(externalEvent("changed"));
 

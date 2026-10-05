@@ -29,6 +29,7 @@ const baseState = () => ({
   ],
   openFileId: null,
   dirtyById: {},
+  rawDirtyById: {},
 });
 
 describe("remapId", () => {
@@ -112,10 +113,12 @@ describe("applySubtreeRemap", () => {
     const state = {
       ...baseState(),
       dirtyById: { "notes/a.excalidraw": true as const, "z.excalidraw": true as const },
+      rawDirtyById: { "notes/a.excalidraw": true as const, "z.excalidraw": true as const },
     };
     const next = applySubtreeRemap(state, "notes", "docs");
 
     expect(next.dirtyById).toEqual({ "docs/a.excalidraw": true, "z.excalidraw": true });
+    expect(next.rawDirtyById).toEqual({ "docs/a.excalidraw": true, "z.excalidraw": true });
   });
 
   it("preserves insertion order by default and sorts by id when asked", () => {
@@ -173,14 +176,20 @@ describe("applySubtreeDelete", () => {
     const state = {
       ...baseState(),
       dirtyById: { "notes/a.excalidraw": true as const, "z.excalidraw": true as const },
+      rawDirtyById: { "notes/a.excalidraw": true as const, "z.excalidraw": true as const },
     };
     const next = applySubtreeDelete(state, "notes");
 
     expect(next.dirtyById).toEqual({ "z.excalidraw": true });
+    expect(next.rawDirtyById).toEqual({ "z.excalidraw": true });
   });
 
   it("deletes a bare file root", () => {
-    const state = { ...baseState(), dirtyById: { "z.excalidraw": true as const } };
+    const state = {
+      ...baseState(),
+      dirtyById: { "z.excalidraw": true as const },
+      rawDirtyById: { "z.excalidraw": true as const },
+    };
     const next = applySubtreeDelete(state, "z.excalidraw");
 
     expect(next.entries.map((e) => e.id)).toEqual([
@@ -190,11 +199,13 @@ describe("applySubtreeDelete", () => {
       "notes/deep/b.excalidraw",
     ]);
     expect(next.dirtyById).toEqual({});
+    expect(next.rawDirtyById).toEqual({});
   });
 
   it("handles an empty dirty map", () => {
     const next = applySubtreeDelete(baseState(), "notes");
     expect(next.dirtyById).toEqual({});
+    expect(next.rawDirtyById).toEqual({});
   });
 });
 

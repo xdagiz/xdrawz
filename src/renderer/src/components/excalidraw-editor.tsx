@@ -170,6 +170,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
             hasExternalConflict: () => useStore.getState().externalConflict !== null,
             save: (sid, content, origin) => useStore.getState().saveFile(sid, content, origin),
             onDirtyChange: (sid, dirty) => useStore.getState().setFileDirty(sid, dirty),
+            onRawDirtyChange: (sid, dirty) => useStore.getState().setRawDirty(sid, dirty),
             initialAutosave: useStore.getState().settings.autosave,
             initialBaseline: diskBaseline,
             onSaveGaveUp: (failedId) => {
@@ -187,11 +188,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         if (sessionOwner.getSession() !== session) return;
         const activeId = sessionOwner.getActiveFileId();
         sessionOwner.releaseActive();
-        if (activeId) useStore.getState().setFileDirty(activeId, false);
+        if (activeId) useStore.getState().clearFileMarkers(activeId);
       },
       isOpenFileId: () => useStore.getState().openFileId,
       openReservedFile: (id) => useStore.getState().openReservedFile(id),
-      setFileDirty: (id, dirty) => useStore.getState().setFileDirty(id, dirty),
+      clearFileMarkers: (id) => useStore.getState().clearFileMarkers(id),
       setPendingCanvasAction: (pending) => useStore.getState().setPendingCanvasAction(pending),
       setScratchUnsaved: (unsaved) => useStore.getState().setScratchUnsaved(unsaved),
       notifyError: (error) => {
