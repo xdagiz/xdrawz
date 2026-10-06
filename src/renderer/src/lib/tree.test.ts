@@ -19,6 +19,8 @@ const entry = (id: string, kind: "file" | "directory" = "file"): FileEntry => ({
   parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
   modifiedAt: 100,
   size: 10,
+  ino: "1",
+  dev: "1",
 });
 
 const namesOf = (children: FileEntry[] | undefined) => (children ?? []).map((e) => e.name);

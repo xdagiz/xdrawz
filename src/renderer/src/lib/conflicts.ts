@@ -1,4 +1,4 @@
-import type { FileEntry, FilesChangedEvent } from "@shared/ipc";
+import { hasStableFileIdentity, type FileEntry, type FilesChangedEvent } from "@shared/ipc";
 
 export type ConflictKey = string;
 
@@ -68,8 +68,15 @@ const isStillPresent = (entries: FileEntry[], fileId: string | null) =>
 
 const findOnDisk = (entries: FileEntry[], fileId: string) => entries.find((e) => e.id === fileId);
 
-const isStale = (oldEntry: FileEntry, newEntry: FileEntry) =>
-  newEntry.modifiedAt > oldEntry.modifiedAt || newEntry.size !== oldEntry.size;
+const isStale = (oldEntry: FileEntry, newEntry: FileEntry) => {
+  if (
+    hasStableFileIdentity(oldEntry) &&
+    hasStableFileIdentity(newEntry) &&
+    (oldEntry.ino !== newEntry.ino || oldEntry.dev !== newEntry.dev)
+  )
+    return true;
+  return newEntry.modifiedAt !== oldEntry.modifiedAt || newEntry.size !== oldEntry.size;
+};
 
 export const reduceEntries = (
   state: EntryReductionState,

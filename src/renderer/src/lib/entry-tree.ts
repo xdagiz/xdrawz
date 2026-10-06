@@ -51,6 +51,8 @@ export const applySubtreeRemap = (
       parentId: nextParentId,
       modifiedAt: e.modifiedAt,
       size: e.size,
+      ino: e.ino,
+      dev: e.dev,
     };
   });
 

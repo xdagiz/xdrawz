@@ -96,7 +96,12 @@ export type FileEntry = {
   parentId: string | null;
   modifiedAt: number;
   size: number;
+  ino: string;
+  dev: string;
 };
+
+export const hasStableFileIdentity = (entry: Pick<FileEntry, "ino" | "dev">) =>
+  entry.ino.length > 0 && entry.dev.length > 0 && (entry.ino !== "0" || entry.dev !== "0");
 
 export const parentIdOf = (id: string) => {
   const idx = id.lastIndexOf("/");
@@ -220,6 +225,8 @@ export type ThumbnailRecord = {
   fileId: string;
   mtimeMs: number;
   size: number;
+  ino?: string;
+  dev?: string;
   light: string;
   dark: string;
 };

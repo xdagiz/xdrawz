@@ -73,6 +73,8 @@ export const useFileTree = ({
         parentId: null,
         modifiedAt: 0,
         size: 0,
+        ino: "0",
+        dev: "0",
       },
     [entriesById],
   );

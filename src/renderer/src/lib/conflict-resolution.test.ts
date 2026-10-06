@@ -1,4 +1,4 @@
-import { sortFileEntries } from "@shared/ipc";
+import { sortFileEntries, type FileEntry } from "@shared/ipc";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ConflictSlice } from "./conflict-resolution";
@@ -198,13 +198,15 @@ describe("resolveMissingConflict", () => {
       dirtyById: {},
     });
     dialog.fileRecover.mockResolvedValue("recover");
-    const entry = {
+    const entry: FileEntry = {
       id: "a.excalidraw",
       name: "a.excalidraw",
       kind: "file",
       parentId: null,
       modifiedAt: 300,
       size: 100,
+      ino: "1",
+      dev: "1",
     };
     files.writeRecover.mockResolvedValue(entry);
 

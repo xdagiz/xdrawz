@@ -68,6 +68,10 @@ export const isValidThumbnailRecord = (value: unknown): value is ThumbnailRecord
     typeof record.size === "number" &&
     Number.isFinite(record.size) &&
     record.size >= 0 &&
+    (record.ino === undefined ||
+      (typeof record.ino === "string" && record.ino.length > 0 && record.ino.length <= 32)) &&
+    (record.dev === undefined ||
+      (typeof record.dev === "string" && record.dev.length > 0 && record.dev.length <= 32)) &&
     isValidThumbnailDataUrl(record.light) &&
     isValidThumbnailDataUrl(record.dark)
   );

@@ -10,6 +10,8 @@ const entry = (id: string, modifiedAt = 100, size = 10): FileEntry => ({
   parentId: null,
   modifiedAt,
   size,
+  ino: "1",
+  dev: "1",
 });
 
 const pair = {
@@ -30,7 +32,9 @@ describe("thumbnail store", () => {
     const listener = vi.fn();
     store.subscribe(listener);
 
-    deps.apiFetch.mockResolvedValue([{ fileId: "a.excalidraw", mtimeMs: 100, size: 10, ...pair }]);
+    deps.apiFetch.mockResolvedValue([
+      { fileId: "a.excalidraw", mtimeMs: 100, size: 10, ino: "1", dev: "1", ...pair },
+    ]);
 
     await store.hydrate([entry("a.excalidraw"), entry("b.excalidraw")]);
 
@@ -44,7 +48,7 @@ describe("thumbnail store", () => {
     const store = createThumbnailStore(deps);
 
     deps.apiFetch.mockResolvedValue([
-      { fileId: "fresh.excalidraw", mtimeMs: 100, size: 10, ...pair },
+      { fileId: "fresh.excalidraw", mtimeMs: 100, size: 10, ino: "1", dev: "1", ...pair },
     ]);
     await store.hydrate([entry("fresh.excalidraw")]);
     deps.generate.mockClear();
@@ -205,6 +209,45 @@ describe("thumbnail store", () => {
     expect(store.getRecord("doc.excalidraw")?.mtimeMs).toBe(200);
   });
 
+  it("re-sync with the same mtime and size but a new inode regenerates", async () => {
+    const deps = makeDeps();
+    const store = createThumbnailStore(deps);
+
+    store.setVisible("doc.excalidraw", true);
+    store.syncWithEntries([{ ...entry("doc.excalidraw", 100), ino: "1", dev: "1" }]);
+    await vi.waitFor(() => expect(deps.apiPut).toHaveBeenCalledTimes(1));
+
+    store.syncWithEntries([{ ...entry("doc.excalidraw", 100), ino: "2", dev: "1" }]);
+    await vi.waitFor(() => expect(deps.apiPut).toHaveBeenCalledTimes(2));
+    expect(store.getRecord("doc.excalidraw")?.ino).toBe("2");
+  });
+
+  it("regenerates a replacement that arrives while its id is in flight", async () => {
+    const deps = makeDeps();
+    let releaseFirst: (() => void) | undefined;
+    deps.generate.mockImplementation(
+      (fileId: string) =>
+        new Promise<ThumbnailPair>((resolvePromise) => {
+          if (fileId === "doc.excalidraw" && releaseFirst === undefined) {
+            releaseFirst = () => resolvePromise(pair);
+          } else {
+            resolvePromise(pair);
+          }
+        }),
+    );
+    const store = createThumbnailStore(deps);
+
+    store.setVisible("doc.excalidraw", true);
+    store.syncWithEntries([{ ...entry("doc.excalidraw", 100), ino: "1", dev: "1" }]);
+    await vi.waitFor(() => expect(releaseFirst).toBeDefined());
+
+    store.syncWithEntries([{ ...entry("doc.excalidraw", 100), ino: "2", dev: "1" }]);
+    releaseFirst?.();
+
+    await vi.waitFor(() => expect(deps.apiPut).toHaveBeenCalledTimes(2));
+    expect(store.getRecord("doc.excalidraw")?.ino).toBe("2");
+  });
+
   it("force during in-flight hydration skips regeneration when the hydrated record covers", async () => {
     const deps = makeDeps();
     let releaseFetch: ((records: ThumbnailRecord[]) => void) | undefined;
@@ -219,7 +262,16 @@ describe("thumbnail store", () => {
 
     const hydration = store.hydrate([target]);
     store.force(target);
-    releaseFetch?.([{ fileId: target.id, mtimeMs: target.modifiedAt, size: target.size, ...pair }]);
+    releaseFetch?.([
+      {
+        fileId: target.id,
+        mtimeMs: target.modifiedAt,
+        size: target.size,
+        ino: target.ino,
+        dev: target.dev,
+        ...pair,
+      },
+    ]);
     await hydration;
 
     await vi.waitFor(() => {

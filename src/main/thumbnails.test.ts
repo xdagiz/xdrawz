@@ -91,6 +91,10 @@ describe("thumbnails cache", () => {
       expect(isValidThumbnailRecord(record("a.excalidraw"))).toBe(true);
     });
 
+    it("accepts records with optional file identity", () => {
+      expect(isValidThumbnailRecord({ ...record("a.excalidraw"), ino: "1", dev: "1" })).toBe(true);
+    });
+
     it("rejects records with a missing or wrong png prefix", () => {
       expect(
         isValidThumbnailRecord({ ...record("a.excalidraw"), light: "data:image/jpeg;base64,AA" }),
