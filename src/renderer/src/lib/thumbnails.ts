@@ -1,7 +1,11 @@
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
-import type { FileEntry, ThumbnailRecord } from "@shared/ipc";
-import { MAX_THUMBNAIL_BATCH } from "@shared/ipc";
+import {
+  hasStableFileIdentity,
+  MAX_THUMBNAIL_BATCH,
+  type FileEntry,
+  type ThumbnailRecord,
+} from "@shared/ipc";
 
 import type { ResolvedTheme } from "@/lib/theme";
 import { createSlotPump } from "@/lib/thumbnail-scheduler";
@@ -39,8 +43,15 @@ export const THUMBNAIL_CANVAS_BG = {
   dark: "#121212",
 };
 
-const covers = (record: CacheEntry | undefined, entry: FileEntry) =>
-  record !== undefined && record.mtimeMs === entry.modifiedAt && record.size === entry.size;
+const covers = (
+  record: Pick<ThumbnailRecord, "mtimeMs" | "size" | "ino" | "dev"> | undefined,
+  entry: FileEntry,
+) => {
+  if (record === undefined) return false;
+  if (record.mtimeMs !== entry.modifiedAt || record.size !== entry.size) return false;
+  if (!hasStableFileIdentity(entry)) return true;
+  return record.ino === entry.ino && record.dev === entry.dev;
+};
 
 export const pickThumbnailVariant = (
   record: Pick<ThumbnailRecord, "light" | "dark">,
@@ -122,6 +133,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
 
   const generateOne = async (entry: FileEntry, myEpoch: number) => {
     inFlight.add(entry.id);
+    let completed = false;
 
     try {
       const pair = await deps.generate(entry.id);
@@ -131,16 +143,25 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
         fileId: entry.id,
         mtimeMs: entry.modifiedAt,
         size: entry.size,
+        ino: entry.ino,
+        dev: entry.dev,
         light: pair.light,
         dark: pair.dark,
       };
       records.set(entry.id, { ...stored, fetchedAt: Date.now() });
       await deps.apiPut(stored);
       notify();
+      completed = true;
     } catch (error) {
       console.error(`thumbnail generation failed for ${entry.id}`, error);
     } finally {
       inFlight.delete(entry.id);
+      if (completed) {
+        const latest = known.get(entry.id);
+        if (latest && myEpoch === epoch && !covers(records.get(entry.id), latest)) {
+          if (tryEnqueueEntry(latest)) slotPump.kick();
+        }
+      }
     }
   };
 
@@ -211,8 +232,7 @@ export const createThumbnailStore = (deps: ThumbnailStoreDeps): ThumbnailStore =
           for (const record of slice) {
             const entry = byId.get(record.fileId);
             if (entry && covers(records.get(record.fileId), entry)) continue;
-            if (entry && (record.mtimeMs !== entry.modifiedAt || record.size !== entry.size))
-              continue;
+            if (entry && !covers(record, entry)) continue;
             records.set(record.fileId, { ...record, fetchedAt: now });
           }
         }

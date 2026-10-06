@@ -25,6 +25,8 @@ const entry = (modifiedAt: number): FileEntry => ({
   parentId: null,
   modifiedAt,
   size: 100,
+  ino: "1",
+  dev: "1",
 });
 const appState = { isLoading: false, viewBackgroundColor: "#ffffff" } as AppState;
 const elements = [{ id: "local-stroke", type: "rectangle" }] as OrderedExcalidrawElement[];
@@ -142,6 +144,8 @@ describe("renameEntry", () => {
       parentId: null,
       modifiedAt: 100,
       size: 0,
+      ino: "1",
+      dev: "1",
     };
     const renamed: FileEntry = {
       ...created,

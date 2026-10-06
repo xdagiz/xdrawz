@@ -17,6 +17,8 @@ const entry = (id: string, kind: "file" | "directory" = "file"): FileEntry => ({
   parentId: parentIdOf(id),
   modifiedAt: 100,
   size: 10,
+  ino: "1",
+  dev: "1",
 });
 
 describe("pushRecentId", () => {

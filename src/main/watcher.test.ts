@@ -63,6 +63,8 @@ const makeEntry = (id: string, overrides: Partial<FileEntry> = {}): FileEntry =>
   parentId: null,
   modifiedAt: 100,
   size: 100,
+  ino: "1",
+  dev: "1",
   ...overrides,
 });
 

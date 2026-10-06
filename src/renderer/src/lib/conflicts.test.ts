@@ -8,6 +8,8 @@ const entry = (
   modifiedAt: number,
   kind: "file" | "directory" = "file",
   size = 100,
+  ino = "1",
+  dev = "1",
 ): FileEntry => ({
   id,
   name: id,
@@ -15,6 +17,8 @@ const entry = (
   parentId: null,
   modifiedAt,
   size,
+  ino,
+  dev,
 });
 
 const baseState = () => ({
@@ -26,8 +30,10 @@ const baseState = () => ({
   editorGeneration: 0,
 });
 
-const event = (ids: Array<[string, number, number?]>, revision = 1) => ({
-  entries: ids.map(([id, mtime, size]) => entry(id, mtime, "file", size ?? 100)),
+const event = (ids: Array<[string, number, number?, string?, string?]>, revision = 1) => ({
+  entries: ids.map(([id, mtime, size, ino, dev]) =>
+    entry(id, mtime, "file", size ?? 100, ino ?? "1", dev ?? "1"),
+  ),
   revision,
   root: "/drawings",
 });
@@ -71,6 +77,18 @@ describe("reduceEntries", () => {
     expect(next.externalConflict).toBeNull();
   });
 
+  it("bumps the editor generation when the clean open file is replaced with the same mtime and size but a new inode", () => {
+    const state = {
+      ...baseState(),
+      entries: [entry("a.excalidraw", 100, "file", 100, "1", "1")],
+      openFileId: "a.excalidraw",
+    };
+    const next = reduceEntries(state, event([["a.excalidraw", 100, 100, "2", "1"]]), false);
+
+    expect(next.editorGeneration).toBe(1);
+    expect(next.externalConflict).toBeNull();
+  });
+
   it("flags a changed conflict when the dirty open file changes on disk", () => {
     const state = {
       ...baseState(),
@@ -93,6 +111,44 @@ describe("reduceEntries", () => {
       dirtyById: { "a.excalidraw": true as const },
     };
     const next = reduceEntries(state, event([["a.excalidraw", 100, 140]]), true);
+
+    expect(next.externalConflict).toEqual({
+      type: "changed",
+      fileId: "a.excalidraw",
+      diskModifiedAt: 100,
+    });
+    expect(next.editorGeneration).toBe(0);
+  });
+
+  it("flags a changed conflict when the dirty open file is replaced with the same mtime and size but a new inode", () => {
+    const state = {
+      ...baseState(),
+      entries: [entry("a.excalidraw", 100, "file", 100, "1", "1")],
+      openFileId: "a.excalidraw",
+      dirtyById: { "a.excalidraw": true as const },
+    };
+    const next = reduceEntries(state, event([["a.excalidraw", 100, 100, "2", "1"]]), true);
+
+    expect(next.externalConflict).toEqual({
+      type: "changed",
+      fileId: "a.excalidraw",
+      diskModifiedAt: 100,
+    });
+    expect(next.editorGeneration).toBe(0);
+  });
+
+  it("flags a changed conflict when large identities differ beyond double precision", () => {
+    const state = {
+      ...baseState(),
+      entries: [entry("a.excalidraw", 100, "file", 100, "9007199254740992", "1")],
+      openFileId: "a.excalidraw",
+      dirtyById: { "a.excalidraw": true as const },
+    };
+    const next = reduceEntries(
+      state,
+      event([["a.excalidraw", 100, 100, "9007199254740993", "1"]]),
+      true,
+    );
 
     expect(next.externalConflict).toEqual({
       type: "changed",
