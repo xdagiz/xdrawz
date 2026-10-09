@@ -143,6 +143,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const pendingCanvasAction = useStore((s) => s.pendingCanvasAction);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
   const autosave = useStore((s) => s.settings.autosave);
+  const showRecents = useStore((s) => s.settings.showRecents);
   const editorGeneration = useStore((s) => s.editorGeneration);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
@@ -598,7 +599,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           }}
         >
           {fileId === null ? (
-            <WelcomeShared heading="Your drawings are stored locally.">
+            <WelcomeShared heading="Start drawing, it stays on this device">
               <WelcomeScreen.Center.MenuItem
                 onSelect={handleCreate}
                 icon={<FilePlus2Icon size={16} />}
@@ -617,12 +618,14 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           ) : (
             <WelcomeShared heading="Start drawing.">
               <WelcomeScreen.Center.MenuItemHelp />
-              <WelcomeScreen.Center.MenuItem
-                onSelect={handleBack}
-                icon={<ArrowLeftIcon size={16} />}
-              >
-                Back to recents
-              </WelcomeScreen.Center.MenuItem>
+              {showRecents && (
+                <WelcomeScreen.Center.MenuItem
+                  onSelect={handleBack}
+                  icon={<ArrowLeftIcon size={16} />}
+                >
+                  Back to recents
+                </WelcomeScreen.Center.MenuItem>
+              )}
             </WelcomeShared>
           )}
         </Excalidraw>

@@ -158,6 +158,14 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     }
   };
 
+  const handleShowRecentsChange = async (value: boolean) => {
+    try {
+      await updateSettings({ showRecents: value });
+    } catch (error) {
+      toast.add({ title: toAppError(error, "settings").detail, type: "error" });
+    }
+  };
+
   const handleChangeFolder = async () => {
     setPickingFolder(true);
     try {
@@ -250,6 +258,20 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
               id="reopen-last-drawing"
               checked={settings.reopenLastDrawing}
               onCheckedChange={(value) => void handleReopenChange(value)}
+            />
+          </Field>
+        </div>
+
+        <div className="pt-6">
+          <p className="text-muted-foreground text-xs font-medium">App</p>
+          <Field orientation="horizontal" className="mt-3">
+            <FieldContent>
+              <FieldLabel htmlFor="show-recents">Show recent drawings</FieldLabel>
+            </FieldContent>
+            <Switch
+              id="show-recents"
+              checked={settings.showRecents}
+              onCheckedChange={(value) => void handleShowRecentsChange(value)}
             />
           </Field>
         </div>

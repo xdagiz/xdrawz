@@ -69,6 +69,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const searchOpen = useStore((s) => s.searchOpen);
   const setSearchOpen = useStore((s) => s.setSearchOpen);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
+  const showRecents = useStore((s) => s.settings.showRecents);
   const dialogsOpen = settingsDialogOpen || paletteOpen || searchOpen;
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -428,14 +429,18 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       <Sidebar side="left" variant="floating">
         <SidebarHeader className="pb-0">
           <SidebarGroupLabel className="flex items-center justify-between">
-            <button
-              type="button"
-              title="Show recent drawings"
-              className="text-sidebar-foreground focus-visible:ring-sidebar-ring rounded outline-none focus-visible:ring-2"
-              onClick={() => void openHome()}
-            >
-              Drawings
-            </button>
+            {showRecents ? (
+              <button
+                type="button"
+                title="Show recent drawings"
+                className="text-sidebar-foreground focus-visible:ring-sidebar-ring rounded outline-none focus-visible:ring-2"
+                onClick={() => void openHome()}
+              >
+                Drawings
+              </button>
+            ) : (
+              <span className="text-sidebar-foreground">Drawings</span>
+            )}
             <div className="-mr-1 flex items-center gap-2">
               <button
                 type="button"

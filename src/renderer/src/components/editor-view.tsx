@@ -12,13 +12,14 @@ export const EditorView = () => {
   const openFileId = useStore((s) => s.openFileId);
   const pendingCanvasAction = useStore((s) => s.pendingCanvasAction);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
+  const showRecents = useStore((s) => s.settings.showRecents);
   const { recentFiles } = useRecentDrawings();
 
   if (isLoadingDrawings) {
     return <CanvasLoading />;
   }
 
-  if (openFileId === null && recentFiles.length > 0 && !pendingCanvasAction) {
+  if (openFileId === null && showRecents && recentFiles.length > 0 && !pendingCanvasAction) {
     return <Home />;
   }
 

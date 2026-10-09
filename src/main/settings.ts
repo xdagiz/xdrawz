@@ -56,6 +56,16 @@ export const validateSettingsUpdate = (payload: Record<string, unknown>): Settin
         }
         update[key] = value;
         break;
+      case "showRecents":
+        if (typeof value !== "boolean") {
+          throw codedError(`${key} must be a boolean`, {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: key,
+          });
+        }
+        update[key] = value;
+        break;
       default:
         throw codedError(`Unknown setting: ${key}`, {
           code: "INVALID",
@@ -71,6 +81,7 @@ export const getSettings = (): AppSettings => ({
   theme: store.get("theme") ?? DEFAULT_SETTINGS.theme,
   autosave: normalizeAutosaveSetting(store.get("autosave")),
   reopenLastDrawing: store.get("reopenLastDrawing") ?? DEFAULT_SETTINGS.reopenLastDrawing,
+  showRecents: store.get("showRecents") ?? DEFAULT_SETTINGS.showRecents,
 });
 
 export const windowBgColor = () => (nativeTheme.shouldUseDarkColors ? "#181818" : "#ffffff");
@@ -108,6 +119,11 @@ export const setSettings = (update: SettingsUpdate): AppSettings => {
   if (clean.reopenLastDrawing !== undefined) {
     next.reopenLastDrawing = clean.reopenLastDrawing;
     store.set("reopenLastDrawing", clean.reopenLastDrawing);
+  }
+
+  if (clean.showRecents !== undefined) {
+    next.showRecents = clean.showRecents;
+    store.set("showRecents", clean.showRecents);
   }
 
   if (themeChanged) applyTheme();

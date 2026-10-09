@@ -289,17 +289,21 @@ export const useStore = create<State>((set, get) => {
       const openFileId = get().openFileId;
       const session = openFileId !== null ? sessionOwner.getSession(openFileId) : null;
       session?.evaluateNow();
+
       const state = get();
       const openFileDirty =
         session?.isDirty() ?? (openFileId !== null && state.dirtyById[openFileId] !== undefined);
       const reduced = reduceEntries(state, event, openFileDirty);
+
       syncDismissal(reduced.externalConflict);
+
       const eventIds = event.root === null ? null : new Set(event.entries.map((entry) => entry.id));
       const prunedRecentFileIds =
         eventIds === null
           ? state.recentFileIds
           : removeRecentIds(state.recentFileIds, (rid) => !eventIds.has(rid));
       const recentsChanged = prunedRecentFileIds.length !== state.recentFileIds.length;
+
       set({
         ...reduced,
         entries: sortFileEntries(reduced.entries),
@@ -307,6 +311,7 @@ export const useStore = create<State>((set, get) => {
         watcherDown: null,
         ...(recentsChanged ? { recentFileIds: prunedRecentFileIds } : {}),
       });
+
       filesRevision = event.revision;
     },
 

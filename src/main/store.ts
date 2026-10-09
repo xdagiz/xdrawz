@@ -37,6 +37,10 @@ const schema = {
     type: "boolean",
     default: true,
   },
+  showRecents: {
+    type: "boolean",
+    default: true,
+  },
 };
 
 const createStore = (): Store<StoreType> => {

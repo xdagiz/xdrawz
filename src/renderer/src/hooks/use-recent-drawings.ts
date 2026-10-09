@@ -6,10 +6,11 @@ import { useStore } from "@/lib/store";
 export const useRecentDrawings = (limit?: number) => {
   const entries = useStore((s) => s.entries);
   const recentFileIds = useStore((s) => s.recentFileIds);
+  const showRecents = useStore((s) => s.settings.showRecents);
 
   const recentFiles = useMemo(
-    () => selectRecentLibrary(recentFileIds, entries, limit),
-    [recentFileIds, entries, limit],
+    () => (showRecents ? selectRecentLibrary(recentFileIds, entries, limit) : []),
+    [showRecents, recentFileIds, entries, limit],
   );
 
   const totalDrawings = useMemo(

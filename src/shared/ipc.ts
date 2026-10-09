@@ -131,6 +131,7 @@ export type StoreType = {
   theme?: ThemePreference;
   autosave?: unknown;
   reopenLastDrawing?: boolean;
+  showRecents?: boolean;
 };
 
 export type FilesChangedEvent = {
@@ -203,6 +204,7 @@ export type AppSettings = {
   theme: ThemePreference;
   autosave: AutosaveSetting;
   reopenLastDrawing: boolean;
+  showRecents: boolean;
 };
 
 export type SettingsUpdate = Partial<AppSettings>;
@@ -211,6 +213,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME,
   autosave: DEFAULT_AUTOSAVE,
   reopenLastDrawing: true,
+  showRecents: true,
 };
 
 export type ThumbnailRecord = {
